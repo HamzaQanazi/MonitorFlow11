@@ -16,6 +16,7 @@ export default function LoginPage() {
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -112,16 +113,40 @@ export default function LoginPage() {
 
           <div className="login-field">
             <label htmlFor="password">Password</label>
-            <input
-              id="password"
-              ref={passwordRef}
-              type="password"
-              name="password"
-              autoComplete="current-password"
-              disabled={submitting}
-              aria-invalid={fieldErrors.password ? true : undefined}
-              aria-describedby={fieldErrors.password ? 'password-error' : undefined}
-            />
+            <div className="login-input-wrap">
+              <input
+                id="password"
+                ref={passwordRef}
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                autoComplete="current-password"
+                disabled={submitting}
+                aria-invalid={fieldErrors.password ? true : undefined}
+                aria-describedby={fieldErrors.password ? 'password-error' : undefined}
+              />
+              <button
+                type="button"
+                className="login-reveal"
+                onClick={() => setShowPassword((v) => !v)}
+                disabled={submitting}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? (
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M10.73 5.08A10.4 10.4 0 0 1 12 5c4.65 0 8.58 3.1 9.94 6.65a1 1 0 0 1 0 .7 13.2 13.2 0 0 1-1.67 2.68" />
+                    <path d="M6.61 6.61A13.5 13.5 0 0 0 2.06 11.65a1 1 0 0 0 0 .7C3.42 15.9 7.35 19 12 19c1.34 0 2.63-.26 3.8-.73" />
+                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+                    <path d="m2 2 20 20" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M2.06 12.35a1 1 0 0 1 0-.7C3.42 8.1 7.35 5 12 5s8.58 3.1 9.94 6.65a1 1 0 0 1 0 .7C20.58 15.9 16.65 19 12 19s-8.58-3.1-9.94-6.65Z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
+            </div>
             {fieldErrors.password && (
               <p className="login-field-error" id="password-error">
                 {fieldErrors.password}

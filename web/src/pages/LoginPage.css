@@ -108,6 +108,46 @@
   font-weight: 600;
 }
 
+.login-input-wrap {
+  position: relative;
+  display: grid;
+}
+
+.login-field .login-input-wrap input {
+  padding-right: 46px;
+}
+
+/* Edge/IE inject a native reveal control; ours replaces it */
+.login-input-wrap input::-ms-reveal {
+  display: none;
+}
+
+.login-reveal {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.login-reveal:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.login-reveal:disabled {
+  cursor: default;
+  color: var(--border-strong);
+}
+
 .login-field input {
   height: 42px;
   padding: 0 12px;
