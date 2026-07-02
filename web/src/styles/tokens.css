@@ -1,0 +1,50 @@
+/* MonitorFlow design tokens — resolves DESIGN.md's seed values.
+   Brand anchor: Workwear Amber, hue 57 (palette seed-053).
+   Strategy: Restrained — neutrals carry the UI, amber ≤10% of any screen. */
+
+:root {
+  /* Brand — Workwear Amber */
+  --amber-500: oklch(0.66 0.15 57); /* decorative brand moments, never text-bearing */
+  --amber-600: oklch(0.56 0.135 57); /* primary fill; white text ≥ 4.5:1 */
+  --amber-700: oklch(0.5 0.125 57); /* primary hover/active fill */
+
+  /* Neutrals — pure surface; warmth lives in the brand, not the bg */
+  --bg: oklch(1 0 0);
+  --surface: oklch(0.97 0 0);
+  --ink: oklch(0.21 0.005 57); /* ~15:1 on bg */
+  --muted: oklch(0.45 0.008 57); /* ~7:1 on bg — safe for placeholders too */
+  --border: oklch(0.89 0.003 57);
+  --border-strong: oklch(0.72 0.006 57);
+
+  /* Brand pane — the dispatch board after hours */
+  --pane: oklch(0.21 0.02 57);
+  --pane-ink: oklch(0.97 0.008 57);
+  --pane-muted: oklch(0.74 0.035 57);
+  --pane-border: oklch(0.32 0.025 57);
+
+  /* Semantic */
+  --error: oklch(0.5 0.19 27);
+  --error-bg: oklch(0.97 0.015 27);
+  --error-border: oklch(0.85 0.06 27);
+  --focus-ring: var(--amber-600);
+
+  /* Typography */
+  --font-ui: 'Source Sans 3 Variable', 'Segoe UI', system-ui, sans-serif;
+
+  /* Shape */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+
+  /* Motion — responsive tier: feedback, not choreography */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 150ms;
+  --dur-base: 220ms;
+
+  /* Z scale */
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal-backdrop: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}

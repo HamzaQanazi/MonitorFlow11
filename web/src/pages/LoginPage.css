@@ -1,0 +1,217 @@
+.login {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(320px, 5fr) 7fr;
+}
+
+/* Brand pane — the dispatch board after hours */
+.login-pane {
+  background: var(--pane);
+  color: var(--pane-ink);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 40px 44px;
+}
+
+.login-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.login-pip {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--amber-500);
+}
+
+.login-pane-foot {
+  display: grid;
+  gap: 12px;
+}
+
+.login-tagline {
+  max-width: 26ch;
+  font-size: clamp(21px, 2vw, 28px);
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.login-console {
+  color: var(--pane-muted);
+  font-size: 15px;
+}
+
+/* Form pane */
+.login-form-pane {
+  display: grid;
+  place-items: center;
+  padding: 48px 24px;
+}
+
+.login-form {
+  width: 100%;
+  max-width: 360px;
+  display: grid;
+  gap: 20px;
+}
+
+.login-head {
+  display: grid;
+  gap: 6px;
+}
+
+.login-head h1 {
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.login-sub {
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.login-error {
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 15px;
+  line-height: 1.4;
+  animation: login-error-in var(--dur-base) var(--ease-out);
+}
+
+@keyframes login-error-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.login-field {
+  display: grid;
+  gap: 6px;
+}
+
+.login-field label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.login-field input {
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.login-field input:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.login-field input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.login-field input[aria-invalid] {
+  border-color: var(--error);
+}
+
+.login-field input:disabled {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.login-field-error {
+  color: var(--error);
+  font-size: 14px;
+}
+
+.login-submit {
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--amber-600);
+  color: oklch(1 0 0);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.login-submit:hover:not(:disabled),
+.login-submit:active:not(:disabled) {
+  background: var(--amber-700);
+}
+
+.login-submit:disabled {
+  cursor: default;
+}
+
+.login-submit-spinner {
+  width: 16px;
+  height: 16px;
+  border-color: oklch(1 0 0 / 0.35);
+  border-top-color: oklch(1 0 0);
+}
+
+.login-note {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* Mobile: brand pane collapses to a slim identity band */
+@media (max-width: 860px) {
+  .login {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .login-pane {
+    flex-direction: row;
+    align-items: center;
+    padding: 14px 20px;
+  }
+
+  .login-pane-foot {
+    max-width: none;
+  }
+
+  .login-tagline {
+    display: none;
+  }
+
+  .login-console {
+    font-size: 14px;
+  }
+
+  .login-form-pane {
+    align-items: start;
+    padding-top: 56px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-error {
+    animation: none;
+  }
+}

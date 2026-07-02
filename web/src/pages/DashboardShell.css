@@ -1,0 +1,82 @@
+.shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shell-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.shell-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--amber-500);
+}
+
+.shell-session {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.shell-user {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.shell-signout {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.shell-signout:hover {
+  border-color: var(--muted);
+}
+
+.shell-main {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 48px 24px;
+}
+
+.shell-empty {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+  max-width: 44ch;
+}
+
+.shell-empty h1 {
+  font-size: 24px;
+  font-weight: 650;
+}
+
+.shell-empty p {
+  color: var(--muted);
+  line-height: 1.5;
+}
