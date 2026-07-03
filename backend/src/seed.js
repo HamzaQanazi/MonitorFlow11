@@ -169,6 +169,8 @@ const DEV_PASSWORD = 'Password123!';
 const accounts = [
   { name: 'Mona Monitor', email: 'monitor@monitorflow.dev', role: 'monitor', department: null },
   { name: 'Ehab Technician', email: 'tech@monitorflow.dev', role: 'employee', department: 'IT' },
+  // Second IT employee so reassignment can be exercised and demoed.
+  { name: 'Rana Technician', email: 'tech2@monitorflow.dev', role: 'employee', department: 'IT' },
   { name: 'Fadia Cleaner', email: 'cleaner@monitorflow.dev', role: 'employee', department: 'Facilities' },
   { name: 'Uma User', email: 'user@monitorflow.dev', role: 'user', department: null },
 ];

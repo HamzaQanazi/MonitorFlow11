@@ -5,8 +5,9 @@
 // workflow definition (Section 9).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const { validateFormResponse } = require('../lib/validateFormResponse');
+const { categoryOf, executeTransition } = require('../lib/workflowEngine');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -260,6 +261,175 @@ router.get('/:id', async (req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+});
+
+// PATCH /requests/{id}/assign — monitor only (Section 7). No status key is
+// named here: the "ready to work" status a workflow assigns into is derived
+// from the data as the from-status of its accept-action transition. Two
+// paths, both race-safe under the request row lock:
+//  - a monitor transition from the current status into that target exists →
+//    execute it via the engine, upserting the TASK row in the same tx
+//    (first assignment, and re-assignment after an employee reject);
+//  - otherwise, if a task already exists and the request isn't finished →
+//    reassign in place: employee_id + assigned_at only, no status write,
+//    history note per Section 5.
+router.patch('/:id/assign', requireRole('monitor'), async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const { employeeId } = req.body || {};
+    if (!Number.isInteger(employeeId)) {
+      return res.status(422).json({ errors: { employeeId: 'An employee is required' } });
+    }
+
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT r.id, r.status, r.service_type_id, st.department_id, st.name AS service_name,
+              w.statuses, w.transitions
+       FROM request r
+       JOIN service_type st ON st.id = r.service_type_id
+       JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+       WHERE r.id = $1
+       FOR UPDATE OF r`,
+      [id]
+    );
+    if (!rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const request = rows[0];
+
+    // Department rule (Section 5): active employees of the service's
+    // department only — 422 otherwise.
+    const { rows: empRows } = await client.query(
+      `SELECT id, name, department_id, is_active FROM users WHERE id = $1 AND role = 'employee'`,
+      [employeeId]
+    );
+    const employee = empRows[0];
+    if (!employee || !employee.is_active || employee.department_id !== request.department_id) {
+      await client.query('ROLLBACK');
+      return res.status(422).json({
+        errors: { employeeId: 'Must be an active employee of the service’s department' },
+      });
+    }
+
+    const { rows: taskRows } = await client.query(
+      'SELECT id, employee_id FROM task WHERE request_id = $1',
+      [request.id]
+    );
+    const task = taskRows[0] || null;
+
+    const acceptTransition = request.transitions.find((t) => t.action === 'accept');
+    const assignTarget = acceptTransition ? acceptTransition.from : null;
+    const assignTransition = request.transitions.find(
+      (t) => t.from === request.status && t.to === assignTarget && t.allowed_role === 'monitor'
+    );
+
+    if (assignTransition) {
+      // Engine path needs its own transaction — release this lock first; the
+      // engine re-locks and re-validates, so a race degrades to its 409.
+      await client.query('ROLLBACK');
+      const note = task
+        ? `Reassigned to ${employee.name} after rejection`
+        : `Assigned to ${employee.name}`;
+      const result = await executeTransition({
+        requestId: request.id,
+        user: req.user,
+        to: assignTarget,
+        note,
+        beforeCommit: async (tx, ctx) => {
+          const upsert = ctx.task
+            ? await tx.query(
+                'UPDATE task SET employee_id = $1, assigned_at = now() WHERE id = $2 RETURNING id, assigned_at',
+                [employee.id, ctx.task.id]
+              )
+            : await tx.query(
+                'INSERT INTO task (request_id, employee_id, status) VALUES ($1, $2, $3) RETURNING id, assigned_at',
+                [ctx.request.id, employee.id, ctx.transition.to]
+              );
+          await tx.query(
+            'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
+            [
+              employee.id,
+              ctx.request.id,
+              'assigned',
+              `You have been assigned request #${ctx.request.id} (${ctx.request.service_name}).`,
+            ]
+          );
+          return upsert.rows[0];
+        },
+      });
+      return res.json({
+        request: { id: request.id, status: result.status },
+        task: {
+          id: result.extra.id,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          assignedAt: result.extra.assigned_at,
+        },
+      });
+    }
+
+    // No transition into the assign target from here: only an in-place
+    // reassignment of an existing, still-open task is possible.
+    const category = categoryOf(request.statuses, request.status);
+    if (!task || category === 'terminated' || category === 'closed') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This request cannot be assigned in its current state' });
+    }
+    if (task.employee_id === employee.id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This task is already assigned to that employee' });
+    }
+
+    const { rows: prevRows } = await client.query('SELECT name FROM users WHERE id = $1', [
+      task.employee_id,
+    ]);
+    const { rows: updated } = await client.query(
+      'UPDATE task SET employee_id = $1, assigned_at = now() WHERE id = $2 RETURNING id, assigned_at',
+      [employee.id, task.id]
+    );
+    // Reassignment writes a history row with a descriptive note (Section 5);
+    // the status column repeats the unchanged current status.
+    await client.query(
+      `INSERT INTO request_status_history (request_id, status, changed_by, note)
+       VALUES ($1, $2, $3, $4)`,
+      [request.id, request.status, req.user.id, `Reassigned from ${prevRows[0].name} to ${employee.name}`]
+    );
+    await client.query(
+      'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
+      [
+        employee.id,
+        request.id,
+        'assigned',
+        `You have been assigned request #${request.id} (${request.service_name}).`,
+      ]
+    );
+    await client.query('COMMIT');
+
+    res.json({
+      request: {
+        id: request.id,
+        status: {
+          key: request.status,
+          label: request.statuses.find((s) => s.key === request.status)?.label ?? request.status,
+          category,
+        },
+      },
+      task: {
+        id: updated[0].id,
+        employeeId: employee.id,
+        employeeName: employee.name,
+        assignedAt: updated[0].assigned_at,
+      },
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
   }
 });
 
