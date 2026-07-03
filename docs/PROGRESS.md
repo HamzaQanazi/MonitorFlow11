@@ -27,6 +27,12 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - **Shell nav**: top-bar nav (Dashboard · Requests · Employees · Reports) with nested routes; unbuilt pages render a `ComingSoon` stub naming their week.
 - Verified headless-Edge at 1440/834/390px; lint + build green; no console errors.
 
+### Week 3 — requests endpoints (Section 7)
+- **`POST /requests`** (`backend/src/routes/requests.js`): user role only; validates `form_response` via `validateFormResponse` (422 `{errors}` keyed by field id, matching the register convention); request starts at the workflow's `is_initial` status with the service's `default_priority`; first history row written in the same transaction. Creation is not a transition — the Week 4 workflow engine owns all later status writes.
+- **`GET /requests`**: user always scoped to own (whatever the params say), monitor all, employee 403. Standard list params — page/pageSize(≤100)/status/category/serviceTypeId/priority/dateFrom/dateTo/q (q matches requester or service name); invalid values → 400. Status label/category resolved from workflow JSONB per row.
+- **`GET /requests/{id}`**: user own (cross-user → **404**, the 404-over-403 rule), monitor any, employee 403 (employees use `GET /tasks/{id}`). Embeds statusHistory (with actor names), comments, attachment metadata — the Timeline page needs exactly one call.
+- Smoke-tested against seed: 22/22 status-code checks (happy paths, 422 per-field/unknown-key/bad-option/out-of-range, 403 role cells, cross-user 404, filter/pagination payloads verified). Unit tests still 13/13. DB reseeded to canonical state afterwards.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -41,7 +47,7 @@ All password `Password123!` (re-run `npm run seed` to reset):
 ## Next
 
 - **Week 2, Student 1:** Flutter dynamic form renderer (all 8 field types) against `GET /services/{id}/forms/request`. Week 2 must-pass: renderer draws both request forms with zero code differences.
-- **Week 3, Student 2 (remaining):** `POST /requests` (consume `validateFormResponse`, 422 per-field), `GET /requests` both modes (own-only 404 rule), Monitor requests list page (React scaffold + login + dashboard already done).
+- **Week 3, Student 2 (remaining):** Monitor Requests Management page — list pane with filters against `GET /requests` (detail pane + assignment is Week 4).
 - **Week 3 gate:** vertical slice v1 — phone submits → appears in Monitor.
 
 ## Local setup reminders
