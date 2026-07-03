@@ -196,7 +196,7 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Not found' });
     }
 
-    const [history, comments, attachments] = await Promise.all([
+    const [history, comments, attachments, task] = await Promise.all([
       pool.query(
         `SELECT h.status, h.changed_at, h.note, u.id AS by_id, u.name AS by_name
          FROM request_status_history h
@@ -220,6 +220,15 @@ router.get('/:id', async (req, res, next) => {
          ORDER BY uploaded_at`,
         [id]
       ),
+      // Current assignment, so the Monitor detail pane can render and change
+      // it without a second endpoint (progress still reads via status).
+      pool.query(
+        `SELECT t.id, t.employee_id, t.assigned_at, u.name AS employee_name
+         FROM task t
+         JOIN users u ON u.id = t.employee_id
+         WHERE t.request_id = $1`,
+        [id]
+      ),
     ]);
 
     res.json({
@@ -238,6 +247,14 @@ router.get('/:id', async (req, res, next) => {
           email: r.requester_email,
           phone: r.requester_phone,
         },
+        task: task.rows[0]
+          ? {
+              id: task.rows[0].id,
+              employeeId: task.rows[0].employee_id,
+              employeeName: task.rows[0].employee_name,
+              assignedAt: task.rows[0].assigned_at,
+            }
+          : null,
         statusHistory: history.rows.map((h) => ({
           status: statusOf(r.workflow_statuses, h.status),
           changedBy: { id: h.by_id, name: h.by_name },

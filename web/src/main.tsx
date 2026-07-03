@@ -26,6 +26,7 @@ createRoot(document.getElementById('root')!).render(
           >
             <Route index element={<DashboardPage />} />
             <Route path="requests" element={<RequestsPage />} />
+            <Route path="requests/:id" element={<RequestsPage />} />
             <Route
               path="employees"
               element={

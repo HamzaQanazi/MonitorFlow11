@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
+import RequestDetailPane from './RequestDetailPane'
 import './RequestsPage.css'
 
 // Categories are the closed enum from CLAUDE.md Section 9 — the only workflow
@@ -45,6 +46,7 @@ interface ListResponse {
 interface Service {
   id: number
   name: string
+  departmentId: number
 }
 
 function formatWhen(iso: string) {
@@ -60,6 +62,9 @@ function formatWhen(iso: string) {
 
 export default function RequestsPage() {
   const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { id: idParam } = useParams()
+  const selectedId = idParam !== undefined && Number.isInteger(Number(idParam)) ? Number(idParam) : null
   const page = Math.max(1, Number(params.get('page')) || 1)
   const category = params.get('category') ?? ''
   const serviceTypeId = params.get('service') ?? ''
@@ -97,6 +102,19 @@ export default function RequestsPage() {
     setParams(new URLSearchParams(), { replace: true })
   }
 
+  // Detail pane routing: /requests/:id, keeping the filter query string.
+  function openDetail(id: number) {
+    navigate(`/requests/${id}${params.toString() ? `?${params.toString()}` : ''}`)
+  }
+  const closeDetail = useCallback(() => {
+    navigate(`/requests${params.toString() ? `?${params.toString()}` : ''}`)
+  }, [navigate, params])
+
+  const departmentIdOf = useCallback(
+    (serviceTypeId: number) => services.find((s) => s.id === serviceTypeId)?.departmentId,
+    [services],
+  )
+
   const load = useCallback(async () => {
     const qs = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
     if (category) qs.set('category', category)
@@ -111,9 +129,7 @@ export default function RequestsPage() {
 
   useEffect(() => {
     let cancelled = false
-    // False positive: every setState here happens after the fetch resolves,
-    // but the rule can't see through load(), which the retry button shares.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch-cycle flag; the data setStates land async in load()
     setRefreshing(true)
     load()
       .catch((err: Error) => {
@@ -242,6 +258,8 @@ export default function RequestsPage() {
         </div>
       </div>
 
+      <div className={`req-body${selectedId !== null ? ' is-split' : ''}`}>
+        <div className="req-main">
       {error ? (
         <div className="req-status">
           <p className="req-status-msg">Couldn’t load requests: {error}</p>
@@ -293,7 +311,9 @@ export default function RequestsPage() {
                   <th scope="col">Service</th>
                   <th scope="col">Requester</th>
                   <th scope="col">Status</th>
-                  <th scope="col">Priority</th>
+                  <th scope="col" className="req-priority">
+                    Priority
+                  </th>
                   <th scope="col" className="req-when">
                     Created
                   </th>
@@ -301,9 +321,25 @@ export default function RequestsPage() {
               </thead>
               <tbody>
                 {data.requests.map((r) => (
-                  <tr key={r.id}>
+                  <tr
+                    key={r.id}
+                    className={r.id === selectedId ? 'is-selected' : undefined}
+                    onClick={() => openDetail(r.id)}
+                  >
                     <td className="req-id">#{r.id}</td>
-                    <td className="req-service">{r.serviceTypeName}</td>
+                    <td className="req-service">
+                      <button
+                        type="button"
+                        className="req-open"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openDetail(r.id)
+                        }}
+                        aria-current={r.id === selectedId ? 'true' : undefined}
+                      >
+                        {r.serviceTypeName}
+                      </button>
+                    </td>
                     <td>{r.requester.name}</td>
                     <td>
                       <span className={`status-pill${r.status.category ? ` is-${r.status.category}` : ''}`}>
@@ -336,6 +372,16 @@ export default function RequestsPage() {
           )}
         </>
       )}
+        </div>
+        {selectedId !== null && (
+          <RequestDetailPane
+            id={selectedId}
+            departmentIdOf={departmentIdOf}
+            onClose={closeDetail}
+            onChanged={() => load().catch(() => {})}
+          />
+        )}
+      </div>
     </div>
   )
 }
