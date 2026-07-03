@@ -7,6 +7,7 @@ import RequireAuth from './components/RequireAuth'
 import LoginPage from './pages/LoginPage'
 import DashboardShell from './pages/DashboardShell'
 import DashboardPage from './pages/DashboardPage'
+import RequestsPage from './pages/RequestsPage'
 import ComingSoon from './pages/ComingSoon'
 
 createRoot(document.getElementById('root')!).render(
@@ -24,15 +25,7 @@ createRoot(document.getElementById('root')!).render(
             }
           >
             <Route index element={<DashboardPage />} />
-            <Route
-              path="requests"
-              element={
-                <ComingSoon
-                  title="Requests Management"
-                  note="Not built yet — request list, detail, and assignment arrive with the Week 4 workflow work."
-                />
-              }
-            />
+            <Route path="requests" element={<RequestsPage />} />
             <Route
               path="employees"
               element={

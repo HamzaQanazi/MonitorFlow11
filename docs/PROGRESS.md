@@ -33,6 +33,11 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - **`GET /requests/{id}`**: user own (cross-user → **404**, the 404-over-403 rule), monitor any, employee 403 (employees use `GET /tasks/{id}`). Embeds statusHistory (with actor names), comments, attachment metadata — the Timeline page needs exactly one call.
 - Smoke-tested against seed: 22/22 status-code checks (happy paths, 422 per-field/unknown-key/bad-option/out-of-range, 403 role cells, cross-user 404, filter/pagination payloads verified). Unit tests still 13/13. DB reseeded to canonical state afterwards.
 
+### Week 3 — Requests Management, list pane (Section 4 page, web)
+- **`web/src/pages/RequestsPage.tsx`**: monitor request list against `GET /requests` — category chip filters (the fixed `--cat-*` palette, chips toggle), service + priority selects (`GET /services` feeds the dropdown), 350ms-debounced search, pagination (20/page). All filters live in the URL (`useSearchParams`) so refresh/back/deep-links preserve state; any filter change resets to page 1. 30s silent polling like the dashboard. States: skeleton rows, error + retry, "board is clear" empty vs "no matching requests" empty with Clear filters. Status pills reuse the category palette, always paired with the seeded label text.
+- Detail pane + assignment is Week 4 — rows are deliberately not clickable yet (no dead affordance).
+- Verified headless-Edge: 15/15 checks (rows, pager both directions + disabled edge, chip/service/search filters against live data, deep-link param → UI state, 390px no body overflow, zero console errors). Lint + `tsc -b` + build green.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -47,8 +52,8 @@ All password `Password123!` (re-run `npm run seed` to reset):
 ## Next
 
 - **Week 2, Student 1:** Flutter dynamic form renderer (all 8 field types) against `GET /services/{id}/forms/request`. Week 2 must-pass: renderer draws both request forms with zero code differences.
-- **Week 3, Student 2 (remaining):** Monitor Requests Management page — list pane with filters against `GET /requests` (detail pane + assignment is Week 4).
-- **Week 3 gate:** vertical slice v1 — phone submits → appears in Monitor.
+- **Week 3 gate:** vertical slice v1 — phone submits → appears in Monitor. Backend + Monitor side is done; the gate now waits on Student 1's Create Request flow.
+- **Week 4 (Student 2):** workflow engine (locking, history, task sync), `PATCH /requests/{id}/assign` + task creation, valid-transitions — then the Requests Management detail pane + assignment UI on top.
 
 ## Local setup reminders
 

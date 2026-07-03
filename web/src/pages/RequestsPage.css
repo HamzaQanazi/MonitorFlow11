@@ -1,0 +1,355 @@
+.req {
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 36px 24px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.req-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.req-head h1 {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.req-meta {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* --- Filters --- */
+
+.req-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.chip:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--_bg, var(--surface));
+  border-color: var(--_c, var(--border-strong));
+  color: var(--_ink, var(--ink));
+}
+
+.chip-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--_c, var(--border-strong));
+}
+
+.chip.is-new { --_c: var(--cat-new); --_ink: var(--cat-new-ink); --_bg: var(--cat-new-bg); }
+.chip.is-triage { --_c: var(--cat-triage); --_ink: var(--cat-triage-ink); --_bg: var(--cat-triage-bg); }
+.chip.is-in_progress { --_c: var(--cat-in_progress); --_ink: var(--cat-in_progress-ink); --_bg: var(--cat-in_progress-bg); }
+.chip.is-done { --_c: var(--cat-done); --_ink: var(--cat-done-ink); --_bg: var(--cat-done-bg); }
+.chip.is-closed { --_c: var(--cat-closed); --_ink: var(--cat-closed-ink); --_bg: var(--cat-closed-bg); }
+.chip.is-terminated { --_c: var(--cat-terminated); --_ink: var(--cat-terminated-ink); --_bg: var(--cat-terminated-bg); }
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.req-search {
+  flex: 1;
+  min-width: 200px;
+  max-width: 320px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.req-search::placeholder {
+  color: var(--muted);
+}
+
+.req-select {
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.req-clear {
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.req-clear:hover {
+  color: var(--ink);
+}
+
+/* --- Table --- */
+
+.req-tablewrap {
+  overflow-x: auto;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.req-tablewrap.is-refreshing {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.req-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.req-table th {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-strong);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.req-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.req-table tbody tr:hover td {
+  background: var(--surface);
+}
+
+.req-id {
+  width: 1%;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.req-service {
+  font-weight: 600;
+}
+
+.req-when {
+  text-align: right;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.req-priority.is-medium,
+.req-priority.is-low {
+  color: var(--muted);
+}
+
+.req-priority.is-high {
+  font-weight: 650;
+}
+
+/* Status pill — the fixed category palette, always paired with the label
+   text (DESIGN.md: Status-Owns-Color, never color alone). */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--_bg, var(--surface));
+  color: var(--_ink, var(--ink));
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--_c, var(--border-strong));
+}
+
+.status-pill.is-new { --_c: var(--cat-new); --_ink: var(--cat-new-ink); --_bg: var(--cat-new-bg); }
+.status-pill.is-triage { --_c: var(--cat-triage); --_ink: var(--cat-triage-ink); --_bg: var(--cat-triage-bg); }
+.status-pill.is-in_progress { --_c: var(--cat-in_progress); --_ink: var(--cat-in_progress-ink); --_bg: var(--cat-in_progress-bg); }
+.status-pill.is-done { --_c: var(--cat-done); --_ink: var(--cat-done-ink); --_bg: var(--cat-done-bg); }
+.status-pill.is-closed { --_c: var(--cat-closed); --_ink: var(--cat-closed-ink); --_bg: var(--cat-closed-bg); }
+.status-pill.is-terminated { --_c: var(--cat-terminated); --_ink: var(--cat-terminated-ink); --_bg: var(--cat-terminated-bg); }
+
+/* --- Pager --- */
+
+.req-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.req-pager-info {
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin-right: auto;
+}
+
+.req-pager button {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.req-pager button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.req-pager button:disabled {
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* --- Empty, error, loading --- */
+
+.req-empty {
+  border-top: 1px solid var(--border);
+  padding-top: 40px;
+  display: grid;
+  gap: 10px;
+  max-width: 52ch;
+  justify-items: start;
+}
+
+.req-empty h2 {
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.req-empty p {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.req-status {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 64px 24px;
+  text-align: center;
+}
+
+.req-status-msg {
+  color: var(--muted);
+  max-width: 48ch;
+  line-height: 1.5;
+}
+
+.req-retry {
+  height: 38px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--amber-600);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.req-retry:hover {
+  background: var(--amber-700);
+}
+
+.req-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skel-row {
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  animation: skel-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skel-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel-row {
+    animation: none;
+  }
+
+  .req-tablewrap {
+    transition: none;
+  }
+}
