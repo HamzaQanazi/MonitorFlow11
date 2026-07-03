@@ -1,5 +1,13 @@
+import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import './DashboardShell.css'
+
+const navItems = [
+  { to: '/', label: 'Dashboard', end: true },
+  { to: '/requests', label: 'Requests' },
+  { to: '/employees', label: 'Employees' },
+  { to: '/reports', label: 'Reports' },
+]
 
 export default function DashboardShell() {
   const { user, logout } = useAuth()
@@ -11,6 +19,13 @@ export default function DashboardShell() {
           <span className="shell-pip" aria-hidden="true" />
           MonitorFlow
         </p>
+        <nav className="shell-nav" aria-label="Primary">
+          {navItems.map((item) => (
+            <NavLink key={item.to} to={item.to} end={item.end}>
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
         <div className="shell-session">
           <span className="shell-user">{user?.name}</span>
           <button className="shell-signout" type="button" onClick={logout}>
@@ -20,13 +35,7 @@ export default function DashboardShell() {
       </header>
 
       <main className="shell-main">
-        <div className="shell-empty">
-          <h1>Dashboard</h1>
-          <p>
-            Nothing to show yet — the overview is being built. You’re signed in as{' '}
-            <strong>{user?.email}</strong>.
-          </p>
-        </div>
+        <Outlet />
       </main>
     </div>
   )

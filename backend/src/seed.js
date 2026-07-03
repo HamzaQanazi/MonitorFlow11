@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('./db');
 const { validateFieldSchema } = require('./lib/formSchema');
 const { validateWorkflowDefinition } = require('./lib/workflowSchema');
+const { validateFormResponse } = require('./lib/validateFormResponse');
 
 const status = (key, label, category, flags = {}) => ({
   key,
@@ -172,6 +173,83 @@ const accounts = [
   { name: 'Uma User', email: 'user@monitorflow.dev', role: 'user', department: null },
 ];
 
+// ---------------------------------------------------------------------------
+// Demo requests — a realistic queue so the dashboard, lists, and timelines
+// have data from day one (Section 15: demo data only ever enters via seed).
+// `path` is the status walk from initial to current; a history row is written
+// per step, with changed_by resolved from the transition's allowed_role. A
+// task row is created whenever the walk passes through an assignment.
+// ---------------------------------------------------------------------------
+
+const aForm = (equipment_type, location, problem_description, urgent = false) => ({
+  equipment_type, location, problem_description, urgent,
+});
+const bForm = (preferred_date, pkg, num_rooms, has_pets, address, gate_code) => ({
+  preferred_date, package: pkg, num_rooms, has_pets, address,
+  ...(gate_code ? { gate_code } : {}),
+});
+
+// Cumulative walks per service (keys are seed data, not application code).
+const A_WALK = ['submitted', 'approved', 'assigned', 'accepted', 'in_progress', 'completed', 'confirmed'];
+const B_WALK = ['booked', 'assigned', 'accepted', 'en_route', 'in_service', 'completed', 'confirmed'];
+const walkTo = (walk, key) => walk.slice(0, walk.indexOf(key) + 1);
+
+const demoRequests = [
+  // Service A: Equipment Repair
+  { svc: 0, priority: 'high', daysAgo: 0, path: walkTo(A_WALK, 'submitted'),
+    form: aForm('printer', 'Room 214', 'Printer jams on every duplex job and shows error E-04.', true) },
+  { svc: 0, priority: 'medium', daysAgo: 1, path: walkTo(A_WALK, 'submitted'),
+    form: aForm('laptop', 'Reception desk', 'Battery drains from full to empty in under an hour.') },
+  { svc: 0, priority: 'medium', daysAgo: 2, path: walkTo(A_WALK, 'approved'),
+    form: aForm('desktop', 'Lab 3, seat 12', 'No display output after the last power cut; fans spin up.') },
+  { svc: 0, priority: 'high', daysAgo: 3, path: walkTo(A_WALK, 'assigned'), employee: 'tech@monitorflow.dev',
+    form: aForm('network', 'Server room B', 'Switch port 14 flapping — link drops every few minutes.', true) },
+  { svc: 0, priority: 'medium', daysAgo: 4, path: walkTo(A_WALK, 'accepted'), employee: 'tech@monitorflow.dev',
+    form: aForm('laptop', 'Room 108', 'Keyboard keys Q and W stopped responding.') },
+  { svc: 0, priority: 'high', daysAgo: 5, path: walkTo(A_WALK, 'in_progress'), employee: 'tech@monitorflow.dev',
+    form: aForm('desktop', 'Finance office', 'PC restarts randomly under load, twice today.', true) },
+  { svc: 0, priority: 'low', daysAgo: 8, path: [...walkTo(A_WALK, 'in_progress'), 'awaiting_parts'], employee: 'tech@monitorflow.dev',
+    form: aForm('printer', 'Room 301', 'Faded print on the left half of every page — likely drum unit.') },
+  { svc: 0, priority: 'medium', daysAgo: 9, path: walkTo(A_WALK, 'completed'), employee: 'tech@monitorflow.dev',
+    form: aForm('laptop', 'Room 122', 'Screen flickers at low brightness levels.'),
+    completion: { work_performed: 'Reseated the display cable and updated the panel driver; retested at all brightness levels.', parts_used: 'None' } },
+  { svc: 0, priority: 'low', daysAgo: 14, path: walkTo(A_WALK, 'confirmed'), employee: 'tech@monitorflow.dev',
+    form: aForm('desktop', 'Room 210', 'Very slow startup, over five minutes to desktop.'),
+    completion: { work_performed: 'Replaced failing HDD with SSD, cloned system, verified boot in 40 seconds.', parts_used: '480GB SSD' } },
+  { svc: 0, priority: 'medium', daysAgo: 21, path: walkTo(A_WALK, 'confirmed'), employee: 'tech@monitorflow.dev',
+    form: aForm('network', 'Room 115', 'Wall port dead — no link light on any device.'),
+    completion: { work_performed: 'Re-terminated the wall port and patched it through on the floor switch.', parts_used: 'RJ45 keystone' } },
+  { svc: 0, priority: 'low', daysAgo: 6, path: ['submitted', 'rejected'],
+    form: aForm('other', 'Cafeteria', 'Coffee machine displays descale warning.') },
+  { svc: 0, priority: 'low', daysAgo: 17, path: ['submitted', 'cancelled'],
+    form: aForm('laptop', 'Room 118', 'Trackpad cursor jumps occasionally.') },
+
+  // Service B: Home Cleaning Visit
+  { svc: 1, priority: 'low', daysAgo: 0, path: walkTo(B_WALK, 'booked'),
+    form: bForm('2026-07-08', 'standard', 3, false, '14 Olive Street, Apt 2') },
+  { svc: 1, priority: 'medium', daysAgo: 2, path: walkTo(B_WALK, 'booked'),
+    form: bForm('2026-07-06', 'deep', 5, true, '9 Cedar Lane', '4417') },
+  { svc: 1, priority: 'low', daysAgo: 3, path: walkTo(B_WALK, 'assigned'), employee: 'cleaner@monitorflow.dev',
+    form: bForm('2026-07-05', 'standard', 2, false, '31 Harbor Road, floor 3') },
+  { svc: 1, priority: 'low', daysAgo: 5, path: walkTo(B_WALK, 'accepted'), employee: 'cleaner@monitorflow.dev',
+    form: bForm('2026-07-04', 'standard', 4, true, '5 Almond Court') },
+  { svc: 1, priority: 'medium', daysAgo: 1, path: walkTo(B_WALK, 'en_route'), employee: 'cleaner@monitorflow.dev',
+    form: bForm('2026-07-03', 'deep', 6, false, '22 Palm Avenue', '0091') },
+  { svc: 1, priority: 'high', daysAgo: 0, path: walkTo(B_WALK, 'in_service'), employee: 'cleaner@monitorflow.dev',
+    form: bForm('2026-07-03', 'deep', 8, true, '2 Jasmine Boulevard, villa 7') },
+  { svc: 1, priority: 'low', daysAgo: 7, path: walkTo(B_WALK, 'completed'), employee: 'cleaner@monitorflow.dev',
+    form: bForm('2026-06-27', 'standard', 3, false, '18 Maple Walk'),
+    completion: { rooms_cleaned: 3, notes: 'All rooms done; left windows ajar to air out the kitchen.' } },
+  { svc: 1, priority: 'low', daysAgo: 12, path: walkTo(B_WALK, 'confirmed'), employee: 'cleaner@monitorflow.dev',
+    form: bForm('2026-06-22', 'standard', 2, false, '7 Birch Close'),
+    completion: { rooms_cleaned: 2 } },
+  { svc: 1, priority: 'medium', daysAgo: 26, path: walkTo(B_WALK, 'confirmed'), employee: 'cleaner@monitorflow.dev',
+    form: bForm('2026-06-08', 'deep', 5, true, '40 Rosewood Drive', '2203'),
+    completion: { rooms_cleaned: 5, notes: 'Deep clean complete; pet hair filter replaced in the vacuum.' } },
+  { svc: 1, priority: 'low', daysAgo: 24, path: ['booked', 'cancelled'],
+    form: bForm('2026-06-12', 'standard', 1, false, '3 Fig Tree Lane') },
+];
+
 function validateAll() {
   const problems = [];
   for (const svc of services) {
@@ -187,8 +265,37 @@ function validateAll() {
   return problems;
 }
 
+// Demo requests are held to the same bar as API input: valid form responses,
+// real status keys, and a legal transition for every step of the walk.
+async function validateDemo() {
+  const problems = [];
+  for (const [i, demo] of demoRequests.entries()) {
+    const svc = services[demo.svc];
+    const label = `demo request #${i + 1} (${svc.name})`;
+    const keys = new Set(svc.workflow.statuses.map((s) => s.key));
+    for (const key of demo.path) {
+      if (!keys.has(key)) problems.push(`${label}: unknown status "${key}"`);
+    }
+    for (let step = 1; step < demo.path.length; step++) {
+      const [from, to] = [demo.path[step - 1], demo.path[step]];
+      if (!svc.workflow.transitions.some((t) => t.from === from && t.to === to)) {
+        problems.push(`${label}: no transition ${from} -> ${to}`);
+      }
+    }
+    // No photo fields in demo data, so the db handle is never used.
+    const stub = { query: () => { throw new Error('demo data must not reference attachments'); } };
+    const formErrors = await validateFormResponse(svc.requestForm, demo.form, { db: stub, userId: 0 });
+    for (const [field, msg] of Object.entries(formErrors)) problems.push(`${label}: ${field}: ${msg}`);
+    if (demo.completion) {
+      const errs = await validateFormResponse(svc.completionForm, demo.completion, { db: stub, userId: 0 });
+      for (const [field, msg] of Object.entries(errs)) problems.push(`${label} completion: ${field}: ${msg}`);
+    }
+  }
+  return problems;
+}
+
 async function seed() {
-  const problems = validateAll();
+  const problems = [...validateAll(), ...(await validateDemo())];
   if (problems.length) {
     console.error('Seed validation failed:');
     for (const p of problems) console.error(`  - ${p}`);
@@ -223,6 +330,7 @@ async function seed() {
         [svc.name, departmentIds[svc.department], svc.default_priority]
       );
       const serviceTypeId = rows[0].id;
+      svc.id = serviceTypeId;
 
       await client.query(
         `INSERT INTO form_definition (service_type_id, form_type, field_schema)
@@ -239,14 +347,68 @@ async function seed() {
     }
 
     const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);
+    const accountIds = {};
     for (const acc of accounts) {
-      await client.query(
+      const { rows } = await client.query(
         `INSERT INTO users (name, email, password_hash, role, department_id)
-         VALUES ($1, $2, $3, $4, $5)`,
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
         [acc.name, acc.email, passwordHash, acc.role, acc.department ? departmentIds[acc.department] : null]
       );
+      accountIds[acc.email] = rows[0].id;
       console.log(`seeded ${acc.role} account ${acc.email}`);
     }
+
+    const requesterId = accountIds['user@monitorflow.dev'];
+    const monitorId = accountIds['monitor@monitorflow.dev'];
+    const HOUR = 3600e3;
+
+    for (const [i, demo] of demoRequests.entries()) {
+      const svc = services[demo.svc];
+      const employeeId = demo.employee ? accountIds[demo.employee] : null;
+      const created = new Date(Date.now() - demo.daysAgo * 24 * HOUR - ((i % 6) + 1) * HOUR);
+      // History timestamps spread evenly between creation and now.
+      const step = (Date.now() - created.getTime()) / demo.path.length;
+      const times = demo.path.map((_, s) => new Date(created.getTime() + s * step));
+      const currentStatus = demo.path[demo.path.length - 1];
+
+      const { rows } = await client.query(
+        `INSERT INTO request (user_id, service_type_id, form_response, status, priority, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [requesterId, svc.id, JSON.stringify(demo.form), currentStatus, demo.priority,
+         created, times[times.length - 1]]
+      );
+      const requestId = rows[0].id;
+
+      for (let s = 0; s < demo.path.length; s++) {
+        // First step is the initial status, written by the requester; each
+        // later step's actor comes from the transition's allowed_role.
+        let changedBy = requesterId;
+        if (s > 0) {
+          const t = svc.workflow.transitions.find(
+            (tr) => tr.from === demo.path[s - 1] && tr.to === demo.path[s]
+          );
+          changedBy = t.allowed_role === 'user' ? requesterId
+            : t.allowed_role === 'employee' ? employeeId
+            : monitorId;
+        }
+        await client.query(
+          `INSERT INTO request_status_history (request_id, status, changed_by, changed_at)
+           VALUES ($1, $2, $3, $4)`,
+          [requestId, demo.path[s], changedBy, times[s]]
+        );
+      }
+
+      const assignedStep = demo.path.indexOf('assigned');
+      if (assignedStep !== -1) {
+        await client.query(
+          `INSERT INTO task (request_id, employee_id, status, completion_form_response, assigned_at)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [requestId, employeeId, currentStatus,
+           demo.completion ? JSON.stringify(demo.completion) : null, times[assignedStep]]
+        );
+      }
+    }
+    console.log(`seeded ${demoRequests.length} demo requests`);
 
     await client.query('COMMIT');
     console.log(`\nDone. All seeded accounts use password: ${DEV_PASSWORD}`);

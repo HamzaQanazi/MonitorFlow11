@@ -6,6 +6,8 @@ import { AuthProvider } from './auth/AuthContext'
 import RequireAuth from './components/RequireAuth'
 import LoginPage from './pages/LoginPage'
 import DashboardShell from './pages/DashboardShell'
+import DashboardPage from './pages/DashboardPage'
+import ComingSoon from './pages/ComingSoon'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -20,7 +22,36 @@ createRoot(document.getElementById('root')!).render(
                 <DashboardShell />
               </RequireAuth>
             }
-          />
+          >
+            <Route index element={<DashboardPage />} />
+            <Route
+              path="requests"
+              element={
+                <ComingSoon
+                  title="Requests Management"
+                  note="Not built yet — request list, detail, and assignment arrive with the Week 4 workflow work."
+                />
+              }
+            />
+            <Route
+              path="employees"
+              element={
+                <ComingSoon
+                  title="Employees Management"
+                  note="Not built yet — employee accounts and department management arrive in Week 6."
+                />
+              }
+            />
+            <Route
+              path="reports"
+              element={
+                <ComingSoon
+                  title="Basic Reports"
+                  note="Not built yet — filtered reports and CSV export arrive in Week 6."
+                />
+              }
+            />
+          </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>

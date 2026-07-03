@@ -7,8 +7,7 @@
 .shell-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 24px;
   padding: 12px 24px;
   border-bottom: 1px solid var(--border);
 }
@@ -29,10 +28,50 @@
   background: var(--amber-500);
 }
 
+.shell-nav {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.shell-nav a {
+  position: relative;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.shell-nav a:hover {
+  color: var(--ink);
+}
+
+.shell-nav a.active {
+  color: var(--ink);
+}
+
+/* Current-page marker — the accent's job (selection), kept to a hairline. */
+.shell-nav a.active::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--amber-600);
+}
+
 .shell-session {
   display: flex;
   align-items: center;
   gap: 14px;
+  margin-left: auto;
 }
 
 .shell-user {
@@ -58,6 +97,13 @@
 
 .shell-main {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Centered message block — used by not-yet-built pages */
+.shell-empty-wrap {
+  flex: 1;
   display: grid;
   place-items: center;
   padding: 48px 24px;
@@ -79,4 +125,20 @@
 .shell-empty p {
   color: var(--muted);
   line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .shell-bar {
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+
+  .shell-nav {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .shell-user {
+    display: none;
+  }
 }
