@@ -7,7 +7,7 @@ const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { validateFormResponse } = require('../lib/validateFormResponse');
-const { categoryOf, executeTransition } = require('../lib/workflowEngine');
+const { categoryOf, executeTransition, WorkflowError } = require('../lib/workflowEngine');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -276,6 +276,126 @@ router.get('/:id', async (req, res, next) => {
         })),
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /requests/{id}/resolution — the request owner confirms or disputes
+// from a done-category status. The gate lives in the workflow data: the
+// confirm/dispute-action transitions only exist from done statuses, so a
+// too-early call resolves no transition and the engine answers 409
+// (must-pass #15). Note required for `unresolved` (Section 7).
+router.patch('/:id/resolution', async (req, res, next) => {
+  try {
+    if (req.user.role !== 'user') return res.status(403).json({ error: 'Forbidden' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const { outcome, note } = req.body || {};
+    if (outcome !== 'confirmed' && outcome !== 'unresolved') {
+      return res
+        .status(422)
+        .json({ errors: { outcome: 'Outcome must be "confirmed" or "unresolved"' } });
+    }
+    if (outcome === 'unresolved' && !(typeof note === 'string' && note.trim())) {
+      return res
+        .status(422)
+        .json({ errors: { note: 'A note is required when reporting unresolved' } });
+    }
+    const result = await executeTransition({
+      requestId: id,
+      user: req.user,
+      action: outcome === 'confirmed' ? 'confirm' : 'dispute',
+      note: note ?? null,
+    });
+    res.json({ request: { id, status: result.status } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /requests/{id}/cancel — user: via the workflow's own user-role
+// cancel transition, and only while no task exists (checked under the
+// engine's row lock, so the cancel-vs-assign race of must-pass #13 always
+// leaves one side with 409); monitor: any state, as an override. No status
+// key in code — the cancel target is derived from the data as the target of
+// the user-role transition into a terminated-category status.
+router.patch('/:id/cancel', async (req, res, next) => {
+  try {
+    if (req.user.role === 'employee') return res.status(403).json({ error: 'Forbidden' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const note = (req.body || {}).note ?? null;
+
+    const { rows } = await pool.query(
+      `SELECT w.statuses, w.transitions
+       FROM request r JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+       WHERE r.id = $1`,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    const { statuses, transitions } = rows[0];
+    const cancelTransition = transitions.find(
+      (t) => t.allowed_role === 'user' && categoryOf(statuses, t.to) === 'terminated'
+    );
+    if (!cancelTransition) {
+      return res.status(409).json({ error: 'This request cannot be cancelled' });
+    }
+
+    let result;
+    try {
+      result = await executeTransition({
+        requestId: id,
+        user: req.user,
+        to: cancelTransition.to,
+        note,
+        override: req.user.role === 'monitor',
+        beforeCommit:
+          req.user.role === 'user'
+            ? (tx, ctx) => {
+                if (ctx.task) {
+                  throw new WorkflowError(409, 'This request can no longer be cancelled — it has been assigned');
+                }
+              }
+            : null,
+      });
+    } catch (err) {
+      // For the owner, "a cancel path exists from here but not for your
+      // role" means the request has moved past the cancellable window — a
+      // state conflict (Section 7: cancel-after-assignment → 409), not a
+      // permissions failure.
+      if (req.user.role === 'user' && err instanceof WorkflowError && err.status === 403) {
+        throw new WorkflowError(409, 'This request can no longer be cancelled');
+      }
+      throw err;
+    }
+    res.json({ request: { id, status: result.status } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /requests/{id}/status — monitor override (Section 7, constrained).
+// The engine's resolveOverride enforces: target key exists (422), category
+// terminated or triage/in_progress only (422), note always (422). Reopening
+// past a terminated status unlocks the task automatically because the task
+// lock is a function of the current category, not a flag (Section 5).
+router.patch('/:id/status', requireRole('monitor'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const { to, note } = req.body || {};
+    if (typeof to !== 'string' || !to) {
+      return res.status(422).json({ errors: { to: 'A target status is required' } });
+    }
+    const result = await executeTransition({
+      requestId: id,
+      user: req.user,
+      to,
+      note: note ?? null,
+      override: true,
+    });
+    res.json({ request: { id, status: result.status } });
   } catch (err) {
     next(err);
   }
