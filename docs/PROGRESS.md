@@ -38,6 +38,14 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - Detail pane + assignment is Week 4 — rows are deliberately not clickable yet (no dead affordance).
 - Verified headless-Edge: 15/15 checks (rows, pager both directions + disabled edge, chip/service/search filters against live data, deep-link param → UI state, 390px no body overflow, zero console errors). Lint + `tsc -b` + build green.
 
+### Week 4 — workflow engine + assignment + task endpoints (commits `129f819`, `df99be0`)
+- **Workflow engine** (`backend/src/lib/workflowEngine.js`): the one module that writes `REQUEST.status`/`TASK.status`. Order: lock request row (`FOR UPDATE`) → ownership (404-over-403) → transition exists (409) → role (403) → note (422) / completion-form (409) → statuses + history + notifications in one transaction. Pure core (`resolveTransition`, `validTransitions`) covered by 11 unit tests (24 total green). `beforeCommit` hook lets assign (and Week 5 `/complete`) join the transaction.
+- **Tasks routes** (`backend/src/routes/tasks.js`, employee-only): list (standard params), detail (embeds requester name+phone — never email — and strips `visible_to_employee:false` fields), valid-transitions, accept/reject/status — all via the engine.
+- **Assignment** (`PATCH /requests/{id}/assign`): no status key in code — the assign-target status is derived as the from-status of the workflow's `accept` transition. First assign / post-reject reassign execute the monitor transition into it (task upserted in the same tx); otherwise an in-place reassign (employee_id + assigned_at only, history note per §5). Cross-dept 422, duplicate no-op 409, terminated/closed 409. Approval gate emerges from data: a Submitted A request can't be assigned (409) while a Booked B request can.
+- **`GET /employees`** (monitor-only read list) pulled forward from Week 6 for the assignment UI picker; writes stay in Week 6. Seed gained a second IT employee (`tech2@monitorflow.dev`) so reassignment is demoable.
+- Error middleware now maps `WorkflowError.status` and express.json's 400s instead of 500.
+- Smoke-tested 36/36 against seed (approval gate, cross-dept, duplicate, reassign-in-place + history note, 404 cells, field stripping, note/completion-form gates, reject→queue→task-row reuse, concurrent accepts race). Reseeded to canonical afterwards.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -46,6 +54,7 @@ All password `Password123!` (re-run `npm run seed` to reset):
 |---|---|
 | monitor@monitorflow.dev | monitor |
 | tech@monitorflow.dev | employee (IT) |
+| tech2@monitorflow.dev | employee (IT) |
 | cleaner@monitorflow.dev | employee (Facilities) |
 | user@monitorflow.dev | user |
 
@@ -53,7 +62,8 @@ All password `Password123!` (re-run `npm run seed` to reset):
 
 - **Week 2, Student 1:** Flutter dynamic form renderer (all 8 field types) against `GET /services/{id}/forms/request`. Week 2 must-pass: renderer draws both request forms with zero code differences.
 - **Week 3 gate:** vertical slice v1 — phone submits → appears in Monitor. Backend + Monitor side is done; the gate now waits on Student 1's Create Request flow.
-- **Week 4 (Student 2):** workflow engine (locking, history, task sync), `PATCH /requests/{id}/assign` + task creation, valid-transitions — then the Requests Management detail pane + assignment UI on top.
+- **Week 4 (Student 2, remaining):** Requests Management detail pane + assignment UI (web) on the new endpoints.
+- **Week 5:** `POST /tasks/{id}/complete` (via the engine's `beforeCommit`), `PATCH /requests/{id}/resolution`, monitor override + cancel, comments, files backend.
 
 ## Local setup reminders
 
