@@ -40,6 +40,34 @@ interface Employee {
   isActive: boolean
 }
 
+interface WorkflowStatus {
+  key: string
+  label: string
+  category: string
+}
+
+interface WorkflowTransition {
+  from: string
+  to: string
+  allowed_role: string
+  action: string | null
+}
+
+interface Workflow {
+  statuses: WorkflowStatus[]
+  transitions: WorkflowTransition[]
+}
+
+// A pending confirm dialog: every destructive/terminal action goes through
+// one (Section 4 UI-state rule), and every one of these actions requires a
+// note server-side, so the dialog always collects one.
+interface PendingAction {
+  title: string
+  confirmLabel: string
+  danger: boolean
+  run: (note: string) => Promise<unknown>
+}
+
 const PRIORITY_LABEL: Record<string, string> = { high: 'High', medium: 'Medium', low: 'Low' }
 
 function formatDateTime(iso: string) {
@@ -93,6 +121,16 @@ export default function RequestDetailPane({
   const [pick, setPick] = useState('')
   const [assignBusy, setAssignBusy] = useState(false)
   const [assignError, setAssignError] = useState<string | null>(null)
+  const [workflow, setWorkflow] = useState<Workflow | null>(null)
+  const [pending, setPending] = useState<PendingAction | null>(null)
+  const [note, setNote] = useState('')
+  const [pendingBusy, setPendingBusy] = useState(false)
+  const [pendingError, setPendingError] = useState<string | null>(null)
+  const [reopenPick, setReopenPick] = useState('')
+  const [priorityError, setPriorityError] = useState<string | null>(null)
+  const [comment, setComment] = useState('')
+  const [commentBusy, setCommentBusy] = useState(false)
+  const [commentError, setCommentError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const { request } = await apiFetch<{ request: Detail }>(`/requests/${id}`)
@@ -101,6 +139,11 @@ export default function RequestDetailPane({
     // Field labels for the form response; failure just falls back to raw ids.
     apiFetch<{ fields: Field[] }>(`/services/${request.serviceTypeId}/forms/request`)
       .then((r) => setFields(r.fields))
+      .catch(() => {})
+    // The workflow drives which monitor actions exist here; on failure the
+    // pane simply shows no action buttons (cancel still appears).
+    apiFetch<Workflow>(`/services/${request.serviceTypeId}/workflow`)
+      .then((w) => setWorkflow(w))
       .catch(() => {})
     const deptId = departmentIdOf(request.serviceTypeId)
     if (deptId !== undefined) {
@@ -116,6 +159,13 @@ export default function RequestDetailPane({
     setError(null)
     setPick('')
     setAssignError(null)
+    setPending(null)
+    setNote('')
+    setPendingError(null)
+    setReopenPick('')
+    setPriorityError(null)
+    setComment('')
+    setCommentError(null)
     load().catch((err: Error) => setError(err.message))
     // Detail pages refresh on focus, not on a timer (CLAUDE.md Section 2).
     const onFocus = () => load().catch(() => {})
@@ -125,11 +175,14 @@ export default function RequestDetailPane({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      // Esc dismisses the open dialog before it dismisses the pane.
+      if (pending) setPending(null)
+      else onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, pending])
 
   async function assign() {
     if (!pick) return
@@ -148,6 +201,59 @@ export default function RequestDetailPane({
       }
     } finally {
       setAssignBusy(false)
+    }
+  }
+
+  function openAction(action: PendingAction) {
+    setNote('')
+    setPendingError(null)
+    setPending(action)
+  }
+
+  async function confirmPending() {
+    if (!pending) return
+    if (!note.trim()) {
+      setPendingError('A note is required for this action.')
+      return
+    }
+    setPendingBusy(true)
+    setPendingError(null)
+    try {
+      await pending.run(note.trim())
+      setPending(null)
+      await load()
+      onChanged()
+    } catch (err) {
+      setPendingError(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setPendingBusy(false)
+    }
+  }
+
+  async function changePriority(priority: string) {
+    setPriorityError(null)
+    try {
+      await apiFetch(`/requests/${id}/priority`, { method: 'PATCH', body: { priority } })
+      await load()
+      onChanged()
+    } catch {
+      setPriorityError('Couldn’t change the priority — try again.')
+    }
+  }
+
+  async function postComment() {
+    const body = comment.trim()
+    if (!body) return
+    setCommentBusy(true)
+    setCommentError(null)
+    try {
+      await apiFetch(`/requests/${id}/comments`, { method: 'POST', body: { body } })
+      setComment('')
+      await load()
+    } catch (err) {
+      setCommentError(err instanceof Error ? err.message : 'Couldn’t post the comment.')
+    } finally {
+      setCommentBusy(false)
     }
   }
 
@@ -187,6 +293,32 @@ export default function RequestDetailPane({
   const assignable = category !== 'terminated' && category !== 'closed'
   const pickable = employees.filter((e) => e.id !== detail.task?.employeeId)
 
+  // Monitor actions come from the workflow data — no status key is named in
+  // this file. Assignment's target status (the from-status of the accept
+  // transition) is excluded: entering it without an employee would strand
+  // the request, and the Assignment section owns that move.
+  const categoryOf = (key: string) => workflow?.statuses.find((s) => s.key === key)?.category
+  const labelOf = (key: string) => workflow?.statuses.find((s) => s.key === key)?.label ?? key
+  const assignTarget = workflow?.transitions.find((t) => t.action === 'accept')?.from
+  const monitorMoves = workflow
+    ? workflow.transitions.filter(
+        (t) => t.from === detail.status.key && t.allowed_role === 'monitor' && t.to !== assignTarget
+      )
+    : []
+  // Standalone cancel only when no workflow button already terminates from
+  // here (the /cancel endpoint covers states with no monitor transitions).
+  const showCancel =
+    assignable && !monitorMoves.some((t) => categoryOf(t.to) === 'terminated')
+  const reopenTargets =
+    category === 'terminated' && workflow
+      ? workflow.statuses.filter(
+          (s) =>
+            (s.category === 'triage' || s.category === 'in_progress') &&
+            (detail.task !== null || s.key !== assignTarget)
+        )
+      : []
+  const hasActions = monitorMoves.length > 0 || showCancel || reopenTargets.length > 0
+
   return (
     <aside className="req-detail" aria-label={`Request #${detail.id} detail`}>
       <header className="detail-head">
@@ -199,9 +331,18 @@ export default function RequestDetailPane({
               <i className="pill-dot" aria-hidden="true" />
               {detail.status.label}
             </span>
-            <span className={`req-priority is-${detail.priority}`}>
-              {PRIORITY_LABEL[detail.priority] ?? detail.priority} priority
-            </span>
+            <select
+              className={`priority-select is-${detail.priority}`}
+              aria-label="Priority"
+              value={detail.priority}
+              onChange={(e) => changePriority(e.target.value)}
+            >
+              {Object.entries(PRIORITY_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label} priority
+                </option>
+              ))}
+            </select>
             <span className="detail-when">opened {formatDateTime(detail.createdAt)}</span>
           </p>
         </div>
@@ -214,6 +355,89 @@ export default function RequestDetailPane({
         {detail.requester.name} · {detail.requester.email}
         {detail.requester.phone && <> · {detail.requester.phone}</>}
       </p>
+      {priorityError && (
+        <p className="assign-error" role="alert">
+          {priorityError}
+        </p>
+      )}
+
+      {hasActions && (
+        <section className="detail-section" aria-labelledby={`act-h-${detail.id}`}>
+          <h3 id={`act-h-${detail.id}`}>Actions</h3>
+          <div className="detail-actions">
+            {monitorMoves.map((t) => {
+              const danger = categoryOf(t.to) === 'terminated'
+              return (
+                <button
+                  key={t.to}
+                  type="button"
+                  className={`action-btn${danger ? ' is-danger' : ''}`}
+                  onClick={() =>
+                    openAction({
+                      title: `Move request #${detail.id} to “${labelOf(t.to)}”?`,
+                      confirmLabel: `Mark as ${labelOf(t.to)}`,
+                      danger,
+                      run: (n) =>
+                        apiFetch(`/requests/${id}/status`, { method: 'PATCH', body: { to: t.to, note: n } }),
+                    })
+                  }
+                >
+                  Mark as {labelOf(t.to)}
+                </button>
+              )
+            })}
+            {showCancel && (
+              <button
+                type="button"
+                className="action-btn is-danger"
+                onClick={() =>
+                  openAction({
+                    title: `Cancel request #${detail.id}?`,
+                    confirmLabel: 'Cancel request',
+                    danger: true,
+                    run: (n) => apiFetch(`/requests/${id}/cancel`, { method: 'PATCH', body: { note: n } }),
+                  })
+                }
+              >
+                Cancel request
+              </button>
+            )}
+          </div>
+          {reopenTargets.length > 0 && (
+            <div className="assign-row">
+              <select
+                className="req-select"
+                aria-label="Reopen to status"
+                value={reopenPick}
+                onChange={(e) => setReopenPick(e.target.value)}
+              >
+                <option value="">Reopen to…</option>
+                {reopenTargets.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="req-retry"
+                disabled={!reopenPick}
+                onClick={() =>
+                  openAction({
+                    title: `Reopen request #${detail.id} as “${labelOf(reopenPick)}”?`,
+                    confirmLabel: 'Reopen request',
+                    danger: false,
+                    run: (n) =>
+                      apiFetch(`/requests/${id}/status`, { method: 'PATCH', body: { to: reopenPick, note: n } }),
+                  })
+                }
+              >
+                Reopen
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="detail-section" aria-labelledby={`assign-h-${detail.id}`}>
         <h3 id={`assign-h-${detail.id}`}>Assignment</h3>
@@ -307,6 +531,28 @@ export default function RequestDetailPane({
             ))}
           </ul>
         )}
+        <div className="comment-form">
+          <textarea
+            aria-label="Write a comment"
+            placeholder="Write a comment for the requester…"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            disabled={commentBusy}
+          />
+          {commentError && (
+            <p className="assign-error" role="alert">
+              {commentError}
+            </p>
+          )}
+          <button
+            type="button"
+            className="req-retry"
+            onClick={postComment}
+            disabled={commentBusy || !comment.trim()}
+          >
+            {commentBusy ? 'Posting…' : 'Post comment'}
+          </button>
+        </div>
       </section>
 
       <section className="detail-section" aria-labelledby={`att-h-${detail.id}`}>
@@ -323,6 +569,51 @@ export default function RequestDetailPane({
           </ul>
         )}
       </section>
+
+      {pending && (
+        <div className="dialog-backdrop" onClick={() => !pendingBusy && setPending(null)}>
+          <div
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={pending.title}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4>{pending.title}</h4>
+            <textarea
+              autoFocus
+              aria-label="Note (required)"
+              placeholder="Add a note explaining this action (required)"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              disabled={pendingBusy}
+            />
+            {pendingError && (
+              <p className="assign-error" role="alert">
+                {pendingError}
+              </p>
+            )}
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="detail-close-text"
+                onClick={() => setPending(null)}
+                disabled={pendingBusy}
+              >
+                Keep as is
+              </button>
+              <button
+                type="button"
+                className={`req-retry${pending.danger ? ' is-danger' : ''}`}
+                onClick={confirmPending}
+                disabled={pendingBusy}
+              >
+                {pendingBusy ? 'Working…' : pending.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   )
 }
