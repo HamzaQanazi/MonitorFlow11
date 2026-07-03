@@ -281,6 +281,159 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// Shared by the comment routes: Section 6 comment cells — user own (404
+// otherwise), monitor any, employee never. Returns the request row or null
+// after having written the error response.
+async function loadCommentableRequest(req, res) {
+  if (req.user.role === 'employee') {
+    res.status(403).json({ error: 'Forbidden' });
+    return null;
+  }
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  const { rows } = await pool.query(
+    `SELECT r.id, r.user_id, st.name AS service_name
+     FROM request r JOIN service_type st ON st.id = r.service_type_id
+     WHERE r.id = $1`,
+    [id]
+  );
+  if (!rows.length || (req.user.role === 'user' && rows[0].user_id !== req.user.id)) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  return rows[0];
+}
+
+// POST /requests/{id}/comments — notifies the other party (Section 7
+// trigger table: owner ↔ monitors).
+router.post('/:id/comments', async (req, res, next) => {
+  try {
+    const request = await loadCommentableRequest(req, res);
+    if (!request) return;
+    const { body } = req.body || {};
+    if (typeof body !== 'string' || !body.trim()) {
+      return res.status(422).json({ errors: { body: 'A comment body is required' } });
+    }
+
+    const client = await pool.connect();
+    let created;
+    try {
+      await client.query('BEGIN');
+      ({ rows: [created] } = await client.query(
+        `INSERT INTO request_comment (request_id, user_id, body)
+         VALUES ($1, $2, $3) RETURNING id, created_at`,
+        [request.id, req.user.id, body.trim()]
+      ));
+      const message = `${req.user.name} commented on request #${request.id} (${request.service_name}).`;
+      if (req.user.role === 'monitor') {
+        await client.query(
+          `INSERT INTO notification (user_id, request_id, type, message)
+           VALUES ($1, $2, 'comment', $3)`,
+          [request.user_id, request.id, message]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO notification (user_id, request_id, type, message)
+           SELECT id, $1, 'comment', $2 FROM users WHERE role = 'monitor' AND is_active`,
+          [request.id, message]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    res.status(201).json({
+      comment: {
+        id: created.id,
+        body: body.trim(),
+        createdAt: created.created_at,
+        author: { id: req.user.id, name: req.user.name },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /requests/{id}/comments
+router.get('/:id/comments', async (req, res, next) => {
+  try {
+    const request = await loadCommentableRequest(req, res);
+    if (!request) return;
+    const { rows } = await pool.query(
+      `SELECT c.id, c.body, c.created_at, u.id AS by_id, u.name AS by_name
+       FROM request_comment c
+       JOIN users u ON u.id = c.user_id
+       WHERE c.request_id = $1
+       ORDER BY c.created_at, c.id`,
+      [request.id]
+    );
+    res.json({
+      comments: rows.map((c) => ({
+        id: c.id,
+        body: c.body,
+        createdAt: c.created_at,
+        author: { id: c.by_id, name: c.by_name },
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /requests/{id}/priority — monitor only. Not a status transition, but
+// it writes a history row with a descriptive note (Section 5) under the
+// request row lock so the timeline stays a complete, ordered audit trail.
+router.patch('/:id/priority', requireRole('monitor'), async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const { priority } = req.body || {};
+    if (!PRIORITIES.includes(priority)) {
+      return res.status(422).json({ errors: { priority: 'Priority must be low, medium, or high' } });
+    }
+
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'SELECT id, status, priority FROM request WHERE id = $1 FOR UPDATE',
+      [id]
+    );
+    if (!rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const request = rows[0];
+
+    if (request.priority !== priority) {
+      await client.query('UPDATE request SET priority = $1, updated_at = now() WHERE id = $2', [
+        priority,
+        id,
+      ]);
+      await client.query(
+        `INSERT INTO request_status_history (request_id, status, changed_by, note)
+         VALUES ($1, $2, $3, $4)`,
+        [id, request.status, req.user.id, `Priority changed from ${request.priority} to ${priority}`]
+      );
+    }
+    await client.query('COMMIT');
+
+    res.json({ request: { id, priority } });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
 // PATCH /requests/{id}/assign — monitor only (Section 7). No status key is
 // named here: the "ready to work" status a workflow assigns into is derived
 // from the data as the from-status of its accept-action transition. Two
