@@ -51,6 +51,17 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - **Backend**: `GET /requests/{id}` now embeds `task` (id, employee, assignedAt) so the pane needs no extra endpoint.
 - Verified headless-Edge: 18/18 checks (assign→pill+timeline update, reassign note, approval-gate 409 inline, deep link, 404 pane, mobile takeover, no unexpected console errors). Lint + build green. Reseeded after.
 
+### Week 5 — backend complete (branch `hamza`, commits `fe2e37f`, `5c53c63`, `5d80c7c`, `1fc85f0`)
+- **Comments** (`POST/GET /requests/{id}/comments`): user own (cross-user 404), monitor any, employee 403; posting notifies the other party (owner ↔ monitors).
+- **Priority** (`PATCH /requests/{id}/priority`): monitor-only, history row ("Priority changed from X to Y") under the request row lock; repeat no-op writes nothing.
+- **Files backend** (`backend/src/routes/files.js`): `POST /files` (multer memory, 5 MB → 422, MIME by magic bytes — `.exe` renamed `.jpg` → 422, UUID names in gitignored `backend/uploads/`), `GET /files/{id}` (owner / assigned employee / monitor, else 404 — must-pass #17; `Content-Disposition: attachment`, Content-Type from sniffed MIME).
+- **Engine override** (`resolveOverride` in `workflowEngine.js`): monitor-only, target key must exist + category `terminated` or `triage`/`in_progress`, note always; shares the engine write path. 28 unit tests green.
+- **`POST /tasks/{id}/complete`**: pre-checks the complete transition (locked task → 409 before form errors), validates against the completion form (422 per-field), stores the response via `beforeCommit` in the engine transaction.
+- **`PATCH /requests/{id}/resolution`**: confirmed/unresolved → confirm/dispute actions; note required for unresolved; pre-done 409 emerges from the workflow data.
+- **`PATCH /requests/{id}/cancel`**: cancel target derived from the data (the user-role transition into a terminated status — no key in code); user path 409 once a task exists, enforced inside the engine transaction (race-safe, must-pass #13); a 403 from the engine on the owner's cancel is mapped to 409 (cancel window closed ≠ permissions). Monitor path = override, any state, note required.
+- **`PATCH /requests/{id}/status`**: the constrained monitor override; also carries service A's approval step (`submitted → approved` is a triage-target override). Reopen past terminated unlocks the task automatically.
+- Smoke: 34/34 (comments/priority/files) + 30/30 (service B full lifecycle incl. dispute loop, task lock, reopen) + 6/6 (service A E2E submit→confirmed through the approval gate). DB reseeded to canonical after.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -67,7 +78,8 @@ All password `Password123!` (re-run `npm run seed` to reset):
 
 - **Week 2, Student 1:** Flutter dynamic form renderer (all 8 field types) against `GET /services/{id}/forms/request`. Week 2 must-pass: renderer draws both request forms with zero code differences.
 - **Week 3 gate:** vertical slice v1 — phone submits → appears in Monitor. Backend + Monitor side is done; the gate now waits on Student 1's Create Request flow.
-- **Week 5 (Student 2):** `POST /tasks/{id}/complete` (via the engine's `beforeCommit`), `PATCH /requests/{id}/resolution`, monitor override + cancel + priority, comments POST, files backend. The detail pane then gains priority control, override/cancel actions (with confirm dialogs + note fields), and comment posting.
+- **Week 5 web (Student 2):** the Requests Management detail pane gains priority control, override/cancel/approve actions (confirm dialogs + note fields per the Section 4 UI-state rule), and comment posting — backend for all of it is done.
+- **Branch discipline:** work happens on `hamza`; merge to `main` per verified feature (or at least twice a week), keep `main` green.
 - **Student 1 (unchanged):** Flutter form renderer + Create Request (Week 3 gate), then Employee app pages on the new `/tasks` endpoints.
 
 ## Local setup reminders
