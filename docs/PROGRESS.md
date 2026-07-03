@@ -46,6 +46,11 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - Error middleware now maps `WorkflowError.status` and express.json's 400s instead of 500.
 - Smoke-tested 36/36 against seed (approval gate, cross-dept, duplicate, reassign-in-place + history note, 404 cells, field stripping, note/completion-form gates, reject→queue→task-row reuse, concurrent accepts race). Reseeded to canonical afterwards.
 
+### Week 4 — Requests Management detail pane + assignment UI (commit `39d1367`)
+- **`web/src/pages/RequestDetailPane.tsx`**: row click (or deep link `/requests/:id`, filters preserved in the query string) opens the detail pane — status pill + priority + requester, assignment block (assign/reassign with department-filtered employee picker, inline 409/422 errors), form response rendered with labels from the form schema, category-dotted timeline with notes, comments (read — posting is Week 5), attachments metadata. Detail refreshes on window focus (not a timer, per the polling rules); Esc or × closes back to the filtered list. In split mode the table drops to service/requester/status columns; under 1000px the detail takes over.
+- **Backend**: `GET /requests/{id}` now embeds `task` (id, employee, assignedAt) so the pane needs no extra endpoint.
+- Verified headless-Edge: 18/18 checks (assign→pill+timeline update, reassign note, approval-gate 409 inline, deep link, 404 pane, mobile takeover, no unexpected console errors). Lint + build green. Reseeded after.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -62,8 +67,8 @@ All password `Password123!` (re-run `npm run seed` to reset):
 
 - **Week 2, Student 1:** Flutter dynamic form renderer (all 8 field types) against `GET /services/{id}/forms/request`. Week 2 must-pass: renderer draws both request forms with zero code differences.
 - **Week 3 gate:** vertical slice v1 — phone submits → appears in Monitor. Backend + Monitor side is done; the gate now waits on Student 1's Create Request flow.
-- **Week 4 (Student 2, remaining):** Requests Management detail pane + assignment UI (web) on the new endpoints.
-- **Week 5:** `POST /tasks/{id}/complete` (via the engine's `beforeCommit`), `PATCH /requests/{id}/resolution`, monitor override + cancel, comments, files backend.
+- **Week 5 (Student 2):** `POST /tasks/{id}/complete` (via the engine's `beforeCommit`), `PATCH /requests/{id}/resolution`, monitor override + cancel + priority, comments POST, files backend. The detail pane then gains priority control, override/cancel actions (with confirm dialogs + note fields), and comment posting.
+- **Student 1 (unchanged):** Flutter form renderer + Create Request (Week 3 gate), then Employee app pages on the new `/tasks` endpoints.
 
 ## Local setup reminders
 
