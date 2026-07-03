@@ -4,7 +4,12 @@
 // mirroring the shape of seeded workflow A — not keys known to the code.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { resolveTransition, validTransitions, WorkflowError } = require('../src/lib/workflowEngine');
+const {
+  resolveTransition,
+  resolveOverride,
+  validTransitions,
+  WorkflowError,
+} = require('../src/lib/workflowEngine');
 
 const statuses = [
   { key: 'submitted', label: 'Submitted', category: 'new', is_initial: true, is_final: false },
@@ -106,6 +111,53 @@ test('employee not assigned to the task → 404', () => {
     resolveTransition({
       ...base, currentStatus: 'assigned', user: { id: 99, role: 'employee' }, action: 'accept',
     })
+  );
+});
+
+test('override: cancel and reopen resolve; task-lock release is implied by category', () => {
+  const cancel = resolveOverride({
+    statuses, currentStatus: 'working', user: MONITOR, to: 'cancelled', note: 'duplicate request',
+  });
+  assert.equal(cancel.to, 'cancelled');
+  // Reopen: terminated → in_progress-category target is allowed, and once the
+  // current status leaves `terminated` the task lock disappears with it.
+  const reopen = resolveOverride({
+    statuses, currentStatus: 'cancelled', user: MONITOR, to: 'working', note: 'cancelled in error',
+  });
+  assert.equal(reopen.to, 'working');
+  assert.deepEqual(
+    validTransitions(statuses, transitions, reopen.to, 'employee').map((t) => t.action),
+    ['complete']
+  );
+});
+
+test('override to a key not in the workflow → 422 (must-pass #18)', () => {
+  throwsWith(422, () =>
+    resolveOverride({ statuses, currentStatus: 'working', user: MONITOR, to: 'nonexistent', note: 'x' })
+  );
+});
+
+test('override arbitrary jump (done/closed/new target) → 422', () => {
+  throwsWith(422, () =>
+    resolveOverride({ statuses, currentStatus: 'working', user: MONITOR, to: 'done', note: 'x' })
+  );
+  throwsWith(422, () =>
+    resolveOverride({ statuses, currentStatus: 'working', user: MONITOR, to: 'closed', note: 'x' })
+  );
+  throwsWith(422, () =>
+    resolveOverride({ statuses, currentStatus: 'working', user: MONITOR, to: 'submitted', note: 'x' })
+  );
+});
+
+test('override without a note → 422; same status → 409; non-monitor → 403', () => {
+  throwsWith(422, () =>
+    resolveOverride({ statuses, currentStatus: 'working', user: MONITOR, to: 'cancelled', note: '  ' })
+  );
+  throwsWith(409, () =>
+    resolveOverride({ statuses, currentStatus: 'cancelled', user: MONITOR, to: 'cancelled', note: 'x' })
+  );
+  throwsWith(403, () =>
+    resolveOverride({ statuses, currentStatus: 'working', user: EMPLOYEE, to: 'cancelled', note: 'x' })
   );
 });
 
