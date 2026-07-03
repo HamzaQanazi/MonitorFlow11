@@ -62,6 +62,14 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - **`PATCH /requests/{id}/status`**: the constrained monitor override; also carries service A's approval step (`submitted → approved` is a triage-target override). Reopen past terminated unlocks the task automatically.
 - Smoke: 34/34 (comments/priority/files) + 30/30 (service B full lifecycle incl. dispute loop, task lock, reopen) + 6/6 (service A E2E submit→confirmed through the approval gate). DB reseeded to canonical after.
 
+### Week 5 — web complete (commit `dce156d`): detail pane actions
+- **Actions section** in `RequestDetailPane.tsx`, derived entirely from the workflow data: buttons for monitor transitions from the current status (assign-target excluded — Assignment owns that move; e.g. Approve/Reject on a Submitted A request), standalone **Cancel request** when no workflow button already terminates (covers in_progress states via `PATCH /cancel`), **Reopen** select (triage/in_progress targets, assign-target excluded when no task) when terminated.
+- Every action runs through one **confirm dialog with a required note** (Section 4 UI-state rule); Esc closes the dialog before the pane; inline server-error display.
+- **Priority select** (PATCHes, timeline note appears) and **comment posting** (clears on success, notifies owner) wired in.
+- Verified 16/16 headless-Edge (approve flow incl. note-required block, Esc behavior, priority, comment, cancel→reopen round trip, zero console errors). Lint + `tsc -b` + build green. Reseeded after.
+
+**Week 5 is complete** — both gates pass: both services E2E submit→confirmed; PATCH on a cancelled task 409.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -78,7 +86,7 @@ All password `Password123!` (re-run `npm run seed` to reset):
 
 - **Week 2, Student 1:** Flutter dynamic form renderer (all 8 field types) against `GET /services/{id}/forms/request`. Week 2 must-pass: renderer draws both request forms with zero code differences.
 - **Week 3 gate:** vertical slice v1 — phone submits → appears in Monitor. Backend + Monitor side is done; the gate now waits on Student 1's Create Request flow.
-- **Week 5 web (Student 2):** the Requests Management detail pane gains priority control, override/cancel/approve actions (confirm dialogs + note fields per the Section 4 UI-state rule), and comment posting — backend for all of it is done.
+- **Week 6 (Student 2):** notifications read endpoints, employees writes (create/edit/activate/deactivate/reset-password/tasks), users profile routes, `GET /departments`, reports + CSV export (reuse the requests query engine).
 - **Branch discipline:** work happens on `hamza`; merge to `main` per verified feature (or at least twice a week), keep `main` green.
 - **Student 1 (unchanged):** Flutter form renderer + Create Request (Week 3 gate), then Employee app pages on the new `/tasks` endpoints.
 
