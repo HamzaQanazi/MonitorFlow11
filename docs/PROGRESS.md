@@ -99,6 +99,14 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - Verified on Windows against seed: accept flow, Monitor-assign → appears in queue ≤30s, reject → note in Monitor timeline, gate-code stripping for the Facilities employee. 15 Flutter tests green.
 - **Week 4 Student 1 is done.** Deferred to Week 5: generic status updates + Complete Task (detail shows an honest "next build" note past accept).
 
+### Week 5 — mobile / Student 1 (commit `df9471e`): lifecycle closes
+- **Update Task Status**: generic workflow moves as buttons on Task Details (note dialog when `requires_note`), via `PATCH /tasks/{id}/status`.
+- **Complete Task** (Section 4 page): completion FORM_DEFINITION rendered through the same dynamic form engine, confirm dialog, `POST /tasks/{id}/complete` with per-field 422; 409 (task moved under us) surfaces and reloads.
+- **User resolution + cancel** on Request Details: confirm/dispute card from a done-category status, cancel only while no task exists — all derived from `GET /services/{id}/workflow` (categories + actions, no status keys in code; `WorkflowDef` unit-tested).
+- **Schema-labelled answers**: shared `FormResponseView` (option labels, Yes/No booleans, photo marker) on both detail screens — closes the prettified-ids gap.
+- Verified on Windows against seed: awaiting-parts hold loop, complete → dispute → re-complete → confirm, cancel-with-note, no-cancel-once-assigned, both services. 19 Flutter tests green.
+- **Week 5 Student 1 is done.** Remaining Student 1: Notifications + Profile (shared component), photo upload.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -113,8 +121,7 @@ All password `Password123!` (re-run `npm run seed` to reset):
 
 ## Next
 
-- **Week 5, Student 1** (unblocked — the whole backend is done): Update Task Status + Complete Task (completion form via the renderer), user confirm/dispute + cancel on Request Details, schema-labelled answers on detail, photo upload (files backend live).
-- **Week 6, Student 1:** Notifications UI + Profile (shared component, both apps).
+- **Week 6, Student 1:** Notifications UI + Profile (shared component, both apps), photo upload (picker → `POST /files` → attachment id in `form_response`). This completes the 14-page MVP.
 - **Branch discipline:** Student 2 on `hamza`, Student 1 on `student1/flutter-form-renderer`; merge to `main` per verified feature (or at least twice a week), keep `main` green.
 
 ## Local setup reminders
