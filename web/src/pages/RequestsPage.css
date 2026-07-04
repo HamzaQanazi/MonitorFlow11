@@ -620,6 +620,23 @@
   font-size: 14px;
 }
 
+/* Attachment download — a text link that carries the auth header via JS */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--amber-700);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .comment-body {
   margin-top: 2px;
   overflow-wrap: anywhere;

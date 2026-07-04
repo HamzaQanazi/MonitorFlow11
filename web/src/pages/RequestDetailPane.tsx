@@ -1,5 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiFetch, ApiError } from '../lib/api'
+import { apiFetch, ApiError, getToken } from '../lib/api'
+
+// Files need the Authorization header, so downloads can't be plain links —
+// same authed-blob pattern as the Reports CSV export.
+async function downloadAttachment(id: string, filename: string) {
+  const res = await fetch(`/api/v1/files/${id}`, {
+    headers: { Authorization: `Bearer ${getToken() ?? ''}` },
+  })
+  if (!res.ok) return
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 // The detail half of Requests Management (Section 4): request detail,
 // timeline, comments (read — posting arrives Week 5), attachments metadata,
@@ -563,7 +579,14 @@ export default function RequestDetailPane({
           <ul className="attach-list">
             {detail.attachments.map((a) => (
               <li key={a.id}>
-                {a.originalFilename} <span className="tl-meta">· {formatSize(a.sizeBytes)}</span>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => void downloadAttachment(a.id, a.originalFilename)}
+                >
+                  {a.originalFilename}
+                </button>{' '}
+                <span className="tl-meta">· {formatSize(a.sizeBytes)}</span>
               </li>
             ))}
           </ul>

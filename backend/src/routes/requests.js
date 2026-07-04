@@ -184,11 +184,14 @@ router.get('/:id', async (req, res, next) => {
          ORDER BY c.created_at, c.id`,
         [id]
       ),
+      // Task-linked files (completion photos) belong to this request too —
+      // the attachment row carries task_id, not request_id (the XOR rule).
       pool.query(
-        `SELECT id, original_filename, mime_type, size_bytes, uploaded_at
-         FROM file_attachment
-         WHERE request_id = $1
-         ORDER BY uploaded_at`,
+        `SELECT fa.id, fa.original_filename, fa.mime_type, fa.size_bytes, fa.uploaded_at
+         FROM file_attachment fa
+         LEFT JOIN task t ON t.id = fa.task_id
+         WHERE fa.request_id = $1 OR t.request_id = $1
+         ORDER BY fa.uploaded_at`,
         [id]
       ),
       // Current assignment, so the Monitor detail pane can render and change
