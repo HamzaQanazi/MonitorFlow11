@@ -51,6 +51,13 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - **Backend**: `GET /requests/{id}` now embeds `task` (id, employee, assignedAt) so the pane needs no extra endpoint.
 - Verified headless-Edge: 18/18 checks (assign→pill+timeline update, reassign note, approval-gate 409 inline, deep link, 404 pane, mobile takeover, no unexpected console errors). Lint + build green. Reseeded after.
 
+### Weeks 1–3 — mobile / Student 1 (commits `c5a617b`, `e26677b`, + renderer tests, `c12a00a`)
+- **Flutter scaffold + auth** (`mobile/`): single codebase, role-routed post-login (user/employee; monitor rejected to web). API client (`lib/api/api_client.dart`) with per-field 422 mapping, 401 session drop, Android-emulator-aware base URL. Session restore revalidates via `GET /auth/me`. Login/Registration with all designed states. Design tokens converted from `web/src/styles/tokens.css` incl. the shared `--cat-*` palette (`lib/theme.dart`).
+- **Dynamic form renderer** (`lib/forms/`): all 8 field types from any `field_schema`, client validation mirroring `validateFormResponse` (same messages), server 422 authoritative via `applyServerErrors`, unknown type → disabled placeholder (blocks if required), photo stubbed until Week 5 files backend. 9 widget tests use both seeded schemas as fixtures — the Week 2 zero-code-differences must-pass.
+- **User app pages** (`lib/user/`): Home (recent requests, 30s poll), Catalogue (`GET /services`), Create Request (dynamic form → `POST /requests`), My Requests list (30s poll, pull-to-refresh) + Details/Timeline (one `GET /requests/{id}` call, category-dotted timeline, on-resume refresh). Loading/empty/error states everywhere.
+- **Week 3 gate passed:** both services submitted from the app appear in Monitor. 15 Flutter tests green. Known gap: detail "Your answers" shows prettified field ids, not schema labels — planned with Week 5 detail work.
+- Dev note: mobile verification runs the Windows desktop build (requires Windows Developer Mode); Android emulator uses `10.0.2.2` automatically, or override with `--dart-define=API_BASE_URL`.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -65,10 +72,9 @@ All password `Password123!` (re-run `npm run seed` to reset):
 
 ## Next
 
-- **Week 2, Student 1:** Flutter dynamic form renderer (all 8 field types) against `GET /services/{id}/forms/request`. Week 2 must-pass: renderer draws both request forms with zero code differences.
-- **Week 3 gate:** vertical slice v1 — phone submits → appears in Monitor. Backend + Monitor side is done; the gate now waits on Student 1's Create Request flow.
+- **Week 4, Student 1:** Employee app pages on the existing `/tasks` endpoints — Employee Home + My Tasks (merged), Task Details (`GET /tasks/{id}`), accept/reject with note.
 - **Week 5 (Student 2):** `POST /tasks/{id}/complete` (via the engine's `beforeCommit`), `PATCH /requests/{id}/resolution`, monitor override + cancel + priority, comments POST, files backend. The detail pane then gains priority control, override/cancel actions (with confirm dialogs + note fields), and comment posting.
-- **Student 1 (unchanged):** Flutter form renderer + Create Request (Week 3 gate), then Employee app pages on the new `/tasks` endpoints.
+- **Week 5 (Student 1):** Update Task Status + Complete Task (completion form via the renderer), user confirm/dispute + cancel on Request Details, schema-labelled answers on detail.
 
 ## Local setup reminders
 
