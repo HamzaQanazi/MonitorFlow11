@@ -112,7 +112,7 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - **Profile** (shared): name/phone edit (`PATCH /users/me`), password change (`PATCH /users/me/password`, per-field 422); email/role immutable.
 - **Photo upload**: renderer photo field is real where an upload target exists — Complete Task uploads via `POST /files` (taskId) and puts the attachment id in the response (two-step contract). Verified E2E: technician's photo downloadable by the monitor.
 - **Cross-surface fix** (`d142735`, touches Student 2's files — flagged): `GET /requests/{id}` now embeds task-linked attachments (completion photos were invisible to the Monitor pane); web attachment filenames are authed-blob download links.
-- **⚠ Open contract gap (both-students decision):** Section 7's photo two-step says upload-then-create, but `POST /files` requires an existing requestId XOR taskId (DB CHECK enforces it) — so **request-form photos can't work as specced**. Mobile shows an honest disabled placeholder (both seeded request photos are optional). Options: relax the constraint + link on `POST /requests`, or document as an MVP limitation. Decide before the W7 freeze.
+- **✓ Contract gap resolved — Option A** (commits `d7e3f85`, `cf13cfa`, decided by Student 1; touches Student 2's backend — review welcome): migration `002_pending_uploads.sql` allows parentless "pending" attachments (user-role uploads only, uploader-only visibility until linked); `POST /requests` links photo-field ids inside its transaction with an atomic owner+unlinked re-check (reuse/steal → 422). Request-form photos now work end-to-end from mobile. Smoke 9/9, unit tests 28/28.
 - **All 14 Section 4 pages now exist.** 19 Flutter tests green.
 
 ## Seeded dev accounts
