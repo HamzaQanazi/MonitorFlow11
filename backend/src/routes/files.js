@@ -29,9 +29,11 @@ function sniffMime(buf) {
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BYTES } });
 
-// POST /files — multipart, field `file` + exactly one of requestId / taskId.
+// POST /files — multipart, field `file` + at most one of requestId / taskId.
 // Section 6 upload cells: user → own request, employee → own task, monitor
-// never. Ownership failures are 404 (404-over-403 rule).
+// never. Ownership failures are 404 (404-over-403 rule). No parent = a
+// user's pending upload for a request-form photo (Section 7 two-step);
+// POST /requests links it in its transaction.
 router.post('/', (req, res, next) => {
   upload.single('file')(req, res, (err) => {
     if (err && err.code === 'LIMIT_FILE_SIZE') {
@@ -47,13 +49,13 @@ async function createFile(req, res, next) {
     const requestId = req.body.requestId === undefined ? null : Number(req.body.requestId);
     const taskId = req.body.taskId === undefined ? null : Number(req.body.taskId);
     if (
-      (requestId === null) === (taskId === null) ||
+      (requestId !== null && taskId !== null) ||
       (requestId !== null && !Number.isInteger(requestId)) ||
       (taskId !== null && !Number.isInteger(taskId))
     ) {
       return res
         .status(422)
-        .json({ errors: { requestId: 'Provide exactly one of requestId or taskId' } });
+        .json({ errors: { requestId: 'Provide at most one of requestId or taskId' } });
     }
     if (!req.file) return res.status(422).json({ errors: { file: 'A file is required' } });
 
@@ -63,12 +65,15 @@ async function createFile(req, res, next) {
       if (!rows.length || rows[0].user_id !== req.user.id) {
         return res.status(404).json({ error: 'Not found' });
       }
-    } else {
+    } else if (taskId !== null) {
       if (req.user.role !== 'employee') return res.status(403).json({ error: 'Forbidden' });
       const { rows } = await pool.query('SELECT employee_id FROM task WHERE id = $1', [taskId]);
       if (!rows.length || rows[0].employee_id !== req.user.id) {
         return res.status(404).json({ error: 'Not found' });
       }
+    } else if (req.user.role !== 'user') {
+      // Pending uploads are the user-side photo contract only.
+      return res.status(403).json({ error: 'Forbidden' });
     }
 
     const mime = sniffMime(req.file.buffer);
@@ -109,21 +114,27 @@ router.get('/:id', async (req, res, next) => {
   try {
     if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'Not found' });
     const { rows } = await pool.query(
-      `SELECT f.original_filename, f.mime_type, f.storage_path,
+      `SELECT f.original_filename, f.mime_type, f.storage_path, f.uploaded_by,
+              f.request_id, f.task_id,
               r.user_id AS owner_id, pt.employee_id AS assignee_id
        FROM file_attachment f
        LEFT JOIN task ft ON ft.id = f.task_id
-       JOIN request r ON r.id = COALESCE(f.request_id, ft.request_id)
+       LEFT JOIN request r ON r.id = COALESCE(f.request_id, ft.request_id)
        LEFT JOIN task pt ON pt.request_id = r.id
        WHERE f.id = $1`,
       [req.params.id]
     );
     const f = rows[0];
+    // A pending upload (no parent yet) is visible to its uploader only —
+    // it isn't part of any request until POST /requests links it.
+    const pending = f && f.request_id === null && f.task_id === null;
     const allowed =
       f &&
-      (req.user.role === 'monitor' ||
-        (req.user.role === 'user' && f.owner_id === req.user.id) ||
-        (req.user.role === 'employee' && f.assignee_id === req.user.id));
+      (pending
+        ? f.uploaded_by === req.user.id
+        : req.user.role === 'monitor' ||
+          (req.user.role === 'user' && f.owner_id === req.user.id) ||
+          (req.user.role === 'employee' && f.assignee_id === req.user.id));
     if (!allowed) return res.status(404).json({ error: 'Not found' });
 
     const safeName = f.original_filename.replace(/["\\\r\n]/g, '_');

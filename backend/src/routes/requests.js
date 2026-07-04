@@ -75,6 +75,24 @@ router.post('/', async (req, res, next) => {
          VALUES ($1, $2, $3, $4)`,
         [created.id, initial.key, req.user.id, created.created_at]
       );
+      // Link pending photo uploads (Section 7 two-step). The WHERE re-checks
+      // ownership and unlinked state atomically, so an id belonging to (or
+      // already claimed by) another request can't be smuggled in.
+      for (const field of service.field_schema) {
+        if (field.type !== 'photo' || formResponse[field.id] == null) continue;
+        const linked = await client.query(
+          `UPDATE file_attachment SET request_id = $1
+           WHERE id = $2 AND uploaded_by = $3
+             AND request_id IS NULL AND task_id IS NULL`,
+          [created.id, formResponse[field.id], req.user.id]
+        );
+        if (linked.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return res
+            .status(422)
+            .json({ errors: { [field.id]: `${field.label} must be an uploaded attachment id` } });
+        }
+      }
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
