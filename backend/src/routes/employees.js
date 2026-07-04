@@ -1,13 +1,44 @@
-// Employees (monitor only, Section 7). Week 4 needs only the read list —
-// the assignment UI's employee picker. POST/PATCH/activate/deactivate/
-// reset-password land in Week 6.
+// Employees (monitor only, Section 7). Read list is the assignment picker;
+// the writes (create/edit/activate/deactivate/reset-password/tasks) are the
+// Employees Management page's backend.
 const express = require('express');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { statusOf } = require('../lib/workflowEngine');
 
 const router = express.Router();
 router.use(requireAuth);
 router.use(requireRole('monitor'));
+
+function publicEmployee(r) {
+  return {
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    isActive: r.is_active,
+    departmentId: r.department_id,
+    departmentName: r.department_name,
+  };
+}
+
+// Load an employee by id, joined to its department. Returns null for a
+// missing id OR a non-employee user (a user/monitor id must look nonexistent
+// on this monitor-facing surface → 404).
+async function loadEmployee(id) {
+  if (!Number.isInteger(id)) return null;
+  const { rows } = await pool.query(
+    `SELECT u.id, u.name, u.email, u.phone, u.is_active, u.department_id,
+            d.name AS department_name
+     FROM users u
+     LEFT JOIN department d ON d.id = u.department_id
+     WHERE u.id = $1 AND u.role = 'employee'`,
+    [id]
+  );
+  return rows[0] || null;
+}
 
 // GET /employees?departmentId=&q=
 router.get('/', async (req, res, next) => {
@@ -56,6 +87,176 @@ router.get('/', async (req, res, next) => {
       page,
       pageSize,
       total: rows.length ? rows[0].total : 0,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /employees — create an employee; monitor sets the initial password.
+router.post('/', async (req, res, next) => {
+  try {
+    const { name, email, password, phone, departmentId } = req.body || {};
+    const errors = {};
+    if (!name || typeof name !== 'string' || !name.trim()) errors.name = 'Name is required';
+    if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.email = 'A valid email is required';
+    }
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      errors.password = 'Password must be at least 8 characters';
+    }
+    if (!Number.isInteger(departmentId)) errors.departmentId = 'A department is required';
+    if (Object.keys(errors).length) return res.status(422).json({ errors });
+
+    const dept = await pool.query('SELECT id FROM department WHERE id = $1', [departmentId]);
+    if (!dept.rows.length) return res.status(422).json({ errors: { departmentId: 'Unknown department' } });
+
+    const password_hash = await bcrypt.hash(password, 10);
+    let rows;
+    try {
+      ({ rows } = await pool.query(
+        `INSERT INTO users (name, email, password_hash, role, phone, department_id)
+         VALUES ($1, $2, $3, 'employee', $4, $5)
+         RETURNING id, name, email, phone, is_active, department_id`,
+        [name.trim(), email.toLowerCase(), password_hash, phone || null, departmentId]
+      ));
+    } catch (err) {
+      if (err.code === '23505') return res.status(422).json({ errors: { email: 'Email is already registered' } });
+      throw err;
+    }
+    const created = await loadEmployee(rows[0].id);
+    res.status(201).json({ employee: publicEmployee(created) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /employees/{id} — edit name / phone / department
+router.patch('/:id', async (req, res, next) => {
+  try {
+    const emp = await loadEmployee(Number(req.params.id));
+    if (!emp) return res.status(404).json({ error: 'Not found' });
+
+    const { name, phone, departmentId } = req.body || {};
+    const errors = {};
+    if (name !== undefined && (typeof name !== 'string' || !name.trim())) errors.name = 'Name cannot be empty';
+    if (phone !== undefined && phone !== null && typeof phone !== 'string') errors.phone = 'Phone must be text';
+    if (departmentId !== undefined && !Number.isInteger(departmentId)) errors.departmentId = 'Invalid department';
+    if (Object.keys(errors).length) return res.status(422).json({ errors });
+
+    if (departmentId !== undefined) {
+      const dept = await pool.query('SELECT id FROM department WHERE id = $1', [departmentId]);
+      if (!dept.rows.length) return res.status(422).json({ errors: { departmentId: 'Unknown department' } });
+    }
+
+    await pool.query(
+      `UPDATE users SET
+         name = COALESCE($1, name),
+         phone = CASE WHEN $2::boolean THEN $3 ELSE phone END,
+         department_id = COALESCE($4, department_id)
+       WHERE id = $5`,
+      [
+        name === undefined ? null : name.trim(),
+        phone !== undefined,
+        phone === undefined ? null : phone,
+        departmentId === undefined ? null : departmentId,
+        emp.id,
+      ]
+    );
+    res.json({ employee: publicEmployee(await loadEmployee(emp.id)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /employees/{id}/activate
+router.patch('/:id/activate', async (req, res, next) => {
+  try {
+    const emp = await loadEmployee(Number(req.params.id));
+    if (!emp) return res.status(404).json({ error: 'Not found' });
+    await pool.query('UPDATE users SET is_active = TRUE WHERE id = $1', [emp.id]);
+    res.json({ employee: publicEmployee({ ...emp, is_active: true }) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /employees/{id}/deactivate — 409 if the employee holds any task whose
+// current status is non-final (Section 5). Finality is read from the workflow
+// data, not a hardcoded status key: reassign the open task first.
+router.patch('/:id/deactivate', async (req, res, next) => {
+  try {
+    const emp = await loadEmployee(Number(req.params.id));
+    if (!emp) return res.status(404).json({ error: 'Not found' });
+
+    const open = await pool.query(
+      `SELECT 1
+       FROM task t
+       JOIN request r ON r.id = t.request_id
+       JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+       CROSS JOIN LATERAL jsonb_array_elements(w.statuses) s
+       WHERE t.employee_id = $1
+         AND s->>'key' = t.status
+         AND (s->>'is_final')::boolean = FALSE
+       LIMIT 1`,
+      [emp.id]
+    );
+    if (open.rows.length) {
+      return res.status(409).json({ error: 'Employee has open tasks — reassign them before deactivating' });
+    }
+
+    await pool.query('UPDATE users SET is_active = FALSE WHERE id = $1', [emp.id]);
+    res.json({ employee: publicEmployee({ ...emp, is_active: false }) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /employees/{id}/reset-password — server generates a temporary password,
+// returned once (no forced-change flow — documented MVP limitation).
+router.patch('/:id/reset-password', async (req, res, next) => {
+  try {
+    const emp = await loadEmployee(Number(req.params.id));
+    if (!emp) return res.status(404).json({ error: 'Not found' });
+    const tempPassword = `Temp-${crypto.randomBytes(6).toString('base64url')}`;
+    const password_hash = await bcrypt.hash(tempPassword, 10);
+    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, emp.id]);
+    res.json({ tempPassword });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /employees/{id}/tasks — one employee's tasks (status label/category from
+// the workflow data). Read-only monitor view of assignment progress.
+router.get('/:id/tasks', async (req, res, next) => {
+  try {
+    const emp = await loadEmployee(Number(req.params.id));
+    if (!emp) return res.status(404).json({ error: 'Not found' });
+
+    const { rows } = await pool.query(
+      `SELECT t.id, t.status, t.assigned_at, t.request_id,
+              r.priority, r.service_type_id, st.name AS service_type_name,
+              w.statuses
+       FROM task t
+       JOIN request r ON r.id = t.request_id
+       JOIN service_type st ON st.id = r.service_type_id
+       JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+       WHERE t.employee_id = $1
+       ORDER BY t.assigned_at DESC`,
+      [emp.id]
+    );
+
+    res.json({
+      tasks: rows.map((r) => ({
+        id: r.id,
+        requestId: r.request_id,
+        serviceTypeId: r.service_type_id,
+        serviceTypeName: r.service_type_name,
+        status: statusOf(r.statuses, r.status),
+        priority: r.priority,
+        assignedAt: r.assigned_at,
+      })),
     });
   } catch (err) {
     next(err);
