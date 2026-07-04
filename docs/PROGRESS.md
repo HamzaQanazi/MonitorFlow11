@@ -70,6 +70,15 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 
 **Week 5 is complete** — both gates pass: both services E2E submit→confirmed; PATCH on a cancelled task 409.
 
+### Week 6 — backend complete (branch `hamza`, commits `e0a9542`, `af59244`, `c97e947`, `ee75775`)
+- **Notifications read** (`backend/src/routes/notifications.js`): `GET /notifications?userId=me` (own-only every role, page/pageSize + unread count), `PATCH /{id}/read` (cross-user 404, idempotent), `PATCH /read-all` (declared before `/:id/read` so the literal path wins). Triggers already existed (engine + comments) — this is the read/mark surface. Smoke 9/9 + 7/7 live (comment→notify→read round trip, cross-user 404).
+- **Users profile** (`backend/src/routes/users.js`): `GET/PATCH /users/me` (name+phone; email/role immutable), `PATCH /users/me/password` (current password required, bcrypt 10, wrong-current → 422 field-keyed). Own-only, any role.
+- **Departments** (`backend/src/routes/departments.js`): `GET /departments` monitor-only read (Employees Mgmt picker). Users smoke 14/14 (incl. password change + revert, dept 403 for user/employee).
+- **Employees writes** (`backend/src/routes/employees.js`): `POST` (monitor sets initial password, dup email 422), `PATCH /{id}` (name/phone/dept), `/activate`, `/deactivate` (**409 when the employee holds any non-final task — finality read from workflow `statuses` JSONB, no status key in code**), `/reset-password` (server-generated temp password returned once, no forced-change flow), `GET /{id}/tasks`. Non-employee ids 404 on this surface. Smoke 16/16 (incl. deactivate-with-open-task 409, deactivated fresh-login 401).
+- **Reports + CSV** (`backend/src/routes/reports.js` + `backend/src/lib/requestQuery.js`): extracted the ONE request-query builder (`buildRequestFilter`) and refactored `GET /requests` onto it (behavior-preserving) so reports reuses it, not a second engine. `GET /reports` = filtered list + aggregate counts (by category/priority/service); `GET /reports/export.csv` = same filters, frozen columns, `completed_at` derived from the first done-category history row, CSV-injection guard (`'`-prefix on `=+-@`). Monitor-only. Smoke 17/17 (must-pass #11 non-monitor export 403, injection escaped, `GET /requests` regression clean). Unit suite 28/28.
+
+**Week 6 backend is complete.** Remaining Week 6 items are the two React pages (Employees Management, Basic Reports — Section 11 Student 1) and Student 1's Flutter Notifications/Profile + photo upload. Backend for all of these is now live. DB reseeded to canonical after each feature.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
