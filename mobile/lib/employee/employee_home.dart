@@ -4,7 +4,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
@@ -27,6 +26,8 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   List<TaskSummary>? _tasks;
   Object? _error;
   Timer? _poll;
+  String? _categoryFilter; // chip toggle, same behavior as the web board
+  bool _showHistory = false;
 
   @override
   void initState() {
@@ -138,28 +139,197 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
         subtitle: 'New assignments will appear here.',
       );
     }
+
+    // The queue is grouped by actionability, not assignment date: the
+    // accept/reject decision first, live work next, finished work folded
+    // away. Within groups: high priority first, then longest-waiting.
+    const historyCats = {'done', 'closed', 'terminated'};
+    final filtered = _categoryFilter == null
+        ? _tasks!
+        : _tasks!.where((t) => t.status.category == _categoryFilter).toList();
+    int prio(TaskSummary t) =>
+        const {'high': 0, 'medium': 1, 'low': 2}[t.priority] ?? 3;
+    int byUrgency(TaskSummary a, TaskSummary b) {
+      final p = prio(a).compareTo(prio(b));
+      return p != 0 ? p : a.assignedAt.compareTo(b.assignedAt);
+    }
+
+    final needsResponse = filtered.where((t) => t.status.category == 'triage').toList()
+      ..sort(byUrgency);
+    final active = filtered
+        .where((t) => !historyCats.contains(t.status.category) && t.status.category != 'triage')
+        .toList()
+      ..sort(byUrgency);
+    final history = filtered.where((t) => historyCats.contains(t.status.category)).toList()
+      ..sort((a, b) => b.assignedAt.compareTo(a.assignedAt));
+
     return RefreshIndicator(
       color: MfColors.amber600,
       onRefresh: _load,
-      child: ListView.separated(
+      child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
-        itemCount: _tasks!.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 12),
-        itemBuilder: (context, i) => _TaskCard(
-          task: _tasks![i],
+        children: [
+          _CategoryChips(
+            tasks: _tasks!,
+            selected: _categoryFilter,
+            onToggle: (cat) => setState(
+                () => _categoryFilter = _categoryFilter == cat ? null : cat),
+          ),
+          const SizedBox(height: 16),
+          if (filtered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: EmptyState(
+                icon: Icons.filter_alt_off_outlined,
+                title: 'No tasks in this category',
+                action: OutlinedButton(
+                  onPressed: () => setState(() => _categoryFilter = null),
+                  child: const Text('Clear filter'),
+                ),
+              ),
+            ),
+          if (needsResponse.isNotEmpty) ...[
+            const _SectionHeader('Needs response'),
+            for (final t in needsResponse) _cardFor(t, attention: true),
+          ],
+          if (active.isNotEmpty) ...[
+            const _SectionHeader('In progress'),
+            for (final t in active) _cardFor(t),
+          ],
+          if (history.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            TextButton.icon(
+              onPressed: () => setState(() => _showHistory = !_showHistory),
+              icon: Icon(
+                _showHistory ? Icons.expand_less : Icons.expand_more,
+                size: 18,
+              ),
+              label: Text('History (${history.length})'),
+            ),
+            if (_showHistory) for (final t in history) _cardFor(t),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _cardFor(TaskSummary t, {bool attention = false}) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: _TaskCard(
+          task: t,
+          attention: attention,
           onReturn: () => _load(silent: true),
+        ),
+      );
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String text;
+  const _SectionHeader(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 10, top: 4),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: MfColors.muted,
+            letterSpacing: 0.3,
+          ),
+        ),
+      );
+}
+
+/// Category filter chips — the web board's vocabulary, toggled the same
+/// way. Counts come from the unfiltered list.
+class _CategoryChips extends StatelessWidget {
+  final List<TaskSummary> tasks;
+  final String? selected;
+  final void Function(String category) onToggle;
+
+  const _CategoryChips({
+    required this.tasks,
+    required this.selected,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final counts = <String, int>{};
+    for (final t in tasks) {
+      counts[t.status.category] = (counts[t.status.category] ?? 0) + 1;
+    }
+    final cats =
+        kCategoryColors.keys.where((c) => (counts[c] ?? 0) > 0).toList();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final cat in cats) ...[
+            _chip(cat, counts[cat]!),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String cat, int count) {
+    final c = categoryColors(cat);
+    final isSelected = selected == cat;
+    return Material(
+      color: isSelected ? c.tint : MfColors.bg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(999),
+        side: BorderSide(color: isSelected ? c.accent : MfColors.border),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: () => onToggle(cat),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${cat.replaceAll('_', ' ')} · $count',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? c.ink : MfColors.muted,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+
 class _TaskCard extends StatelessWidget {
   final TaskSummary task;
   final VoidCallback onReturn;
 
-  const _TaskCard({required this.task, required this.onReturn});
+  /// True in the "Needs response" group — the accept/reject decision is
+  /// time-sensitive, so it gets the one amber attention dot.
+  final bool attention;
+
+  const _TaskCard({
+    required this.task,
+    required this.onReturn,
+    this.attention = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +354,20 @@ class _TaskCard extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  if (attention) ...[
+                    Semantics(
+                      label: 'Needs response',
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: MfColors.amber600,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Expanded(
                     child: Text(
                       task.serviceTypeName,
@@ -200,10 +384,15 @@ class _TaskCard extends StatelessWidget {
                     const Icon(Icons.priority_high, size: 15, color: MfColors.error),
                     const SizedBox(width: 2),
                   ],
-                  Text(
-                    '${task.priority} priority · assigned '
-                    '${DateFormat.yMMMd().format(task.assignedAt.toLocal())}',
-                    style: const TextStyle(color: MfColors.muted, fontSize: 13),
+                  Expanded(
+                    child: Text(
+                      // The request # is the shared key with the Monitor
+                      // board — what a dispatcher can actually look up.
+                      'Task #${task.id} · Request #${task.requestId} · '
+                      '${task.priority} priority · ${relativeTime(task.assignedAt)}',
+                      style: const TextStyle(color: MfColors.muted, fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
               ),

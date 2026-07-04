@@ -241,8 +241,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    // The request # is the shared key with the Monitor board.
+    final requestId = _detail?.summary.requestId;
     return Scaffold(
-      appBar: AppBar(title: Text('Task #${widget.taskId}')),
+      appBar: AppBar(
+        title: Text(
+          requestId == null
+              ? 'Task #${widget.taskId}'
+              : 'Task #${widget.taskId} · Request #$requestId',
+        ),
+      ),
       body: _body(),
     );
   }

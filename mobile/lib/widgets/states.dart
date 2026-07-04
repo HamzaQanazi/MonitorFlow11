@@ -3,9 +3,20 @@
 // the one category color-and-shape language used everywhere, always with
 // its label text (DESIGN.md: Status-Owns-Color).
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../models/request.dart';
 import '../theme.dart';
+
+/// "2h ago"-style timestamps for list rows; absolute past a week.
+String relativeTime(DateTime when) {
+  final diff = DateTime.now().difference(when);
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  if (diff.inHours < 24) return '${diff.inHours}h ago';
+  if (diff.inDays < 7) return '${diff.inDays}d ago';
+  return DateFormat.MMMd().format(when.toLocal());
+}
 
 class StatusPill extends StatelessWidget {
   final StatusInfo status;

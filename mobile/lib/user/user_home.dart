@@ -206,13 +206,23 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
               },
               child: Padding(
                 padding: const EdgeInsets.all(14),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(r.serviceTypeName,
-                          style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(r.serviceTypeName,
+                              style: const TextStyle(fontWeight: FontWeight.w600)),
+                        ),
+                        StatusPill(status: r.status),
+                      ],
                     ),
-                    StatusPill(status: r.status),
+                    const SizedBox(height: 6),
+                    Text(
+                      '#${r.id} · ${relativeTime(r.createdAt)}',
+                      style: const TextStyle(color: MfColors.muted, fontSize: 13),
+                    ),
                   ],
                 ),
               ),

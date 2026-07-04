@@ -3,7 +3,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
@@ -145,7 +144,7 @@ class _RequestCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                '#${request.id} · ${DateFormat.yMMMd().format(request.createdAt.toLocal())}',
+                '#${request.id} · ${relativeTime(request.createdAt)}',
                 style: const TextStyle(color: MfColors.muted, fontSize: 13),
               ),
             ],
