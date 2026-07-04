@@ -115,6 +115,13 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - **✓ Contract gap resolved — Option A** (commits `d7e3f85`, `cf13cfa`, decided by Student 1; touches Student 2's backend — review welcome): migration `002_pending_uploads.sql` allows parentless "pending" attachments (user-role uploads only, uploader-only visibility until linked); `POST /requests` links photo-field ids inside its transaction with an atomic owner+unlinked re-check (reuse/steal → 422). Request-form photos now work end-to-end from mobile. Smoke 9/9, unit tests 28/28.
 - **All 14 Section 4 pages now exist.** 19 Flutter tests green.
 
+### Web polish — Student 1's React contribution (4 features, decided by both students)
+- **Attachment provenance badges** (`96441e9`…): request detail attachments carry `source`/`taskId`; the Monitor pane badges each file "Before" or "Task N · After" (neutral pills — status categories keep exclusive claim on color).
+- **Employee workload summary**: employee names in Employees Management open a dialog — per-category count pills + scrollable task table, consuming the previously-unused `GET /employees/{id}/tasks`.
+- **Reports by employee**: `employeeId` added to the shared query builder (additive extension of the frozen Section 7 params — flagged), so `GET /reports`, the CSV export, and `GET /requests` all accept it; Reports gains an employee dropdown (inactive staff marked) that carries into Export CSV.
+- **Web notifications bell**: shell-bar sibling of the mobile shared component — unread badge (30s poll), dropdown with mark-read → deep-link to the request pane, mark-all-read.
+- All verified live in the browser; tsc + lint + build green; backend unit tests 28/28.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
