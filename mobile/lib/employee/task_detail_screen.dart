@@ -1,8 +1,8 @@
 // Task Details (Section 4, Employee app) — GET /tasks/{id} (the limited
-// employee view; employees never call GET /requests/{id}). Action buttons
-// come from GET /tasks/{id}/valid-transitions: this part wires the
-// accept / reject actions; generic status updates and Complete Task are
-// the next part. Both actions confirm; reject requires a note
+// employee view; employees never call GET /requests/{id}). Every action
+// button is driven by GET /tasks/{id}/valid-transitions: accept/reject,
+// generic status moves (Update Task Status), and Complete Task. All
+// confirm; note fields appear where the workflow requires them
 // (Section 4 UI-state rule + workflow requires_note).
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -10,9 +10,12 @@ import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
+import '../forms/form_schema.dart';
 import '../models/task.dart';
 import '../theme.dart';
+import '../widgets/form_response_view.dart';
 import '../widgets/states.dart';
+import 'complete_task_screen.dart';
 
 class TaskDetailScreen extends StatefulWidget {
   final int taskId;
@@ -27,6 +30,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     with WidgetsBindingObserver {
   TaskDetail? _detail;
   List<TaskTransition>? _transitions;
+  List<FormFieldDef>? _requestFields; // labels for the answers; optional
   Object? _error;
   bool _acting = false;
 
@@ -64,9 +68,26 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
             .toList();
         _error = null;
       });
+      _loadRequestFields();
     } catch (e) {
       if (!mounted) return;
       if (!silent || _detail == null) setState(() => _error = e);
+    }
+  }
+
+  /// Best-effort: the answers render with prettified ids until (or if
+  /// ever) the schema arrives — never blocks the page.
+  Future<void> _loadRequestFields() async {
+    if (_requestFields != null || _detail == null) return;
+    final api = context.read<AuthState>().api;
+    try {
+      final json =
+          await api.get('/services/${_detail!.summary.serviceTypeId}/forms/request');
+      if (!mounted) return;
+      setState(() =>
+          _requestFields = FormFieldDef.parseSchema(json['fields'] as List<dynamic>));
+    } on Exception {
+      // keep the fallback rendering
     }
   }
 
@@ -102,6 +123,52 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     );
     if (note == null) return;
     await _act('/tasks/${widget.taskId}/reject', {'note': note});
+  }
+
+  /// Update Task Status — a generic workflow move (no dedicated action).
+  Future<void> _updateStatus(TaskTransition t) async {
+    if (t.requiresNote) {
+      final note = await _promptNote(
+        title: 'Move to "${t.toLabel}"?',
+        message: 'A note explaining the change is required.',
+        confirmLabel: 'Update status',
+      );
+      if (note == null) return;
+      await _act('/tasks/${widget.taskId}/status', {'to': t.to, 'note': note});
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Move to "${t.toLabel}"?'),
+        content: const Text('The requester is notified of the change.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Back'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Update status'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _act('/tasks/${widget.taskId}/status', {'to': t.to});
+  }
+
+  Future<void> _complete() async {
+    final done = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => CompleteTaskScreen(
+          taskId: widget.taskId,
+          serviceTypeId: _detail!.summary.serviceTypeId,
+          serviceTypeName: _detail!.summary.serviceTypeName,
+        ),
+      ),
+    );
+    if (done == true) _load(silent: true);
   }
 
   Future<String?> _promptNote({
@@ -245,39 +312,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
           const SizedBox(height: 24),
           const _SectionTitle('Request details'),
           const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: MfColors.surface,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final entry in d.requestFormResponse.entries)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                            entry.key.replaceAll('_', ' '),
-                            style: const TextStyle(color: MfColors.muted, fontSize: 13),
-                          ),
-                        ),
-                        Expanded(
-                          flex: 3,
-                          child: Text('${entry.value}',
-                              style: const TextStyle(fontSize: 13)),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
+          FormResponseView(response: d.requestFormResponse, fields: _requestFields),
           const SizedBox(height: 28),
           if (accept != null) ...[
             ElevatedButton(
@@ -286,6 +321,26 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
             ),
             const SizedBox(height: 12),
           ],
+          // Complete first (the primary move), then generic status moves.
+          for (final t in _transitions ?? const <TaskTransition>[])
+            if (t.action == 'complete') ...[
+              ElevatedButton(
+                onPressed: _acting ? null : _complete,
+                child: const Text('Complete task'),
+              ),
+              const SizedBox(height: 12),
+            ],
+          for (final t in _transitions ?? const <TaskTransition>[])
+            if (t.action == null) ...[
+              OutlinedButton(
+                onPressed: _acting ? null : () => _updateStatus(t),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+                child: Text('Move to "${t.toLabel}"'),
+              ),
+              const SizedBox(height: 12),
+            ],
           if (reject != null)
             OutlinedButton(
               onPressed: _acting ? null : () => _reject(reject),
@@ -295,15 +350,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
                 minimumSize: const Size.fromHeight(52),
               ),
               child: const Text('Reject task'),
-            ),
-          if (accept == null && reject == null && (_transitions?.isNotEmpty ?? false))
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Text(
-                'Status updates for this task arrive in the next build.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: MfColors.muted, fontSize: 13),
-              ),
             ),
           if (_transitions != null && _transitions!.isEmpty)
             const Padding(

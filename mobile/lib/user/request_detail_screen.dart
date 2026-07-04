@@ -1,16 +1,20 @@
 // Request Details / Timeline — the detail half of the merged My Requests
-// page (Section 4). One call: GET /requests/{id} embeds history and
-// comments. Refreshes on focus resume, not a timer (the polling rules).
-// Cancel / confirm-dispute / comment posting arrive with the Week 5
-// backend endpoints.
+// page (Section 4). GET /requests/{id} embeds history and comments;
+// refreshes on focus resume, not a timer (the polling rules). The user's
+// actions — cancel (only while unassigned), confirm resolution, report
+// unresolved — are driven by the service's workflow definition: code
+// reads categories and actions, never status keys (Section 9).
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
+import '../forms/form_schema.dart';
 import '../models/request.dart';
+import '../models/workflow.dart';
 import '../theme.dart';
+import '../widgets/form_response_view.dart';
 import '../widgets/states.dart';
 
 class RequestDetailScreen extends StatefulWidget {
@@ -25,7 +29,10 @@ class RequestDetailScreen extends StatefulWidget {
 class _RequestDetailScreenState extends State<RequestDetailScreen>
     with WidgetsBindingObserver {
   RequestDetail? _detail;
+  WorkflowDef? _workflow;
+  List<FormFieldDef>? _requestFields;
   Object? _error;
+  bool _acting = false;
 
   @override
   void initState() {
@@ -55,9 +62,152 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
         _detail = RequestDetail.fromJson(json['request'] as Map<String, dynamic>);
         _error = null;
       });
+      _loadConfig();
     } catch (e) {
       if (!mounted) return;
       if (!silent || _detail == null) setState(() => _error = e);
+    }
+  }
+
+  /// Workflow (drives the action buttons) and form schema (labels the
+  /// answers). Best-effort: failure hides actions and keeps prettified
+  /// ids rather than blocking the page; retried on the next refresh.
+  Future<void> _loadConfig() async {
+    if (_workflow != null && _requestFields != null) return;
+    final api = context.read<AuthState>().api;
+    final sid = _detail!.summary.serviceTypeId;
+    try {
+      final results = await Future.wait([
+        api.get('/services/$sid/workflow'),
+        api.get('/services/$sid/forms/request'),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _workflow = WorkflowDef.fromJson(results[0]);
+        _requestFields =
+            FormFieldDef.parseSchema(results[1]['fields'] as List<dynamic>);
+      });
+    } on Exception {
+      // actions stay hidden this round; next load retries
+    }
+  }
+
+  Future<void> _confirmResolution() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm resolution?'),
+        content: const Text(
+            'You confirm the work is done to your satisfaction. This closes the request.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Back'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _act('/requests/${widget.requestId}/resolution', {'outcome': 'confirmed'});
+  }
+
+  Future<void> _dispute() async {
+    final note = await _promptNote(
+      title: 'Report unresolved?',
+      message:
+          'The work goes back to the assigned employee. Explain what is still wrong.',
+      confirmLabel: 'Report unresolved',
+    );
+    if (note == null) return;
+    await _act('/requests/${widget.requestId}/resolution',
+        {'outcome': 'unresolved', 'note': note});
+  }
+
+  Future<void> _cancel() async {
+    final note = await _promptNote(
+      title: 'Cancel this request?',
+      message: 'This cannot be undone. A short reason is required.',
+      confirmLabel: 'Cancel request',
+      destructive: true,
+    );
+    if (note == null) return;
+    await _act('/requests/${widget.requestId}/cancel', {'note': note});
+  }
+
+  Future<String?> _promptNote({
+    required String title,
+    required String message,
+    required String confirmLabel,
+    bool destructive = false,
+  }) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(message, style: const TextStyle(fontSize: 14)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                maxLines: 3,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Note (required)'),
+                onChanged: (_) => setDialogState(() {}),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(null),
+              child: const Text('Back'),
+            ),
+            ElevatedButton(
+              style: destructive
+                  ? ElevatedButton.styleFrom(backgroundColor: MfColors.error)
+                  : null,
+              onPressed: controller.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.of(context).pop(controller.text.trim()),
+              child: Text(confirmLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _act(String path, Map<String, dynamic> body) async {
+    setState(() => _acting = true);
+    final api = context.read<AuthState>().api;
+    try {
+      await api.patch(path, body: body);
+      if (!mounted) return;
+      await _load(silent: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Request is now "${_detail?.summary.status.label}"')),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      // 409 = the state moved under us (e.g. assigned meanwhile) — the
+      // reload shows the truth and the stale button disappears.
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      _load(silent: true);
+    } on NetworkException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not reach the server — try again.')),
+      );
+    } finally {
+      if (mounted) setState(() => _acting = false);
     }
   }
 
@@ -81,6 +231,11 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
     if (_detail == null) return const LoadingState();
 
     final d = _detail!;
+    final statusKey = d.summary.status.key;
+    final confirm = _workflow?.confirmFrom(statusKey);
+    final dispute = _workflow?.disputeFrom(statusKey);
+    final cancel = d.taskExists ? null : _workflow?.cancelFrom(statusKey);
+
     return RefreshIndicator(
       color: MfColors.amber600,
       onRefresh: _load,
@@ -109,15 +264,62 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
           const _SectionTitle('Timeline'),
           const SizedBox(height: 12),
           _Timeline(entries: d.statusHistory),
+          if (confirm != null || dispute != null) ...[
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: MfColors.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'The work is marked as completed. Is everything resolved?',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 14),
+                  if (confirm != null)
+                    ElevatedButton(
+                      onPressed: _acting ? null : _confirmResolution,
+                      child: const Text('Confirm resolution'),
+                    ),
+                  if (dispute != null) ...[
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: _acting ? null : _dispute,
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                      ),
+                      child: const Text('Report unresolved'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           const _SectionTitle('Your answers'),
           const SizedBox(height: 12),
-          _FormResponse(response: d.formResponse),
+          FormResponseView(response: d.formResponse, fields: _requestFields),
           if (d.comments.isNotEmpty) ...[
             const SizedBox(height: 24),
             const _SectionTitle('Comments'),
             const SizedBox(height: 12),
             for (final c in d.comments) _CommentTile(comment: c),
+          ],
+          if (cancel != null) ...[
+            const SizedBox(height: 28),
+            OutlinedButton(
+              onPressed: _acting ? null : _cancel,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: MfColors.error,
+                side: const BorderSide(color: MfColors.errorBorder),
+                minimumSize: const Size.fromHeight(52),
+              ),
+              child: const Text('Cancel request'),
+            ),
           ],
           const SizedBox(height: 32),
         ],
@@ -214,49 +416,6 @@ class _TimelineRow extends StatelessWidget {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FormResponse extends StatelessWidget {
-  final Map<String, dynamic> response;
-  const _FormResponse({required this.response});
-
-  @override
-  Widget build(BuildContext context) {
-    // Field ids double as readable labels here; the schema-labelled version
-    // needs a second fetch and lands with the Week 5 detail work.
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: MfColors.surface,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final entry in response.entries)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      entry.key.replaceAll('_', ' '),
-                      style: const TextStyle(color: MfColors.muted, fontSize: 13),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 3,
-                    child: Text('${entry.value}', style: const TextStyle(fontSize: 13)),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );

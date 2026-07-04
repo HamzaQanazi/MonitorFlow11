@@ -90,16 +90,22 @@ class RequestDetail {
   final List<HistoryEntry> statusHistory;
   final List<RequestComment> comments;
 
+  /// Whether a task was ever created — gates the user's own cancel
+  /// (Section 6: only while unassigned).
+  final bool taskExists;
+
   const RequestDetail({
     required this.summary,
     required this.formResponse,
     required this.statusHistory,
     required this.comments,
+    required this.taskExists,
   });
 
   factory RequestDetail.fromJson(Map<String, dynamic> json) => RequestDetail(
         summary: RequestSummary.fromJson(json),
         formResponse: (json['formResponse'] as Map<String, dynamic>?) ?? const {},
+        taskExists: json['task'] != null,
         statusHistory: (json['statusHistory'] as List<dynamic>? ?? const [])
             .map((h) => HistoryEntry.fromJson(h as Map<String, dynamic>))
             .toList(),
