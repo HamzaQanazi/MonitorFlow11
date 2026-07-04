@@ -40,7 +40,14 @@ interface Detail {
   task: { id: number; employeeId: number; employeeName: string; assignedAt: string } | null
   statusHistory: { status: Status; changedBy: { id: number; name: string }; changedAt: string; note: string | null }[]
   comments: { id: number; body: string; createdAt: string; author: { id: number; name: string } }[]
-  attachments: { id: string; originalFilename: string; mimeType: string; sizeBytes: number }[]
+  attachments: {
+    id: string
+    originalFilename: string
+    mimeType: string
+    sizeBytes: number
+    source: 'request' | 'task'
+    taskId: number | null
+  }[]
 }
 
 interface Field {
@@ -579,6 +586,9 @@ export default function RequestDetailPane({
           <ul className="attach-list">
             {detail.attachments.map((a) => (
               <li key={a.id}>
+                <span className="attach-badge">
+                  {a.source === 'task' ? `Task ${a.taskId} · After` : 'Before'}
+                </span>{' '}
                 <button
                   type="button"
                   className="link-button"

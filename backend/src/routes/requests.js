@@ -205,7 +205,8 @@ router.get('/:id', async (req, res, next) => {
       // Task-linked files (completion photos) belong to this request too —
       // the attachment row carries task_id, not request_id (the XOR rule).
       pool.query(
-        `SELECT fa.id, fa.original_filename, fa.mime_type, fa.size_bytes, fa.uploaded_at
+        `SELECT fa.id, fa.original_filename, fa.mime_type, fa.size_bytes, fa.uploaded_at,
+                fa.task_id
          FROM file_attachment fa
          LEFT JOIN task t ON t.id = fa.task_id
          WHERE fa.request_id = $1 OR t.request_id = $1
@@ -265,6 +266,10 @@ router.get('/:id', async (req, res, next) => {
           mimeType: a.mime_type,
           sizeBytes: a.size_bytes,
           uploadedAt: a.uploaded_at,
+          // Request-linked photos arrive with the request (before the
+          // service); task-linked ones come from the completion (after).
+          source: a.task_id === null ? 'request' : 'task',
+          taskId: a.task_id,
         })),
       },
     });

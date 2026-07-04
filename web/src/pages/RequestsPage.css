@@ -620,6 +620,19 @@
   font-size: 14px;
 }
 
+/* Before/after provenance badge — neutral on purpose: status categories
+   own the colored pills (DESIGN.md), so provenance reads by text alone. */
+.attach-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
 /* Attachment download — a text link that carries the auth header via JS */
 .link-button {
   background: none;
