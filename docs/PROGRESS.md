@@ -107,6 +107,14 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - Verified on Windows against seed: awaiting-parts hold loop, complete → dispute → re-complete → confirm, cancel-with-note, no-cancel-once-assigned, both services. 19 Flutter tests green.
 - **Week 5 Student 1 is done.** Remaining Student 1: Notifications + Profile (shared component), photo upload.
 
+### Week 6 — mobile / Student 1 (commits `d142735`, `8ec7c17`): MVP mobile complete
+- **Notifications** (shared Section 4 component, both apps): bell + unread badge in both app bars (30s poll), list with type icons, mark-read on tap, read-all; tap-through opens the request (User) or the matching task (Employee).
+- **Profile** (shared): name/phone edit (`PATCH /users/me`), password change (`PATCH /users/me/password`, per-field 422); email/role immutable.
+- **Photo upload**: renderer photo field is real where an upload target exists — Complete Task uploads via `POST /files` (taskId) and puts the attachment id in the response (two-step contract). Verified E2E: technician's photo downloadable by the monitor.
+- **Cross-surface fix** (`d142735`, touches Student 2's files — flagged): `GET /requests/{id}` now embeds task-linked attachments (completion photos were invisible to the Monitor pane); web attachment filenames are authed-blob download links.
+- **⚠ Open contract gap (both-students decision):** Section 7's photo two-step says upload-then-create, but `POST /files` requires an existing requestId XOR taskId (DB CHECK enforces it) — so **request-form photos can't work as specced**. Mobile shows an honest disabled placeholder (both seeded request photos are optional). Options: relax the constraint + link on `POST /requests`, or document as an MVP limitation. Decide before the W7 freeze.
+- **All 14 Section 4 pages now exist.** 19 Flutter tests green.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -121,7 +129,10 @@ All password `Password123!` (re-run `npm run seed` to reset):
 
 ## Next
 
-- **Week 6, Student 1:** Notifications UI + Profile (shared component, both apps), photo upload (picker → `POST /files` → attachment id in `form_response`). This completes the 14-page MVP.
+- **MVP is feature-complete across all three surfaces.** Merge `student1/flutter-form-renderer` to `main`.
+- **Decide the request-form-photo contract gap** (see Week 6 mobile ⚠) — both students, before the W7 Wednesday freeze.
+- **Week 7:** freeze Wednesday · Section 13 test suites (S1: renderer widget tests exist, add API/permission suite support; each student attacks the other's surface — S1 probes the API with curl/Postman, S2 tries to break the apps) · Android release build check · deploy (Render/Railway; localhost fallback decision by Friday).
+- **Week 8:** two timed demo rehearsals on the deployed system, fresh seed, backup screenshots/video, report.
 - **Branch discipline:** Student 2 on `hamza`, Student 1 on `student1/flutter-form-renderer`; merge to `main` per verified feature (or at least twice a week), keep `main` green.
 
 ## Local setup reminders
