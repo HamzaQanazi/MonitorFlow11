@@ -135,6 +135,12 @@ All password `Password123!` (re-run `npm run seed` to reset):
 - **Week 8:** two timed demo rehearsals on the deployed system, fresh seed, backup screenshots/video, report.
 - **Branch discipline:** Student 2 on `hamza`, Student 1 on `student1/flutter-form-renderer`; merge to `main` per verified feature (or at least twice a week), keep `main` green.
 
+## Future work (post-MVP, for the report)
+
+- **Internal monitor↔technician note channel.** Today comments are a customer-facing channel only (requesting user ↔ monitors; employees are excluded server-side per Section 6, and the completion photo is the only tech→everyone artifact). In a real field-ops deployment a monitor needs to relay info to the assigned technician ("customer says the gate code changed", "bring extra RAM"). This is a genuine gap but **deliberately out of the MVP** (Section 12 scope was cut twice; adding it touches the Section 6 permission matrix + its test suite, the Section 7 notification-trigger table, and the employee Task Details UI).
+  - **Design note:** the clean version is a *separate* internal channel, **not** opening the existing customer comment thread to the technician — merging the tech into that thread would expose customer messages to the tech and vice versa. Model it as its own note type (e.g. monitor→employee) with its own notification trigger.
+  - **Interim mitigation (already works):** monitor→tech intent flows via assignment/reassignment notes, status-change notes, and rejection notes — all recorded in the timeline and pushed as notifications.
+
 ## Local setup reminders
 
 - Postgres 18 local service, DB `monitorflow`, creds in `backend/.env`
