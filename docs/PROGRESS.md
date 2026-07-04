@@ -58,6 +58,40 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - **Week 3 gate passed:** both services submitted from the app appear in Monitor. 15 Flutter tests green. Known gap: detail "Your answers" shows prettified field ids, not schema labels — planned with Week 5 detail work.
 - Dev note: mobile verification runs the Windows desktop build (requires Windows Developer Mode); Android emulator uses `10.0.2.2` automatically, or override with `--dart-define=API_BASE_URL`.
 
+### Week 5 — backend complete (branch `hamza`, commits `fe2e37f`, `5c53c63`, `5d80c7c`, `1fc85f0`)
+- **Comments** (`POST/GET /requests/{id}/comments`): user own (cross-user 404), monitor any, employee 403; posting notifies the other party (owner ↔ monitors).
+- **Priority** (`PATCH /requests/{id}/priority`): monitor-only, history row ("Priority changed from X to Y") under the request row lock; repeat no-op writes nothing.
+- **Files backend** (`backend/src/routes/files.js`): `POST /files` (multer memory, 5 MB → 422, MIME by magic bytes — `.exe` renamed `.jpg` → 422, UUID names in gitignored `backend/uploads/`), `GET /files/{id}` (owner / assigned employee / monitor, else 404 — must-pass #17; `Content-Disposition: attachment`, Content-Type from sniffed MIME).
+- **Engine override** (`resolveOverride` in `workflowEngine.js`): monitor-only, target key must exist + category `terminated` or `triage`/`in_progress`, note always; shares the engine write path. 28 unit tests green.
+- **`POST /tasks/{id}/complete`**: pre-checks the complete transition (locked task → 409 before form errors), validates against the completion form (422 per-field), stores the response via `beforeCommit` in the engine transaction.
+- **`PATCH /requests/{id}/resolution`**: confirmed/unresolved → confirm/dispute actions; note required for unresolved; pre-done 409 emerges from the workflow data.
+- **`PATCH /requests/{id}/cancel`**: cancel target derived from the data (the user-role transition into a terminated status — no key in code); user path 409 once a task exists, enforced inside the engine transaction (race-safe, must-pass #13); a 403 from the engine on the owner's cancel is mapped to 409 (cancel window closed ≠ permissions). Monitor path = override, any state, note required.
+- **`PATCH /requests/{id}/status`**: the constrained monitor override; also carries service A's approval step (`submitted → approved` is a triage-target override). Reopen past terminated unlocks the task automatically.
+- Smoke: 34/34 (comments/priority/files) + 30/30 (service B full lifecycle incl. dispute loop, task lock, reopen) + 6/6 (service A E2E submit→confirmed through the approval gate). DB reseeded to canonical after.
+
+### Week 5 — web complete (commit `dce156d`): detail pane actions
+- **Actions section** in `RequestDetailPane.tsx`, derived entirely from the workflow data: buttons for monitor transitions from the current status (assign-target excluded — Assignment owns that move; e.g. Approve/Reject on a Submitted A request), standalone **Cancel request** when no workflow button already terminates (covers in_progress states via `PATCH /cancel`), **Reopen** select (triage/in_progress targets, assign-target excluded when no task) when terminated.
+- Every action runs through one **confirm dialog with a required note** (Section 4 UI-state rule); Esc closes the dialog before the pane; inline server-error display.
+- **Priority select** (PATCHes, timeline note appears) and **comment posting** (clears on success, notifies owner) wired in.
+- Verified 16/16 headless-Edge (approve flow incl. note-required block, Esc behavior, priority, comment, cancel→reopen round trip, zero console errors). Lint + `tsc -b` + build green. Reseeded after.
+
+**Week 5 is complete** — both gates pass: both services E2E submit→confirmed; PATCH on a cancelled task 409.
+
+### Week 6 — backend complete (branch `hamza`, commits `e0a9542`, `af59244`, `c97e947`, `ee75775`)
+- **Notifications read** (`backend/src/routes/notifications.js`): `GET /notifications?userId=me` (own-only every role, page/pageSize + unread count), `PATCH /{id}/read` (cross-user 404, idempotent), `PATCH /read-all` (declared before `/:id/read` so the literal path wins). Triggers already existed (engine + comments) — this is the read/mark surface. Smoke 9/9 + 7/7 live (comment→notify→read round trip, cross-user 404).
+- **Users profile** (`backend/src/routes/users.js`): `GET/PATCH /users/me` (name+phone; email/role immutable), `PATCH /users/me/password` (current password required, bcrypt 10, wrong-current → 422 field-keyed). Own-only, any role.
+- **Departments** (`backend/src/routes/departments.js`): `GET /departments` monitor-only read (Employees Mgmt picker). Users smoke 14/14 (incl. password change + revert, dept 403 for user/employee).
+- **Employees writes** (`backend/src/routes/employees.js`): `POST` (monitor sets initial password, dup email 422), `PATCH /{id}` (name/phone/dept), `/activate`, `/deactivate` (**409 when the employee holds any non-final task — finality read from workflow `statuses` JSONB, no status key in code**), `/reset-password` (server-generated temp password returned once, no forced-change flow), `GET /{id}/tasks`. Non-employee ids 404 on this surface. Smoke 16/16 (incl. deactivate-with-open-task 409, deactivated fresh-login 401).
+- **Reports + CSV** (`backend/src/routes/reports.js` + `backend/src/lib/requestQuery.js`): extracted the ONE request-query builder (`buildRequestFilter`) and refactored `GET /requests` onto it (behavior-preserving) so reports reuses it, not a second engine. `GET /reports` = filtered list + aggregate counts (by category/priority/service); `GET /reports/export.csv` = same filters, frozen columns, `completed_at` derived from the first done-category history row, CSV-injection guard (`'`-prefix on `=+-@`). Monitor-only. Smoke 17/17 (must-pass #11 non-monitor export 403, injection escaped, `GET /requests` regression clean). Unit suite 28/28.
+
+### Week 6 — web complete (commit `a3d60d8`): Employees Management + Basic Reports
+- **`web/src/pages/EmployeesPage.tsx`** (Section 4 page): monitor list against `GET /employees` — department filter (`GET /departments`), debounced name/email search, pagination, all in the URL. Add/Edit dialogs (create sends initial password, edit is name/phone/department), Activate/Deactivate, Reset password. Deactivate is a confirm dialog; a **409 (open tasks) renders inline** ("reassign them first"). Reset-password reveals the server temp password once. 422 `{errors}` render per-field (via a new `body` on `ApiError`). Skeleton / error+retry / empty states. No polling — admin surface, reloads after each write.
+- **`web/src/pages/ReportsPage.tsx`** (Section 4 page): monitor view against `GET /reports` — category chips + service/priority selects + date range + search (the shared RequestsPage vocabulary), aggregate cards (total, by category/priority/service), filtered read-only table. **Export CSV** button downloads `GET /reports/export.csv` via an authed blob (can't be a plain link — needs the bearer header).
+- Removed the now-dead `ComingSoon` stub — all 5 Monitor web pages exist. `ApiError.body` carries the parsed 422 body for per-field errors.
+- Verified headless-Edge 9/9 functional (create validation, created row appears, deactivate-409 inline, reset-temp shown once, 4 aggregate cards, category filter narrows breakdown, CSV downloads). tsc + lint + build green. Reseeded after.
+
+**Week 6 is complete.** MVP backend + Monitor web are done; both Week 6 gates pass (file IDOR/bad-upload from W5; CSV opens + injection escaped). Remaining across the project is Student 1's Flutter surface (Employee app, Notifications/Profile, photo upload — form renderer + Create Request landed above). DB reseeded to canonical after each feature.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -72,9 +106,10 @@ All password `Password123!` (re-run `npm run seed` to reset):
 
 ## Next
 
-- **Week 4, Student 1:** Employee app pages on the existing `/tasks` endpoints — Employee Home + My Tasks (merged), Task Details (`GET /tasks/{id}`), accept/reject with note.
-- **Week 5 (Student 2):** `POST /tasks/{id}/complete` (via the engine's `beforeCommit`), `PATCH /requests/{id}/resolution`, monitor override + cancel + priority, comments POST, files backend. The detail pane then gains priority control, override/cancel actions (with confirm dialogs + note fields), and comment posting.
-- **Week 5 (Student 1):** Update Task Status + Complete Task (completion form via the renderer), user confirm/dispute + cancel on Request Details, schema-labelled answers on detail.
+- **Week 4, Student 1:** Employee app pages — Employee Home + My Tasks (merged), Task Details (`GET /tasks/{id}`), accept/reject with note. All backend endpoints exist.
+- **Week 5, Student 1** (unblocked — the whole backend is done): Update Task Status + Complete Task (completion form via the renderer), user confirm/dispute + cancel on Request Details, schema-labelled answers on detail, photo upload (files backend live).
+- **Week 6, Student 1:** Notifications UI + Profile (shared component, both apps).
+- **Branch discipline:** Student 2 on `hamza`, Student 1 on `student1/flutter-form-renderer`; merge to `main` per verified feature (or at least twice a week), keep `main` green.
 
 ## Local setup reminders
 

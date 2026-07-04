@@ -1,0 +1,94 @@
+/* Employees Management — page-specific bits on top of the shared RequestsPage
+   vocabulary (chips, table, dialog, buttons). */
+
+.emp-add {
+  margin-left: auto;
+  height: 36px;
+}
+
+.emp-email {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.emp-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.emp-badge.is-active {
+  background: var(--cat-in_progress-bg);
+  color: var(--cat-in_progress-ink);
+}
+
+.emp-badge.is-inactive {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.emp-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.emp-actions .action-btn {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.emp-actions-col {
+  text-align: right;
+}
+
+/* Dialog form fields (create/edit) */
+.field {
+  display: grid;
+  gap: 5px;
+}
+
+.field > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.field input {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font: inherit;
+  color: var(--ink);
+}
+
+.field .req-select {
+  width: 100%;
+  max-width: none;
+}
+
+.field-err {
+  font-size: 12.5px;
+  font-style: normal;
+  color: var(--error);
+}
+
+.temp-pass {
+  display: block;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: center;
+  user-select: all;
+}

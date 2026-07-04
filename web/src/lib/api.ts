@@ -4,11 +4,15 @@ const TOKEN_KEY = 'mf.token'
 export class ApiError extends Error {
   status: number
   code?: string
+  // Parsed response body, so callers can read 422 `{ errors }` (per-field,
+  // keyed by field id) without a second parse.
+  body?: unknown
 
-  constructor(status: number, message: string, code?: string) {
+  constructor(status: number, message: string, code?: string, body?: unknown) {
     super(message)
     this.status = status
     this.code = code
+    this.body = body
   }
 }
 
@@ -52,7 +56,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 
   if (!res.ok) {
     const message = (data && typeof data.error === 'string' && data.error) || res.statusText
-    throw new ApiError(res.status, message)
+    throw new ApiError(res.status, message, undefined, data)
   }
 
   return data as T

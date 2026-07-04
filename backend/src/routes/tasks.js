@@ -12,6 +12,7 @@ const {
   validTransitions,
   executeTransition,
 } = require('../lib/workflowEngine');
+const { validateFormResponse } = require('../lib/validateFormResponse');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -216,6 +217,53 @@ router.patch('/:id/status', (req, res, next) => {
     return res.status(422).json({ errors: { to: 'A target status is required' } });
   }
   return runTransition(req, res, next, { to });
+});
+
+// POST /tasks/{id}/complete — executes the workflow's complete-action
+// transition after validating completionFormResponse against the completion
+// FORM_DEFINITION (422 per-field, Section 8). The transition is pre-checked
+// so a locked/wrong-status task answers 409 before form errors (must-pass
+// #6); the engine re-validates under the row lock, and the response is
+// stored on the task inside the same transaction via beforeCommit.
+router.post('/:id/complete', async (req, res, next) => {
+  try {
+    const t = await loadOwnTask(Number(req.params.id), req.user.id);
+    const can = validTransitions(t.statuses, t.transitions, t.status, 'employee').some(
+      (tr) => tr.action === 'complete'
+    );
+    if (!can) {
+      return res.status(409).json({ error: 'This transition is not valid from the current status' });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT field_schema FROM form_definition
+       WHERE service_type_id = $1 AND form_type = 'completion'`,
+      [t.service_type_id]
+    );
+    const response = (req.body || {}).completionFormResponse;
+    const errors = await validateFormResponse(rows[0].field_schema, response, {
+      db: pool,
+      userId: req.user.id,
+    });
+    if (Object.keys(errors).length) return res.status(422).json({ errors });
+
+    const note = (req.body || {}).note ?? null;
+    const result = await executeTransition({
+      requestId: t.request_id,
+      user: req.user,
+      action: 'complete',
+      note,
+      completionValidated: true,
+      beforeCommit: (tx, ctx) =>
+        tx.query('UPDATE task SET completion_form_response = $1 WHERE id = $2', [
+          JSON.stringify(response),
+          ctx.task.id,
+        ]),
+    });
+    res.json({ task: { id: t.id, requestId: t.request_id, status: result.status } });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

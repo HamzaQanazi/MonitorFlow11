@@ -7,14 +7,11 @@ const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { validateFormResponse } = require('../lib/validateFormResponse');
-const { categoryOf, executeTransition } = require('../lib/workflowEngine');
+const { categoryOf, executeTransition, WorkflowError } = require('../lib/workflowEngine');
+const { buildRequestFilter, PRIORITIES } = require('../lib/requestQuery');
 
 const router = express.Router();
 router.use(requireAuth);
-
-const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'];
-const PRIORITIES = ['low', 'medium', 'high'];
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function statusOf(workflowStatuses, key) {
   const s = workflowStatuses.find((st) => st.key === key);
@@ -110,35 +107,9 @@ router.get('/', async (req, res, next) => {
   try {
     if (req.user.role === 'employee') return res.status(403).json({ error: 'Forbidden' });
 
-    const q = req.query;
-    const page = q.page === undefined ? 1 : Number(q.page);
-    const pageSize = q.pageSize === undefined ? 20 : Number(q.pageSize);
-    const bad = [];
-    if (!Number.isInteger(page) || page < 1) bad.push('page');
-    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) bad.push('pageSize');
-    if (q.category !== undefined && !CATEGORIES.includes(q.category)) bad.push('category');
-    if (q.priority !== undefined && !PRIORITIES.includes(q.priority)) bad.push('priority');
-    if (q.serviceTypeId !== undefined && !Number.isInteger(Number(q.serviceTypeId))) bad.push('serviceTypeId');
-    if (q.dateFrom !== undefined && !DATE_RE.test(q.dateFrom)) bad.push('dateFrom');
-    if (q.dateTo !== undefined && !DATE_RE.test(q.dateTo)) bad.push('dateTo');
-    if (bad.length) return res.status(400).json({ error: `Invalid query params: ${bad.join(', ')}` });
-
-    const where = [];
-    const params = [];
-    const add = (sql, value) => {
-      params.push(value);
-      where.push(sql.replaceAll('?', `$${params.length}`));
-    };
-
-    // A user only ever sees their own requests, whatever the params say.
-    if (req.user.role === 'user' || q.userId === 'me') add('r.user_id = ?', req.user.id);
-    if (q.status !== undefined) add('r.status = ?', q.status);
-    if (q.category !== undefined) add("s->>'category' = ?", q.category);
-    if (q.serviceTypeId !== undefined) add('r.service_type_id = ?', Number(q.serviceTypeId));
-    if (q.priority !== undefined) add('r.priority = ?', q.priority);
-    if (q.dateFrom !== undefined) add('r.created_at >= ?::date', q.dateFrom);
-    if (q.dateTo !== undefined) add("r.created_at < ?::date + INTERVAL '1 day'", q.dateTo);
-    if (q.q) add('(u.name ILIKE ? OR st.name ILIKE ?)', `%${q.q}%`);
+    const filter = buildRequestFilter(req.query, req.user);
+    if (filter.error) return res.status(400).json({ error: filter.error });
+    const { where, params, page, pageSize } = filter;
 
     params.push(pageSize, (page - 1) * pageSize);
     const { rows } = await pool.query(
@@ -278,6 +249,279 @@ router.get('/:id', async (req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+});
+
+// PATCH /requests/{id}/resolution — the request owner confirms or disputes
+// from a done-category status. The gate lives in the workflow data: the
+// confirm/dispute-action transitions only exist from done statuses, so a
+// too-early call resolves no transition and the engine answers 409
+// (must-pass #15). Note required for `unresolved` (Section 7).
+router.patch('/:id/resolution', async (req, res, next) => {
+  try {
+    if (req.user.role !== 'user') return res.status(403).json({ error: 'Forbidden' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const { outcome, note } = req.body || {};
+    if (outcome !== 'confirmed' && outcome !== 'unresolved') {
+      return res
+        .status(422)
+        .json({ errors: { outcome: 'Outcome must be "confirmed" or "unresolved"' } });
+    }
+    if (outcome === 'unresolved' && !(typeof note === 'string' && note.trim())) {
+      return res
+        .status(422)
+        .json({ errors: { note: 'A note is required when reporting unresolved' } });
+    }
+    const result = await executeTransition({
+      requestId: id,
+      user: req.user,
+      action: outcome === 'confirmed' ? 'confirm' : 'dispute',
+      note: note ?? null,
+    });
+    res.json({ request: { id, status: result.status } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /requests/{id}/cancel — user: via the workflow's own user-role
+// cancel transition, and only while no task exists (checked under the
+// engine's row lock, so the cancel-vs-assign race of must-pass #13 always
+// leaves one side with 409); monitor: any state, as an override. No status
+// key in code — the cancel target is derived from the data as the target of
+// the user-role transition into a terminated-category status.
+router.patch('/:id/cancel', async (req, res, next) => {
+  try {
+    if (req.user.role === 'employee') return res.status(403).json({ error: 'Forbidden' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const note = (req.body || {}).note ?? null;
+
+    const { rows } = await pool.query(
+      `SELECT w.statuses, w.transitions
+       FROM request r JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+       WHERE r.id = $1`,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    const { statuses, transitions } = rows[0];
+    const cancelTransition = transitions.find(
+      (t) => t.allowed_role === 'user' && categoryOf(statuses, t.to) === 'terminated'
+    );
+    if (!cancelTransition) {
+      return res.status(409).json({ error: 'This request cannot be cancelled' });
+    }
+
+    let result;
+    try {
+      result = await executeTransition({
+        requestId: id,
+        user: req.user,
+        to: cancelTransition.to,
+        note,
+        override: req.user.role === 'monitor',
+        beforeCommit:
+          req.user.role === 'user'
+            ? (tx, ctx) => {
+                if (ctx.task) {
+                  throw new WorkflowError(409, 'This request can no longer be cancelled — it has been assigned');
+                }
+              }
+            : null,
+      });
+    } catch (err) {
+      // For the owner, "a cancel path exists from here but not for your
+      // role" means the request has moved past the cancellable window — a
+      // state conflict (Section 7: cancel-after-assignment → 409), not a
+      // permissions failure.
+      if (req.user.role === 'user' && err instanceof WorkflowError && err.status === 403) {
+        throw new WorkflowError(409, 'This request can no longer be cancelled');
+      }
+      throw err;
+    }
+    res.json({ request: { id, status: result.status } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /requests/{id}/status — monitor override (Section 7, constrained).
+// The engine's resolveOverride enforces: target key exists (422), category
+// terminated or triage/in_progress only (422), note always (422). Reopening
+// past a terminated status unlocks the task automatically because the task
+// lock is a function of the current category, not a flag (Section 5).
+router.patch('/:id/status', requireRole('monitor'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const { to, note } = req.body || {};
+    if (typeof to !== 'string' || !to) {
+      return res.status(422).json({ errors: { to: 'A target status is required' } });
+    }
+    const result = await executeTransition({
+      requestId: id,
+      user: req.user,
+      to,
+      note: note ?? null,
+      override: true,
+    });
+    res.json({ request: { id, status: result.status } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Shared by the comment routes: Section 6 comment cells — user own (404
+// otherwise), monitor any, employee never. Returns the request row or null
+// after having written the error response.
+async function loadCommentableRequest(req, res) {
+  if (req.user.role === 'employee') {
+    res.status(403).json({ error: 'Forbidden' });
+    return null;
+  }
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  const { rows } = await pool.query(
+    `SELECT r.id, r.user_id, st.name AS service_name
+     FROM request r JOIN service_type st ON st.id = r.service_type_id
+     WHERE r.id = $1`,
+    [id]
+  );
+  if (!rows.length || (req.user.role === 'user' && rows[0].user_id !== req.user.id)) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  return rows[0];
+}
+
+// POST /requests/{id}/comments — notifies the other party (Section 7
+// trigger table: owner ↔ monitors).
+router.post('/:id/comments', async (req, res, next) => {
+  try {
+    const request = await loadCommentableRequest(req, res);
+    if (!request) return;
+    const { body } = req.body || {};
+    if (typeof body !== 'string' || !body.trim()) {
+      return res.status(422).json({ errors: { body: 'A comment body is required' } });
+    }
+
+    const client = await pool.connect();
+    let created;
+    try {
+      await client.query('BEGIN');
+      ({ rows: [created] } = await client.query(
+        `INSERT INTO request_comment (request_id, user_id, body)
+         VALUES ($1, $2, $3) RETURNING id, created_at`,
+        [request.id, req.user.id, body.trim()]
+      ));
+      const message = `${req.user.name} commented on request #${request.id} (${request.service_name}).`;
+      if (req.user.role === 'monitor') {
+        await client.query(
+          `INSERT INTO notification (user_id, request_id, type, message)
+           VALUES ($1, $2, 'comment', $3)`,
+          [request.user_id, request.id, message]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO notification (user_id, request_id, type, message)
+           SELECT id, $1, 'comment', $2 FROM users WHERE role = 'monitor' AND is_active`,
+          [request.id, message]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    res.status(201).json({
+      comment: {
+        id: created.id,
+        body: body.trim(),
+        createdAt: created.created_at,
+        author: { id: req.user.id, name: req.user.name },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /requests/{id}/comments
+router.get('/:id/comments', async (req, res, next) => {
+  try {
+    const request = await loadCommentableRequest(req, res);
+    if (!request) return;
+    const { rows } = await pool.query(
+      `SELECT c.id, c.body, c.created_at, u.id AS by_id, u.name AS by_name
+       FROM request_comment c
+       JOIN users u ON u.id = c.user_id
+       WHERE c.request_id = $1
+       ORDER BY c.created_at, c.id`,
+      [request.id]
+    );
+    res.json({
+      comments: rows.map((c) => ({
+        id: c.id,
+        body: c.body,
+        createdAt: c.created_at,
+        author: { id: c.by_id, name: c.by_name },
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /requests/{id}/priority — monitor only. Not a status transition, but
+// it writes a history row with a descriptive note (Section 5) under the
+// request row lock so the timeline stays a complete, ordered audit trail.
+router.patch('/:id/priority', requireRole('monitor'), async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const { priority } = req.body || {};
+    if (!PRIORITIES.includes(priority)) {
+      return res.status(422).json({ errors: { priority: 'Priority must be low, medium, or high' } });
+    }
+
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'SELECT id, status, priority FROM request WHERE id = $1 FOR UPDATE',
+      [id]
+    );
+    if (!rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const request = rows[0];
+
+    if (request.priority !== priority) {
+      await client.query('UPDATE request SET priority = $1, updated_at = now() WHERE id = $2', [
+        priority,
+        id,
+      ]);
+      await client.query(
+        `INSERT INTO request_status_history (request_id, status, changed_by, note)
+         VALUES ($1, $2, $3, $4)`,
+        [id, request.status, req.user.id, `Priority changed from ${request.priority} to ${priority}`]
+      );
+    }
+    await client.query('COMMIT');
+
+    res.json({ request: { id, priority } });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
   }
 });
 

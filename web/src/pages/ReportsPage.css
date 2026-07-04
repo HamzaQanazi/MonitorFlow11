@@ -1,0 +1,84 @@
+/* Basic Reports — aggregate cards + date filters on top of the shared
+   RequestsPage vocabulary. */
+
+.date-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.date-field input {
+  height: 36px;
+}
+
+.rep-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.rep-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rep-card h3 {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.rep-card-total {
+  justify-content: center;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.rep-card-num {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.rep-card-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.rep-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.rep-breakdown li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.rep-breakdown b {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.rep-service-name {
+  overflow-wrap: anywhere;
+}
+
+.rep-none {
+  color: var(--muted);
+  font-size: 13px;
+}

@@ -8,7 +8,8 @@ import LoginPage from './pages/LoginPage'
 import DashboardShell from './pages/DashboardShell'
 import DashboardPage from './pages/DashboardPage'
 import RequestsPage from './pages/RequestsPage'
-import ComingSoon from './pages/ComingSoon'
+import EmployeesPage from './pages/EmployeesPage'
+import ReportsPage from './pages/ReportsPage'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -27,24 +28,8 @@ createRoot(document.getElementById('root')!).render(
             <Route index element={<DashboardPage />} />
             <Route path="requests" element={<RequestsPage />} />
             <Route path="requests/:id" element={<RequestsPage />} />
-            <Route
-              path="employees"
-              element={
-                <ComingSoon
-                  title="Employees Management"
-                  note="Not built yet — employee accounts and department management arrive in Week 6."
-                />
-              }
-            />
-            <Route
-              path="reports"
-              element={
-                <ComingSoon
-                  title="Basic Reports"
-                  note="Not built yet — filtered reports and CSV export arrive in Week 6."
-                />
-              }
-            />
+            <Route path="employees" element={<EmployeesPage />} />
+            <Route path="reports" element={<ReportsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

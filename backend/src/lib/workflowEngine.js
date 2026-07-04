@@ -74,9 +74,35 @@ function resolveTransition({
   return t;
 }
 
+// Monitor override (Section 7 PATCH /requests/{id}/status): bypasses the
+// transition table but never the constraint — the target must be a status
+// key of this workflow with category `terminated` (reject/cancel) or
+// `triage`/`in_progress` (reopen). Arbitrary jumps and unknown keys are 422
+// (well-formed body failing validation, must-pass #18); a note is always
+// required. Returns a synthetic transition so the write path is shared.
+const OVERRIDE_TARGET_CATEGORIES = ['terminated', 'triage', 'in_progress'];
+
+function resolveOverride({ statuses, currentStatus, user, to, note }) {
+  if (user.role !== 'monitor') throw new WorkflowError(403, 'Forbidden');
+  const target = statuses.find((s) => s.key === to);
+  if (!target) throw new WorkflowError(422, 'Target is not a status in this workflow');
+  if (!OVERRIDE_TARGET_CATEGORIES.includes(target.category)) {
+    throw new WorkflowError(422, 'An override may only reject, cancel, or reopen a request');
+  }
+  if (to === currentStatus) {
+    throw new WorkflowError(409, 'The request is already in this status');
+  }
+  if (!(note && note.trim())) {
+    throw new WorkflowError(422, 'A note is required for a monitor override');
+  }
+  return { from: currentStatus, to, allowed_role: 'monitor', action: null, requires_note: true };
+}
+
 // Executes one transition. `beforeCommit(client, ctx)` runs inside the same
 // transaction after the status/history writes — assignment uses it to upsert
-// the TASK row, /complete (Week 5) to store the completion form response.
+// the TASK row, /complete to store the completion form response. With
+// `override: true` the transition table is bypassed via resolveOverride; the
+// locking, writes, history, and notifications are identical.
 async function executeTransition({
   requestId,
   user,
@@ -85,6 +111,7 @@ async function executeTransition({
   note = null,
   completionValidated = false,
   beforeCommit = null,
+  override = false,
 }) {
   const client = await pool.connect();
   try {
@@ -110,18 +137,26 @@ async function executeTransition({
     );
     const task = taskRows[0] || null;
 
-    const transition = resolveTransition({
-      statuses: request.statuses,
-      transitions: request.transitions,
-      currentStatus: request.status,
-      user,
-      requestUserId: request.user_id,
-      taskEmployeeId: task ? task.employee_id : null,
-      to,
-      action,
-      note,
-      completionValidated,
-    });
+    const transition = override
+      ? resolveOverride({
+          statuses: request.statuses,
+          currentStatus: request.status,
+          user,
+          to,
+          note,
+        })
+      : resolveTransition({
+          statuses: request.statuses,
+          transitions: request.transitions,
+          currentStatus: request.status,
+          user,
+          requestUserId: request.user_id,
+          taskEmployeeId: task ? task.employee_id : null,
+          to,
+          action,
+          note,
+          completionValidated,
+        });
 
     await client.query('UPDATE request SET status = $1, updated_at = now() WHERE id = $2', [
       transition.to,
@@ -179,5 +214,6 @@ module.exports = {
   statusOf,
   validTransitions,
   resolveTransition,
+  resolveOverride,
   executeTransition,
 };
