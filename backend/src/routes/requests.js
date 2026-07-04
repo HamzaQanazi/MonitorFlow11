@@ -8,13 +8,10 @@ const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { validateFormResponse } = require('../lib/validateFormResponse');
 const { categoryOf, executeTransition, WorkflowError } = require('../lib/workflowEngine');
+const { buildRequestFilter, PRIORITIES } = require('../lib/requestQuery');
 
 const router = express.Router();
 router.use(requireAuth);
-
-const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'];
-const PRIORITIES = ['low', 'medium', 'high'];
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function statusOf(workflowStatuses, key) {
   const s = workflowStatuses.find((st) => st.key === key);
@@ -110,35 +107,9 @@ router.get('/', async (req, res, next) => {
   try {
     if (req.user.role === 'employee') return res.status(403).json({ error: 'Forbidden' });
 
-    const q = req.query;
-    const page = q.page === undefined ? 1 : Number(q.page);
-    const pageSize = q.pageSize === undefined ? 20 : Number(q.pageSize);
-    const bad = [];
-    if (!Number.isInteger(page) || page < 1) bad.push('page');
-    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) bad.push('pageSize');
-    if (q.category !== undefined && !CATEGORIES.includes(q.category)) bad.push('category');
-    if (q.priority !== undefined && !PRIORITIES.includes(q.priority)) bad.push('priority');
-    if (q.serviceTypeId !== undefined && !Number.isInteger(Number(q.serviceTypeId))) bad.push('serviceTypeId');
-    if (q.dateFrom !== undefined && !DATE_RE.test(q.dateFrom)) bad.push('dateFrom');
-    if (q.dateTo !== undefined && !DATE_RE.test(q.dateTo)) bad.push('dateTo');
-    if (bad.length) return res.status(400).json({ error: `Invalid query params: ${bad.join(', ')}` });
-
-    const where = [];
-    const params = [];
-    const add = (sql, value) => {
-      params.push(value);
-      where.push(sql.replaceAll('?', `$${params.length}`));
-    };
-
-    // A user only ever sees their own requests, whatever the params say.
-    if (req.user.role === 'user' || q.userId === 'me') add('r.user_id = ?', req.user.id);
-    if (q.status !== undefined) add('r.status = ?', q.status);
-    if (q.category !== undefined) add("s->>'category' = ?", q.category);
-    if (q.serviceTypeId !== undefined) add('r.service_type_id = ?', Number(q.serviceTypeId));
-    if (q.priority !== undefined) add('r.priority = ?', q.priority);
-    if (q.dateFrom !== undefined) add('r.created_at >= ?::date', q.dateFrom);
-    if (q.dateTo !== undefined) add("r.created_at < ?::date + INTERVAL '1 day'", q.dateTo);
-    if (q.q) add('(u.name ILIKE ? OR st.name ILIKE ?)', `%${q.q}%`);
+    const filter = buildRequestFilter(req.query, req.user);
+    if (filter.error) return res.status(400).json({ error: filter.error });
+    const { where, params, page, pageSize } = filter;
 
     params.push(pageSize, (page - 1) * pageSize);
     const { rows } = await pool.query(
