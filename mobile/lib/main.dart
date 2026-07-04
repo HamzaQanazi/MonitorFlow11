@@ -8,6 +8,7 @@ import 'api/api_client.dart';
 import 'auth/auth_state.dart';
 import 'auth/login_screen.dart';
 import 'theme.dart';
+import 'user/user_home.dart';
 
 void main() {
   final auth = AuthState(ApiClient())..init();
@@ -41,7 +42,7 @@ class _AuthGate extends StatelessWidget {
         const Scaffold(body: Center(child: CircularProgressIndicator())),
       AuthStatus.signedOut => const LoginScreen(),
       AuthStatus.signedIn => switch (auth.user!.role) {
-          'user' => const _PlaceholderHome(title: 'User Home'),
+          'user' => const UserHomeScreen(),
           'employee' => const _PlaceholderHome(title: 'Employee Home'),
           _ => const _MonitorNotSupported(),
         },
