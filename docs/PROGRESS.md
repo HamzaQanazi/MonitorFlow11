@@ -92,6 +92,13 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 
 **Week 6 is complete.** MVP backend + Monitor web are done; both Week 6 gates pass (file IDOR/bad-upload from W5; CSV opens + injection escaped). Remaining across the project is Student 1's Flutter surface (Employee app, Notifications/Profile, photo upload — form renderer + Create Request landed above). DB reseeded to canonical after each feature.
 
+### Week 4 — mobile / Student 1 (commit `bd2df5e`): Employee app
+- **Employee Home + My Tasks** (merged Section 4 page, `mobile/lib/employee/`): task queue from `GET /tasks` — status pills, high-priority marker, 30s polling, pull-to-refresh, loading/empty/error states.
+- **Task Details**: the limited `GET /tasks/{id}` view (requester name+phone, never email; `visible_to_employee:false` fields arrive pre-stripped). Action buttons driven entirely by `GET /tasks/{id}/valid-transitions` — no status keys in code.
+- **Accept / Reject**: accept confirms; reject requires a note (dialog, button disabled until typed) and returns the request to the monitor queue. Concurrent-change 409s surface the server message and reload.
+- Verified on Windows against seed: accept flow, Monitor-assign → appears in queue ≤30s, reject → note in Monitor timeline, gate-code stripping for the Facilities employee. 15 Flutter tests green.
+- **Week 4 Student 1 is done.** Deferred to Week 5: generic status updates + Complete Task (detail shows an honest "next build" note past accept).
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -106,7 +113,6 @@ All password `Password123!` (re-run `npm run seed` to reset):
 
 ## Next
 
-- **Week 4, Student 1:** Employee app pages — Employee Home + My Tasks (merged), Task Details (`GET /tasks/{id}`), accept/reject with note. All backend endpoints exist.
 - **Week 5, Student 1** (unblocked — the whole backend is done): Update Task Status + Complete Task (completion form via the renderer), user confirm/dispute + cancel on Request Details, schema-labelled answers on detail, photo upload (files backend live).
 - **Week 6, Student 1:** Notifications UI + Profile (shared component, both apps).
 - **Branch discipline:** Student 2 on `hamza`, Student 1 on `student1/flutter-form-renderer`; merge to `main` per verified feature (or at least twice a week), keep `main` green.
