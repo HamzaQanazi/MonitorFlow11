@@ -116,7 +116,22 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                DynamicForm(key: _formKey, fields: snap.data!),
+                DynamicForm(
+                  key: _formKey,
+                  fields: snap.data!,
+                  // Pending upload (no parent): POST /requests links the
+                  // attachment to the new request in its transaction.
+                  photoUploader: (filename, bytes) async {
+                    final api = context.read<AuthState>().api;
+                    final json = await api.postMultipart(
+                      '/files',
+                      bytes: bytes,
+                      filename: filename,
+                    );
+                    return (json['attachment'] as Map<String, dynamic>)['id']
+                        as String;
+                  },
+                ),
                 const SizedBox(height: 8),
                 ElevatedButton(
                   onPressed: _submitting ? null : _submit,
