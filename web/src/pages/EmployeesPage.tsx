@@ -57,6 +57,7 @@ export default function EmployeesPage() {
     | { kind: 'edit'; employee: Employee }
     | { kind: 'deactivate'; employee: Employee }
     | { kind: 'reset'; employee: Employee }
+    | { kind: 'summary'; employee: Employee }
     | null
   >(null)
 
@@ -220,7 +221,15 @@ export default function EmployeesPage() {
               <tbody>
                 {data.employees.map((e) => (
                   <tr key={e.id}>
-                    <td className="req-service">{e.name}</td>
+                    <td className="req-service">
+                      <button
+                        type="button"
+                        className="link-button emp-name-link"
+                        onClick={() => setDialog({ kind: 'summary', employee: e })}
+                      >
+                        {e.name}
+                      </button>
+                    </td>
                     <td className="emp-email">{e.email}</td>
                     <td>{e.departmentName}</td>
                     <td>
@@ -289,6 +298,9 @@ export default function EmployeesPage() {
       )}
       {dialog?.kind === 'reset' && (
         <ResetPasswordDialog employee={dialog.employee} onClose={() => setDialog(null)} />
+      )}
+      {dialog?.kind === 'summary' && (
+        <EmployeeSummaryDialog employee={dialog.employee} onClose={() => setDialog(null)} />
       )}
     </div>
   )
@@ -510,6 +522,114 @@ function ResetPasswordDialog({ employee, onClose }: { employee: Employee; onClos
             </div>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+// Read-only workload summary: every task ever assigned to this employee,
+// with per-category counts. Data is the existing GET /employees/{id}/tasks —
+// no new endpoint.
+interface EmployeeTask {
+  id: number
+  requestId: number
+  serviceTypeName: string
+  status: { key: string; label: string; category: string | null }
+  priority: string
+  assignedAt: string
+}
+
+function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onClose: () => void }) {
+  const [tasks, setTasks] = useState<EmployeeTask[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  useEffect(() => {
+    apiFetch<{ tasks: EmployeeTask[] }>(`/employees/${employee.id}/tasks`)
+      .then((res) => setTasks(res.tasks))
+      .catch((err: Error) => setError(err.message))
+  }, [employee.id])
+
+  const counts = new Map<string, number>()
+  for (const t of tasks ?? []) {
+    const cat = t.status.category ?? 'unknown'
+    counts.set(cat, (counts.get(cat) ?? 0) + 1)
+  }
+
+  return (
+    <div className="dialog-backdrop" onClick={onClose}>
+      <div
+        className="dialog emp-summary"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Summary for ${employee.name}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h4>{employee.name}</h4>
+        <p className="emp-summary-meta">
+          {employee.email} · {employee.departmentName} ·{' '}
+          <span className={`emp-badge${employee.isActive ? ' is-active' : ' is-inactive'}`}>
+            {employee.isActive ? 'Active' : 'Inactive'}
+          </span>
+        </p>
+
+        {error ? (
+          <p className="req-status-msg">Couldn’t load tasks: {error}</p>
+        ) : !tasks ? (
+          <p className="detail-empty">Loading tasks…</p>
+        ) : tasks.length === 0 ? (
+          <p className="detail-empty">No tasks have been assigned to this employee yet.</p>
+        ) : (
+          <>
+            <p className="emp-summary-counts">
+              {tasks.length} task{tasks.length === 1 ? '' : 's'}
+              {[...counts.entries()].map(([cat, n]) => (
+                <span key={cat} className={`status-pill is-${cat}`}>
+                  {n} {cat.replace('_', ' ')}
+                </span>
+              ))}
+            </p>
+            <div className="req-tablewrap emp-summary-tablewrap">
+              <table className="req-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Request</th>
+                    <th scope="col">Service</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Priority</th>
+                    <th scope="col">Assigned</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tasks.map((t) => (
+                    <tr key={t.id}>
+                      <td>#{t.requestId}</td>
+                      <td className="req-service">{t.serviceTypeName}</td>
+                      <td>
+                        <span className={`status-pill${t.status.category ? ` is-${t.status.category}` : ''}`}>
+                          {t.status.label}
+                        </span>
+                      </td>
+                      <td>{t.priority}</td>
+                      <td>{new Date(t.assignedAt).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        <div className="dialog-actions">
+          <button type="button" className="req-retry" onClick={onClose}>
+            Close
+          </button>
+        </div>
       </div>
     </div>
   )

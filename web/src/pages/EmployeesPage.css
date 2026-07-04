@@ -92,3 +92,35 @@
   text-align: center;
   user-select: all;
 }
+
+/* Employee workload summary dialog */
+.emp-summary {
+  max-width: 640px;
+  width: min(640px, calc(100vw - 40px));
+}
+
+.emp-name-link {
+  font-weight: 600;
+}
+
+.emp-summary-meta {
+  margin: 4px 0 14px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.emp-summary-counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.emp-summary-tablewrap {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+}
