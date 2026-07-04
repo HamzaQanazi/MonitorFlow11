@@ -48,6 +48,12 @@ interface Service {
   name: string
 }
 
+interface EmployeeOption {
+  id: number
+  name: string
+  isActive: boolean
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
@@ -57,15 +63,17 @@ export default function ReportsPage() {
   const page = Math.max(1, Number(params.get('page')) || 1)
   const category = params.get('category') ?? ''
   const serviceTypeId = params.get('service') ?? ''
+  const employeeId = params.get('employee') ?? ''
   const priority = params.get('priority') ?? ''
   const dateFrom = params.get('dateFrom') ?? ''
   const dateTo = params.get('dateTo') ?? ''
   const q = params.get('q') ?? ''
-  const hasFilters = Boolean(category || serviceTypeId || priority || dateFrom || dateTo || q)
+  const hasFilters = Boolean(category || serviceTypeId || employeeId || priority || dateFrom || dateTo || q)
 
   const [data, setData] = useState<ReportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [services, setServices] = useState<Service[]>([])
+  const [employees, setEmployees] = useState<EmployeeOption[]>([])
   const [search, setSearch] = useState(q)
   const [exporting, setExporting] = useState(false)
 
@@ -97,12 +105,13 @@ export default function ReportsPage() {
     const qs = new URLSearchParams()
     if (category) qs.set('category', category)
     if (serviceTypeId) qs.set('serviceTypeId', serviceTypeId)
+    if (employeeId) qs.set('employeeId', employeeId)
     if (priority) qs.set('priority', priority)
     if (dateFrom) qs.set('dateFrom', dateFrom)
     if (dateTo) qs.set('dateTo', dateTo)
     if (q) qs.set('q', q)
     return qs
-  }, [category, serviceTypeId, priority, dateFrom, dateTo, q])
+  }, [category, serviceTypeId, employeeId, priority, dateFrom, dateTo, q])
 
   const load = useCallback(async () => {
     const qs = backendQuery()
@@ -121,6 +130,10 @@ export default function ReportsPage() {
   useEffect(() => {
     apiFetch<{ services: Service[] }>('/services')
       .then((res) => setServices(res.services))
+      .catch(() => {})
+    // pageSize 100 = the API max; fine at this project's employee count.
+    apiFetch<{ employees: EmployeeOption[] }>('/employees?pageSize=100')
+      .then((res) => setEmployees(res.employees))
       .catch(() => {})
   }, [])
 
@@ -213,6 +226,15 @@ export default function ReportsPage() {
             {services.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name}
+              </option>
+            ))}
+          </select>
+          <select className="req-select" aria-label="Filter by employee" value={employeeId} onChange={(e) => setFilter('employee', e.target.value)}>
+            <option value="">All employees</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.name}
+                {emp.isActive ? '' : ' (inactive)'}
               </option>
             ))}
           </select>

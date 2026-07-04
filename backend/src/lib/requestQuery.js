@@ -20,6 +20,7 @@ function buildRequestFilter(q, user) {
   if (q.category !== undefined && !CATEGORIES.includes(q.category)) bad.push('category');
   if (q.priority !== undefined && !PRIORITIES.includes(q.priority)) bad.push('priority');
   if (q.serviceTypeId !== undefined && !Number.isInteger(Number(q.serviceTypeId))) bad.push('serviceTypeId');
+  if (q.employeeId !== undefined && !Number.isInteger(Number(q.employeeId))) bad.push('employeeId');
   if (q.dateFrom !== undefined && !DATE_RE.test(q.dateFrom)) bad.push('dateFrom');
   if (q.dateTo !== undefined && !DATE_RE.test(q.dateTo)) bad.push('dateTo');
   if (bad.length) return { error: `Invalid query params: ${bad.join(', ')}` };
@@ -35,6 +36,11 @@ function buildRequestFilter(q, user) {
   if (q.status !== undefined) add('r.status = ?', q.status);
   if (q.category !== undefined) add("s->>'category' = ?", q.category);
   if (q.serviceTypeId !== undefined) add('r.service_type_id = ?', Number(q.serviceTypeId));
+  // Subquery, not a join — callers share the fixed alias set (see above),
+  // and a request has at most one task row (Section 5).
+  if (q.employeeId !== undefined) {
+    add('r.id IN (SELECT request_id FROM task WHERE employee_id = ?)', Number(q.employeeId));
+  }
   if (q.priority !== undefined) add('r.priority = ?', q.priority);
   if (q.dateFrom !== undefined) add('r.created_at >= ?::date', q.dateFrom);
   if (q.dateTo !== undefined) add("r.created_at < ?::date + INTERVAL '1 day'", q.dateTo);
