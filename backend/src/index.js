@@ -13,6 +13,23 @@ const departmentRoutes = require('./routes/departments');
 const reportRoutes = require('./routes/reports');
 
 const app = express();
+
+// ponytail: dev-only CORS so a Flutter *web* build (served on another
+// localhost port) can reach this API. Native mobile/desktop builds don't need
+// it; the React dashboard uses a Vite proxy. Localhost origins only. Remove if
+// the web build isn't a deployment target.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && /^http:\/\/localhost:\d+$/.test(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization,Content-Type');
+    res.setHeader('Access-Control-Max-Age', '600');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.use(express.json({ limit: '100kb' }));
 
 app.use('/api/v1/auth', authRoutes);
