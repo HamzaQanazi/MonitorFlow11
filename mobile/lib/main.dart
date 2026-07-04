@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'api/api_client.dart';
 import 'auth/auth_state.dart';
 import 'auth/login_screen.dart';
+import 'employee/employee_home.dart';
 import 'theme.dart';
 import 'user/user_home.dart';
 
@@ -43,39 +44,10 @@ class _AuthGate extends StatelessWidget {
       AuthStatus.signedOut => const LoginScreen(),
       AuthStatus.signedIn => switch (auth.user!.role) {
           'user' => const UserHomeScreen(),
-          'employee' => const _PlaceholderHome(title: 'Employee Home'),
+          'employee' => const EmployeeHomeScreen(),
           _ => const _MonitorNotSupported(),
         },
     };
-  }
-}
-
-/// Temporary shell until the real Home pages land (Section 4).
-class _PlaceholderHome extends StatelessWidget {
-  final String title;
-  const _PlaceholderHome({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    final auth = context.watch<AuthState>();
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sign out',
-            onPressed: () => context.read<AuthState>().logout(),
-          ),
-        ],
-      ),
-      body: Center(
-        child: Text(
-          'Signed in as ${auth.user?.name ?? ''}',
-          style: const TextStyle(color: MfColors.muted),
-        ),
-      ),
-    );
   }
 }
 
