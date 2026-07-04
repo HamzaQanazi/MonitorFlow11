@@ -57,7 +57,8 @@ void main() {
       expect(find.byKey(const ValueKey('field-urgent')), findsOneWidget);
       expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
       expect(find.byType(CheckboxListTile), findsOneWidget);
-      expect(find.text('Photo upload is coming in a later build'), findsOneWidget);
+      // No photoUploader passed → the photo field is an honest placeholder.
+      expect(find.text('Photo upload is not available here yet'), findsOneWidget);
       // Required fields are marked; optional ones aren't.
       expect(find.text('Equipment type *'), findsOneWidget);
       expect(find.text('Urgent?'), findsOneWidget);

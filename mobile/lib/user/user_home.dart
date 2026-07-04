@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../models/request.dart';
+import '../shared/notifications_screen.dart';
+import '../shared/profile_screen.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
 import 'catalogue_screen.dart';
@@ -81,6 +83,26 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
       appBar: AppBar(
         title: const Text('MonitorFlow'),
         actions: [
+          NotificationBell(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => NotificationsScreen(
+                  onOpenRequest: (ctx, requestId) => Navigator.of(ctx).push(
+                    MaterialPageRoute(
+                      builder: (_) => RequestDetailScreen(requestId: requestId),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'Profile',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sign out',

@@ -10,6 +10,8 @@ import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../models/task.dart';
+import '../shared/notifications_screen.dart';
+import '../shared/profile_screen.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
 import 'task_detail_screen.dart';
@@ -57,6 +59,33 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     }
   }
 
+  /// An employee notification points at a request; find their task for it.
+  Future<void> _openTaskForRequest(BuildContext ctx, int requestId) async {
+    final match = _tasks?.where((t) => t.requestId == requestId).toList();
+    if (match == null || match.isEmpty) {
+      // Not in the cached list (e.g. rejected away) — refresh and retry once.
+      await _load(silent: true);
+      final retry = _tasks?.where((t) => t.requestId == requestId).toList();
+      if (retry == null || retry.isEmpty) {
+        if (ctx.mounted) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            const SnackBar(content: Text('This task is no longer assigned to you.')),
+          );
+        }
+        return;
+      }
+      if (!ctx.mounted) return;
+      await Navigator.of(ctx).push(
+        MaterialPageRoute(builder: (_) => TaskDetailScreen(taskId: retry.first.id)),
+      );
+      return;
+    }
+    await Navigator.of(ctx).push(
+      MaterialPageRoute(builder: (_) => TaskDetailScreen(taskId: match.first.id)),
+    );
+    _load(silent: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
@@ -66,6 +95,21 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       appBar: AppBar(
         title: Text('My tasks — $firstName'),
         actions: [
+          NotificationBell(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    NotificationsScreen(onOpenRequest: _openTaskForRequest),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'Profile',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ProfileScreen()),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sign out',

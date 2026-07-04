@@ -5,14 +5,24 @@
 // errors — the server is authoritative, these override client validation.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
+import '../api/api_client.dart';
 import '../theme.dart';
 import 'form_schema.dart';
+
+/// Uploads picked bytes and returns the FILE_ATTACHMENT id (Section 7
+/// two-step contract). The host screen owns the endpoint specifics.
+typedef PhotoUploader = Future<String> Function(String filename, List<int> bytes);
 
 class DynamicForm extends StatefulWidget {
   final List<FormFieldDef> fields;
 
-  const DynamicForm({super.key, required this.fields});
+  /// When null, photo fields render as a disabled placeholder (the host
+  /// context has nowhere to attach an upload yet).
+  final PhotoUploader? photoUploader;
+
+  const DynamicForm({super.key, required this.fields, this.photoUploader});
 
   @override
   State<DynamicForm> createState() => DynamicFormState();
@@ -22,6 +32,9 @@ class DynamicFormState extends State<DynamicForm> {
   final Map<String, Object?> _values = {};
   final Map<String, String> _errors = {};
   final Map<String, TextEditingController> _textControllers = {};
+  final Map<String, String> _photoNames = {}; // field id → picked filename
+  final Set<String> _photoBusy = {};
+  final _picker = ImagePicker();
 
   @override
   void initState() {
@@ -230,35 +243,131 @@ class DynamicFormState extends State<DynamicForm> {
     );
   }
 
-  // Photo upload lands with the Week 5 files backend; the field is shown
-  // disabled so the schema is fully represented. Both seeded photo fields
-  // are optional, so this never blocks submission today.
   Widget _photoField(FormFieldDef field, String? error) {
+    // No uploader = the host context can't attach files (e.g. the request
+    // doesn't exist yet) — honest disabled placeholder, never blocks an
+    // optional field.
+    if (widget.photoUploader == null) {
+      return _GroupShell(
+        field: field,
+        error: error,
+        child: Container(
+          key: ValueKey('field-${field.id}'),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: MfColors.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: MfColors.border),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.photo_camera_outlined, color: MfColors.muted),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Photo upload is not available here yet',
+                  style: TextStyle(color: MfColors.muted),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final busy = _photoBusy.contains(field.id);
+    final uploaded = _values[field.id] is String;
     return _GroupShell(
       field: field,
       error: error,
       child: Container(
         key: ValueKey('field-${field.id}'),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: MfColors.surface,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: MfColors.border),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.photo_camera_outlined, color: MfColors.muted),
-            SizedBox(width: 12),
+            Icon(
+              uploaded ? Icons.check_circle_outline : Icons.photo_camera_outlined,
+              color: uploaded ? MfColors.amber600 : MfColors.muted,
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Photo upload is coming in a later build',
-                style: TextStyle(color: MfColors.muted),
+                busy
+                    ? 'Uploading…'
+                    : uploaded
+                        ? (_photoNames[field.id] ?? 'Photo attached')
+                        : 'No photo attached',
+                style: TextStyle(
+                  color: uploaded ? MfColors.ink : MfColors.muted,
+                  fontSize: 14,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+            if (busy)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else if (uploaded)
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _values.remove(field.id);
+                    _photoNames.remove(field.id);
+                    _errors.remove(field.id);
+                  });
+                },
+                child: const Text('Remove'),
+              )
+            else
+              TextButton(
+                onPressed: () => _pickAndUpload(field),
+                child: const Text('Add photo'),
+              ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _pickAndUpload(FormFieldDef field) async {
+    final XFile? picked;
+    try {
+      picked = await _picker.pickImage(source: ImageSource.gallery);
+    } on Exception {
+      return; // picker unavailable/cancelled — nothing to do
+    }
+    if (picked == null) return;
+
+    setState(() {
+      _photoBusy.add(field.id);
+      _errors.remove(field.id);
+    });
+    try {
+      final bytes = await picked.readAsBytes();
+      final id = await widget.photoUploader!(picked.name, bytes);
+      if (!mounted) return;
+      setState(() {
+        _values[field.id] = id;
+        _photoNames[field.id] = picked!.name;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _errors[field.id] = e.fieldErrors['file'] ?? e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() =>
+          _errors[field.id] = '${field.label} could not be uploaded — try again');
+    } finally {
+      if (mounted) setState(() => _photoBusy.remove(field.id));
+    }
   }
 
   Widget _unsupportedField(FormFieldDef field, String? error) {

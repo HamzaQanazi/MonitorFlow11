@@ -140,7 +140,21 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                DynamicForm(key: _formKey, fields: snap.data!),
+                DynamicForm(
+                  key: _formKey,
+                  fields: snap.data!,
+                  photoUploader: (filename, bytes) async {
+                    final api = context.read<AuthState>().api;
+                    final json = await api.postMultipart(
+                      '/files',
+                      bytes: bytes,
+                      filename: filename,
+                      fields: {'taskId': '${widget.taskId}'},
+                    );
+                    return (json['attachment'] as Map<String, dynamic>)['id']
+                        as String;
+                  },
+                ),
                 const SizedBox(height: 8),
                 ElevatedButton(
                   onPressed: _submitting ? null : _submit,

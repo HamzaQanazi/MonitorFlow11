@@ -70,6 +70,35 @@ class ApiClient {
   Future<Map<String, dynamic>> patch(String path, {Object? body}) =>
       _send('PATCH', path, body: body);
 
+  /// Multipart upload (POST /files): file bytes + form fields. Same error
+  /// mapping as JSON calls — 422 carries per-field errors.
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required List<int> bytes,
+    required String filename,
+    Map<String, String> fields = const {},
+  }) async {
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'));
+    request.headers['Accept'] = 'application/json';
+    if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
+    request.fields.addAll(fields);
+    request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+
+    http.Response response;
+    try {
+      response = await http.Response.fromStream(
+        await _http.send(request).timeout(const Duration(seconds: 60)),
+      );
+    } on TimeoutException {
+      throw NetworkException('The upload took too long');
+    } on http.ClientException {
+      throw NetworkException();
+    } on SocketException {
+      throw NetworkException();
+    }
+    return _decode(response);
+  }
+
   Future<Map<String, dynamic>> _send(
     String method,
     String path, {
@@ -101,7 +130,10 @@ class ApiClient {
     } on SocketException {
       throw NetworkException();
     }
+    return _decode(response);
+  }
 
+  Map<String, dynamic> _decode(http.Response response) {
     if (response.statusCode == 204) return const {};
 
     Map<String, dynamic> json;
