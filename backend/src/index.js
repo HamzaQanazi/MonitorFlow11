@@ -7,6 +7,7 @@ const requestRoutes = require('./routes/requests');
 const taskRoutes = require('./routes/tasks');
 const employeeRoutes = require('./routes/employees');
 const fileRoutes = require('./routes/files');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 app.use(express.json({ limit: '100kb' }));
@@ -18,6 +19,7 @@ app.use('/api/v1/requests', requestRoutes);
 app.use('/api/v1/tasks', taskRoutes);
 app.use('/api/v1/employees', employeeRoutes);
 app.use('/api/v1/files', fileRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
