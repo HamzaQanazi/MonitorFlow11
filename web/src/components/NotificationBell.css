@@ -1,0 +1,134 @@
+/* Notification bell — quiet in the shell bar; amber only on the unread
+   badge (a brand moment, within the Restrained Rule). */
+.bell {
+  position: relative;
+}
+
+.bell-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.bell-button:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.bell-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.bell-badge {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--amber-600);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.bell-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  width: min(360px, calc(100vw - 32px));
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+}
+
+.bell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bell-head h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.bell-readall {
+  border: none;
+  background: none;
+  color: var(--amber-700);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bell-readall:hover {
+  text-decoration: underline;
+}
+
+.bell-empty {
+  margin: 0;
+  padding: 22px 14px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.bell-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.bell-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 14px;
+  border: none;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bell-item:hover {
+  background: var(--surface);
+}
+
+.bell-item-msg {
+  font-size: 13.5px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.bell-item.is-unread .bell-item-msg {
+  font-weight: 600;
+}
+
+.bell-item.is-unread {
+  box-shadow: inset 3px 0 0 var(--amber-500);
+}
+
+.bell-item-time {
+  font-size: 12px;
+  color: var(--muted);
+}

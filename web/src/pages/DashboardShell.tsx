@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import NotificationBell from '../components/NotificationBell'
 import './DashboardShell.css'
 
 const navItems = [
@@ -27,6 +28,7 @@ export default function DashboardShell() {
           ))}
         </nav>
         <div className="shell-session">
+          <NotificationBell />
           <span className="shell-user">{user?.name}</span>
           <button className="shell-signout" type="button" onClick={logout}>
             Sign out
