@@ -74,6 +74,12 @@ class FormFieldDef {
   /// same checks, same label-generated messages. The server's 422 stays
   /// authoritative; this is UX only.
   String? validate(Object? value) {
+    // Unsupported first: its value is always empty (nothing renders an
+    // input), and "is required" would be a lie the user can't act on.
+    if (type == FieldType.unsupported) {
+      return required ? '$label is not supported in this app version' : null;
+    }
+
     final missing = value == null || value == '';
     if (missing) return required ? '$label is required' : null;
 
@@ -111,9 +117,7 @@ class FormFieldDef {
             ? null
             : '$label must be an uploaded attachment id';
       case FieldType.unsupported:
-        // Required unsupported fields block submission (Section 8 rule);
-        // by definition the user can't fill them in this app version.
-        return required ? '$label is not supported in this app version' : null;
+        return null; // handled above — unreachable
     }
   }
 
