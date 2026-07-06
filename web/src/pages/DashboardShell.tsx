@@ -9,9 +9,12 @@ const monitorNav = [
   { to: '/employees', label: 'Employees' },
   { to: '/reports', label: 'Reports' },
 ]
-// Spec v4: admin manages accounts/configuration only. Audit Log and Services
-// pages join this list in the Week 4 slice.
-const adminNav = [{ to: '/monitors', label: 'Monitors', end: false }]
+// Spec v4: admin manages accounts/configuration only. The Services page
+// joins this list once the JSON-import slice lands.
+const adminNav = [
+  { to: '/monitors', label: 'Monitors', end: false },
+  { to: '/audit', label: 'Audit Log', end: false },
+]
 
 export default function DashboardShell() {
   const { user, logout } = useAuth()

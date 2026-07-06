@@ -11,6 +11,7 @@ import RequestsPage from './pages/RequestsPage'
 import EmployeesPage from './pages/EmployeesPage'
 import ReportsPage from './pages/ReportsPage'
 import MonitorsPage from './pages/MonitorsPage'
+import AuditPage from './pages/AuditPage'
 
 // Spec v4: monitor and admin share the shell but not the pages — admin is
 // configuration-and-accounts only (server enforces with 403s; this just keeps
@@ -44,6 +45,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="employees" element={<RoleRoute role="monitor"><EmployeesPage /></RoleRoute>} />
             <Route path="reports" element={<RoleRoute role="monitor"><ReportsPage /></RoleRoute>} />
             <Route path="monitors" element={<RoleRoute role="admin"><MonitorsPage /></RoleRoute>} />
+            <Route path="audit" element={<RoleRoute role="admin"><AuditPage /></RoleRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -144,6 +144,12 @@ Per `docs/spec_v4_amendment.md` (DRAFT — supervisor-requested; built first bec
 - **Monitors surface**: `departmentId` required on create, editable, embedded in responses; MonitorsPage gains the department column + picker.
 - Seed: `monitor@` → IT, `monitor2@` (Malak) → Facilities; demo history actors per department. Smoke 31/31 (cross-dept 404 cells, scoped dashboard/reports/CSV totals, notification fan-out checks, file IDOR across departments, regressions). Unit 28/28. tsc/lint/build green. Reseeded after.
 
+### Spec v4 slice 4 — Audit Log (amendment Sections C/D)
+- **`GET /audit-events`** (`backend/src/routes/auditEvents.js`, admin-only): pagination + `action`/`actorId`/`dateFrom`/`dateTo` filters, actor + entity names joined in (entity name resolves for `entity_type = 'user'`; the services slice extends the join). Non-admin 403 (must-pass #25).
+- **Seeded audit trail**: seed now writes `audit_event` rows matching how accounts really enter the system — admin created the monitors, each department's monitor created its employees — so the page has honest demo data from a fresh seed.
+- **`web/src/pages/AuditPage.tsx`** (Section 4 page #17): read-only table (When/Actor/Action/Target/Details), closed-list action select + native date range, URL-backed filters, skeleton/error/empty states, pager. Admin nav gains "Audit Log".
+- Smoke 12/12 (shape, all filters, 400s, pagination, 403/401 cells). Unit 28/28. tsc/lint/build green.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):

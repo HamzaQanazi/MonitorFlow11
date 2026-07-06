@@ -371,6 +371,25 @@ async function seed() {
       IT: accountIds['monitor@monitorflow.dev'],
       Facilities: accountIds['monitor2@monitorflow.dev'],
     };
+
+    // Audit trail matching how these accounts would really enter the system
+    // (spec v4 Section C): admin creates monitors, each department's monitor
+    // creates its employees.
+    const adminId = accountIds['admin@monitorflow.dev'];
+    for (const acc of accounts) {
+      if (acc.role !== 'monitor' && acc.role !== 'employee') continue;
+      await client.query(
+        `INSERT INTO audit_event (actor_id, action, entity_type, entity_id, detail)
+         VALUES ($1, $2, 'user', $3, $4)`,
+        [
+          acc.role === 'monitor' ? adminId : monitorByDept[acc.department],
+          `${acc.role}.created`,
+          accountIds[acc.email],
+          JSON.stringify({ email: acc.email }),
+        ]
+      );
+    }
+
     const HOUR = 3600e3;
 
     for (const [i, demo] of demoRequests.entries()) {
