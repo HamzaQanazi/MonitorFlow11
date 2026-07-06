@@ -175,9 +175,11 @@ const DEV_PASSWORD = 'Password123!';
 const accounts = [
   { name: 'Adel Admin', email: 'admin@monitorflow.dev', role: 'admin', department: null },
   // Spec v4: monitors are department-scoped — one per seeded department so
-  // both services stay demoable.
+  // both services stay demoable. IT gets a second monitor so a successful
+  // deactivation can be demoed despite the last-monitor-of-department guard.
   { name: 'Mona Monitor', email: 'monitor@monitorflow.dev', role: 'monitor', department: 'IT' },
   { name: 'Malak Monitor', email: 'monitor2@monitorflow.dev', role: 'monitor', department: 'Facilities' },
+  { name: 'Majed Monitor', email: 'monitor3@monitorflow.dev', role: 'monitor', department: 'IT' },
   { name: 'Ehab Technician', email: 'tech@monitorflow.dev', role: 'employee', department: 'IT' },
   // Second IT employee so reassignment can be exercised and demoed.
   { name: 'Rana Technician', email: 'tech2@monitorflow.dev', role: 'employee', department: 'IT' },
