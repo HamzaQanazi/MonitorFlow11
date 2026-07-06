@@ -50,7 +50,7 @@ export default function LoginPage() {
       if (err instanceof ApiError) {
         if (err.code === 'not_monitor') {
           setFormError(
-            'This dashboard is for monitor accounts. Users and employees sign in from the mobile apps.',
+            'This dashboard is for monitor and admin accounts. Users and employees sign in from the mobile apps.',
           )
         } else if (err.status === 401) {
           setFormError('Email or password is incorrect.')

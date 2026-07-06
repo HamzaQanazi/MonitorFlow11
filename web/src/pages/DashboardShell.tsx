@@ -3,15 +3,20 @@ import { useAuth } from '../auth/AuthContext'
 import NotificationBell from '../components/NotificationBell'
 import './DashboardShell.css'
 
-const navItems = [
+const monitorNav = [
   { to: '/', label: 'Dashboard', end: true },
   { to: '/requests', label: 'Requests' },
   { to: '/employees', label: 'Employees' },
   { to: '/reports', label: 'Reports' },
 ]
+// Spec v4: admin manages accounts/configuration only. Audit Log and Services
+// pages join this list in the Week 4 slice.
+const adminNav = [{ to: '/monitors', label: 'Monitors', end: false }]
 
 export default function DashboardShell() {
   const { user, logout } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const navItems = isAdmin ? adminNav : monitorNav
 
   return (
     <div className="shell">
@@ -28,7 +33,8 @@ export default function DashboardShell() {
           ))}
         </nav>
         <div className="shell-session">
-          <NotificationBell />
+          {/* No notification triggers target the admin — an always-empty bell is noise. */}
+          {!isAdmin && <NotificationBell />}
           <span className="shell-user">{user?.name}</span>
           <button className="shell-signout" type="button" onClick={logout}>
             Sign out

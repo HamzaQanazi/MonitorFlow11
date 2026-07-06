@@ -6,7 +6,7 @@ export interface AuthUser {
   id: number
   name: string
   email: string
-  role: 'user' | 'employee' | 'monitor'
+  role: 'user' | 'employee' | 'monitor' | 'admin'
   phone: string | null
   departmentId: number | null
 }
@@ -32,7 +32,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     apiFetch<{ user: AuthUser }>('/auth/me')
       .then(({ user: me }) => {
         if (cancelled) return
-        if (me.role !== 'monitor') {
+        // Spec v4: the web console serves monitors AND the admin.
+        if (me.role !== 'monitor' && me.role !== 'admin') {
           clearToken()
           setStatus('signedOut')
           return
@@ -59,8 +60,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           '/auth/login',
           { method: 'POST', body: { email, password }, auth: false },
         )
-        if (signedIn.role !== 'monitor') {
-          throw new ApiError(403, 'This dashboard is for monitor accounts', 'not_monitor')
+        if (signedIn.role !== 'monitor' && signedIn.role !== 'admin') {
+          throw new ApiError(403, 'This dashboard is for monitor and admin accounts', 'not_monitor')
         }
         setToken(token)
         setUser(signedIn)
