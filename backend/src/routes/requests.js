@@ -12,6 +12,11 @@ const { buildRequestFilter, PRIORITIES } = require('../lib/requestQuery');
 
 const router = express.Router();
 router.use(requireAuth);
+// Spec v4: admin is configuration-and-accounts only — the whole requests
+// surface belongs to the three operational roles. Without this allowlist the
+// per-route "employee → 403, user → own" checks would let admin fall through
+// to monitor-level visibility (must-pass #20).
+router.use(requireRole('user', 'employee', 'monitor'));
 
 function statusOf(workflowStatuses, key) {
   const s = workflowStatuses.find((st) => st.key === key);

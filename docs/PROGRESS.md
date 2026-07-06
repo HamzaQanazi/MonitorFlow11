@@ -122,12 +122,25 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 - **Web notifications bell**: shell-bar sibling of the mobile shared component — unread badge (30s poll), dropdown with mark-read → deep-link to the request pane, mark-all-read.
 - All verified live in the browser; tsc + lint + build green; backend unit tests 28/28.
 
+### Spec v4 slice 1 — admin role + monitors surface + audit writes (backend)
+
+Per `docs/spec_v4_amendment.md` (DRAFT — supervisor-requested; built first because every variant of the sign-off wants it). Service JSON-import is deliberately held until sign-off (open question #3 could reshape it).
+
+- **Migration `003_admin.sql`**: `admin` in the role check, 3 nullable escalation-threshold columns on `service_type` (W5 sweep), `audit_event` table + index.
+- **`requireRole(...roles)`** (varargs, backward compatible); `GET /departments` now monitor+admin.
+- **Admin lockout**: router-level allowlist on `/requests` (`user`/`employee`/`monitor`) — without it admin fell through the per-route "employee → 403" checks to monitor-level visibility (v4 must-pass #20). Dashboard/employees/reports/tasks already 403 via their single-role gates.
+- **`backend/src/routes/monitors.js`** (admin-only): list/create/edit/activate/deactivate/reset-password, mirroring the employees surface; non-monitor ids 404; **last-active-monitor deactivate → 409** (v4 must-pass #23).
+- **Audit trail** (`backend/src/lib/audit.js`): `logAudit` inside `withTx` — every monitors/employees write commits its `audit_event` row atomically; details carry emails/changed fields, never passwords. Read endpoint (`GET /audit-events`) is W4.
+- Seed: `admin@monitorflow.dev` account; `audit_event` in the truncate list.
+- Smoke 39/39 (role cells incl. must-pass #19/#20/#23, created-monitor login + operational access, temp-password round trip, 404 shaping, deactivated-JWT 401, audit rows for all 7 action types). Unit tests 28/28. Reseeded to canonical after.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
 
 | Email | Role |
 |---|---|
+| admin@monitorflow.dev | admin (spec v4) |
 | monitor@monitorflow.dev | monitor |
 | tech@monitorflow.dev | employee (IT) |
 | tech2@monitorflow.dev | employee (IT) |

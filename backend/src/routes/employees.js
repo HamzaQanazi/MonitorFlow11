@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { statusOf } = require('../lib/workflowEngine');
+const { withTx, logAudit } = require('../lib/audit');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -112,19 +113,23 @@ router.post('/', async (req, res, next) => {
     if (!dept.rows.length) return res.status(422).json({ errors: { departmentId: 'Unknown department' } });
 
     const password_hash = await bcrypt.hash(password, 10);
-    let rows;
+    let inserted;
     try {
-      ({ rows } = await pool.query(
-        `INSERT INTO users (name, email, password_hash, role, phone, department_id)
-         VALUES ($1, $2, $3, 'employee', $4, $5)
-         RETURNING id, name, email, phone, is_active, department_id`,
-        [name.trim(), email.toLowerCase(), password_hash, phone || null, departmentId]
-      ));
+      inserted = await withTx(async (tx) => {
+        const { rows } = await tx.query(
+          `INSERT INTO users (name, email, password_hash, role, phone, department_id)
+           VALUES ($1, $2, $3, 'employee', $4, $5)
+           RETURNING id, name, email, phone, is_active, department_id`,
+          [name.trim(), email.toLowerCase(), password_hash, phone || null, departmentId]
+        );
+        await logAudit(tx, req.user.id, 'employee.created', 'user', rows[0].id, { email: rows[0].email });
+        return rows[0];
+      });
     } catch (err) {
       if (err.code === '23505') return res.status(422).json({ errors: { email: 'Email is already registered' } });
       throw err;
     }
-    const created = await loadEmployee(rows[0].id);
+    const created = await loadEmployee(inserted.id);
     res.status(201).json({ employee: publicEmployee(created) });
   } catch (err) {
     next(err);
@@ -149,20 +154,27 @@ router.patch('/:id', async (req, res, next) => {
       if (!dept.rows.length) return res.status(422).json({ errors: { departmentId: 'Unknown department' } });
     }
 
-    await pool.query(
-      `UPDATE users SET
-         name = COALESCE($1, name),
-         phone = CASE WHEN $2::boolean THEN $3 ELSE phone END,
-         department_id = COALESCE($4, department_id)
-       WHERE id = $5`,
-      [
-        name === undefined ? null : name.trim(),
-        phone !== undefined,
-        phone === undefined ? null : phone,
-        departmentId === undefined ? null : departmentId,
-        emp.id,
-      ]
-    );
+    await withTx(async (tx) => {
+      await tx.query(
+        `UPDATE users SET
+           name = COALESCE($1, name),
+           phone = CASE WHEN $2::boolean THEN $3 ELSE phone END,
+           department_id = COALESCE($4, department_id)
+         WHERE id = $5`,
+        [
+          name === undefined ? null : name.trim(),
+          phone !== undefined,
+          phone === undefined ? null : phone,
+          departmentId === undefined ? null : departmentId,
+          emp.id,
+        ]
+      );
+      await logAudit(tx, req.user.id, 'employee.updated', 'user', emp.id, {
+        ...(name !== undefined ? { name: name.trim() } : {}),
+        ...(phone !== undefined ? { phone } : {}),
+        ...(departmentId !== undefined ? { departmentId } : {}),
+      });
+    });
     res.json({ employee: publicEmployee(await loadEmployee(emp.id)) });
   } catch (err) {
     next(err);
@@ -174,7 +186,10 @@ router.patch('/:id/activate', async (req, res, next) => {
   try {
     const emp = await loadEmployee(Number(req.params.id));
     if (!emp) return res.status(404).json({ error: 'Not found' });
-    await pool.query('UPDATE users SET is_active = TRUE WHERE id = $1', [emp.id]);
+    await withTx(async (tx) => {
+      await tx.query('UPDATE users SET is_active = TRUE WHERE id = $1', [emp.id]);
+      await logAudit(tx, req.user.id, 'employee.activated', 'user', emp.id);
+    });
     res.json({ employee: publicEmployee({ ...emp, is_active: true }) });
   } catch (err) {
     next(err);
@@ -205,7 +220,10 @@ router.patch('/:id/deactivate', async (req, res, next) => {
       return res.status(409).json({ error: 'Employee has open tasks — reassign them before deactivating' });
     }
 
-    await pool.query('UPDATE users SET is_active = FALSE WHERE id = $1', [emp.id]);
+    await withTx(async (tx) => {
+      await tx.query('UPDATE users SET is_active = FALSE WHERE id = $1', [emp.id]);
+      await logAudit(tx, req.user.id, 'employee.deactivated', 'user', emp.id);
+    });
     res.json({ employee: publicEmployee({ ...emp, is_active: false }) });
   } catch (err) {
     next(err);
@@ -220,7 +238,11 @@ router.patch('/:id/reset-password', async (req, res, next) => {
     if (!emp) return res.status(404).json({ error: 'Not found' });
     const tempPassword = `Temp-${crypto.randomBytes(6).toString('base64url')}`;
     const password_hash = await bcrypt.hash(tempPassword, 10);
-    await pool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, emp.id]);
+    await withTx(async (tx) => {
+      await tx.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, emp.id]);
+      // The temp password itself is never audited (secrets stay out of detail).
+      await logAudit(tx, req.user.id, 'employee.password_reset', 'user', emp.id);
+    });
     res.json({ tempPassword });
   } catch (err) {
     next(err);

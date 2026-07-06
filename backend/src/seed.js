@@ -163,10 +163,12 @@ const services = [
   },
 ];
 
-// Monitor accounts are seed-only (Section 5); employees and a demo user are
-// seeded so every developer/demo starts from identical state (Section 15).
+// The admin account is seed-only (spec v4 Section A — monitors are now
+// admin-created); the monitor/employee/user rows are dev fixtures so every
+// developer/demo starts from identical state (Section 15).
 const DEV_PASSWORD = 'Password123!';
 const accounts = [
+  { name: 'Adel Admin', email: 'admin@monitorflow.dev', role: 'admin', department: null },
   { name: 'Mona Monitor', email: 'monitor@monitorflow.dev', role: 'monitor', department: null },
   { name: 'Ehab Technician', email: 'tech@monitorflow.dev', role: 'employee', department: 'IT' },
   // Second IT employee so reassignment can be exercised and demoed.
@@ -308,9 +310,9 @@ async function seed() {
   try {
     await client.query('BEGIN');
     await client.query(
-      `TRUNCATE file_attachment, notification, request_comment, request_status_history,
-               task, request, workflow_definition, form_definition, service_type,
-               users, department
+      `TRUNCATE audit_event, file_attachment, notification, request_comment,
+               request_status_history, task, request, workflow_definition,
+               form_definition, service_type, users, department
        RESTART IDENTITY CASCADE`
     );
 

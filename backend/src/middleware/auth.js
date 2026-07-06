@@ -29,9 +29,10 @@ async function requireAuth(req, res, next) {
 
 // Role gate (403, not 404 — Section 7 status-code table). Ownership checks
 // stay in the routes; a role check alone is never sufficient for "own only".
-function requireRole(role) {
+// Accepts multiple roles (spec v4: some surfaces are monitor+admin).
+function requireRole(...roles) {
   return (req, res, next) => {
-    if (req.user.role !== role) return res.status(403).json({ error: 'Forbidden' });
+    if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'Forbidden' });
     next();
   };
 }
