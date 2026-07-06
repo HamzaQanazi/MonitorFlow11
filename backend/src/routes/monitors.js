@@ -140,6 +140,16 @@ router.patch('/:id', async (req, res, next) => {
     if (departmentId !== undefined) {
       const dept = await pool.query('SELECT id FROM department WHERE id = $1', [departmentId]);
       if (!dept.rows.length) return res.status(422).json({ errors: { departmentId: 'Unknown department' } });
+      // Moving a monitor out is the same coverage loss as deactivating them.
+      if (
+        departmentId !== mon.department_id &&
+        mon.is_active &&
+        !(await hasOtherActiveMonitor(mon.department_id, mon.id))
+      ) {
+        return res
+          .status(409)
+          .json({ error: 'Cannot move the last active monitor out of a department' });
+      }
     }
 
     await withTx(async (tx) => {
@@ -184,20 +194,31 @@ router.patch('/:id/activate', async (req, res, next) => {
   }
 });
 
-// PATCH /monitors/{id}/deactivate — the last ACTIVE monitor cannot be
-// deactivated (409, spec v4 must-pass #23): operations always need someone
-// at the board.
+// A department with zero active monitors is a silent outage: its requests
+// become invisible (monitors are department-scoped) and every monitor-facing
+// notification — including the escalation sweep — inserts zero rows. So the
+// last active monitor OF A DEPARTMENT cannot be deactivated or moved out
+// (409, strengthens spec v4 must-pass #23 from global to per-department).
+async function hasOtherActiveMonitor(departmentId, excludeId) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM users
+     WHERE role = 'monitor' AND is_active AND department_id = $1 AND id <> $2
+     LIMIT 1`,
+    [departmentId, excludeId]
+  );
+  return rows.length > 0;
+}
+
+// PATCH /monitors/{id}/deactivate
 router.patch('/:id/deactivate', async (req, res, next) => {
   try {
     const mon = await loadMonitor(Number(req.params.id));
     if (!mon) return res.status(404).json({ error: 'Not found' });
 
-    const others = await pool.query(
-      `SELECT 1 FROM users WHERE role = 'monitor' AND is_active AND id <> $1 LIMIT 1`,
-      [mon.id]
-    );
-    if (!others.rows.length) {
-      return res.status(409).json({ error: 'Cannot deactivate the last active monitor' });
+    if (mon.is_active && !(await hasOtherActiveMonitor(mon.department_id, mon.id))) {
+      return res
+        .status(409)
+        .json({ error: 'Cannot deactivate the last active monitor of a department' });
     }
 
     await withTx(async (tx) => {
