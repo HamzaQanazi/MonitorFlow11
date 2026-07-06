@@ -62,4 +62,26 @@ app.use((err, req, res, next) => {
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`MonitorFlow API listening on :${port}`));
 
+// Escalation sweep (spec v4 E1): interval job, no cron infra. Default 5 min;
+// ESCALATION_SWEEP_MS=0 disables (tests). First run shortly after boot so a
+// fresh seed's over-threshold requests escalate visibly.
+const { runEscalationSweep } = require('./lib/escalation');
+const sweepMs =
+  process.env.ESCALATION_SWEEP_MS === undefined ? 5 * 60e3 : Number(process.env.ESCALATION_SWEEP_MS);
+if (sweepMs > 0) {
+  const sweep = () =>
+    runEscalationSweep()
+      .then((n) => {
+        const total = n.unassigned + n.stale + n.confirm;
+        if (total) {
+          console.log(
+            `escalation sweep: ${total} notification(s) — ${n.unassigned} unassigned, ${n.stale} stale, ${n.confirm} awaiting-confirm`
+          );
+        }
+      })
+      .catch((err) => console.error(`escalation sweep failed: ${err.message}`));
+  setTimeout(sweep, 3000);
+  setInterval(sweep, sweepMs);
+}
+
 module.exports = app;

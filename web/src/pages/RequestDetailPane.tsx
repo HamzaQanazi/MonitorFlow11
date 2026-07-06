@@ -61,6 +61,7 @@ interface Employee {
   id: number
   name: string
   isActive: boolean
+  openTaskCount: number
 }
 
 interface WorkflowStatus {
@@ -314,7 +315,11 @@ export default function RequestDetailPane({
 
   const category = detail.status.category
   const assignable = category !== 'terminated' && category !== 'closed'
-  const pickable = employees.filter((e) => e.id !== detail.task?.employeeId)
+  // Spec v4 E2: least-loaded first — the top pick is the suggestion. The
+  // server does not enforce it; the monitor stays free to pick anyone.
+  const pickable = employees
+    .filter((e) => e.id !== detail.task?.employeeId)
+    .sort((a, b) => a.openTaskCount - b.openTaskCount)
 
   // Monitor actions come from the workflow data — no status key is named in
   // this file. Assignment's target status (the from-status of the accept
@@ -484,9 +489,9 @@ export default function RequestDetailPane({
               <option value="">
                 {pickable.length === 0 ? 'No other employees in this department' : 'Choose an employee…'}
               </option>
-              {pickable.map((e) => (
+              {pickable.map((e, i) => (
                 <option key={e.id} value={e.id}>
-                  {e.name}
+                  {e.name} · {e.openTaskCount} open{i === 0 ? ' · Suggested' : ''}
                 </option>
               ))}
             </select>

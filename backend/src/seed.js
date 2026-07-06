@@ -144,11 +144,15 @@ const homeCleaningWorkflow = {
 
 // ---------------------------------------------------------------------------
 
+// Escalation thresholds (spec v4 E1) are deliberately demo-friendly so the
+// sweep visibly fires on the seeded queue: several demo requests are already
+// past these ages when the seed runs.
 const services = [
   {
     name: 'Equipment Repair',
     department: 'IT',
     default_priority: 'medium',
+    escalation: { unassigned: 4, stale: 20, confirm: 24 },
     requestForm: equipmentRepairRequestForm,
     completionForm: equipmentRepairCompletionForm,
     workflow: equipmentRepairWorkflow,
@@ -157,6 +161,7 @@ const services = [
     name: 'Home Cleaning Visit',
     department: 'Facilities',
     default_priority: 'low',
+    escalation: { unassigned: 4, stale: 20, confirm: 24 },
     requestForm: homeCleaningRequestForm,
     completionForm: homeCleaningCompletionForm,
     workflow: homeCleaningWorkflow,
@@ -332,9 +337,11 @@ async function seed() {
 
     for (const svc of services) {
       const { rows } = await client.query(
-        `INSERT INTO service_type (name, department_id, default_priority, enabled)
-         VALUES ($1, $2, $3, TRUE) RETURNING id`,
-        [svc.name, departmentIds[svc.department], svc.default_priority]
+        `INSERT INTO service_type (name, department_id, default_priority, enabled,
+           escalate_unassigned_hours, escalate_stale_hours, escalate_confirm_hours)
+         VALUES ($1, $2, $3, TRUE, $4, $5, $6) RETURNING id`,
+        [svc.name, departmentIds[svc.department], svc.default_priority,
+         svc.escalation.unassigned, svc.escalation.stale, svc.escalation.confirm]
       );
       const serviceTypeId = rows[0].id;
       svc.id = serviceTypeId;

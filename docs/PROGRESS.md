@@ -150,6 +150,13 @@ Per `docs/spec_v4_amendment.md` (DRAFT — supervisor-requested; built first bec
 - **`web/src/pages/AuditPage.tsx`** (Section 4 page #17): read-only table (When/Actor/Action/Target/Details), closed-list action select + native date range, URL-backed filters, skeleton/error/empty states, pager. Admin nav gains "Audit Log".
 - Smoke 12/12 (shape, all filters, 400s, pagination, 403/401 cells). Unit 28/28. tsc/lint/build green.
 
+### Spec v4 slice 5 — smart notifications (amendment Section E)
+- **Escalation sweep** (`backend/src/lib/escalation.js` + interval in `index.js`, default 5 min, `ESCALATION_SWEEP_MS=0` disables): three category-driven rules per service-type thresholds (NULL = off) — unassigned too long → department monitors; stale `in_progress` → department monitors; `done` awaiting confirmation → the request owner. Dedup without schema: skip while an `escalation` notification newer than `updated_at` exists (one alert per stagnation period; any status change re-arms). Migration `004` adds the `escalation` notification type. First run 3s after boot so a fresh seed escalates visibly.
+- **Seed**: demo-friendly thresholds on both services (unassigned 4h / stale 20h / confirm 24h) — the seeded queue fires all three rules on first sweep (3 unassigned, 4 stale, 2 confirm).
+- **Assignment suggestions**: `GET /employees` gains `openTaskCount` (non-final tasks, finality from workflow JSONB); the detail-pane picker sorts least-loaded-first and marks the top option "Suggested" — advisory only, server does not enforce.
+- Mobile notifications list renders the `escalation` type with its own icon (fallback already existed — no crash risk).
+- Smoke 10/10 (all three rules fire, department/owner recipients verified, dedup, re-arm after a status change, openTaskCount). Unit 28/28. tsc/lint/build green. Reseeded after.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):

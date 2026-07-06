@@ -196,6 +196,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         'completed' => Icons.check_circle_outline,
         'task_rejected' => Icons.undo_outlined,
         'comment' => Icons.chat_bubble_outline,
+        // Spec v4 E1: proactive nudge (e.g. "please confirm the result").
+        'escalation' => Icons.notification_important_outlined,
         _ => Icons.notifications_none_outlined,
       };
 }

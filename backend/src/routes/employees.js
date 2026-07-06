@@ -66,9 +66,19 @@ router.get('/', async (req, res, next) => {
     if (q.q) add('(u.name ILIKE ? OR u.email ILIKE ?)', `%${q.q}%`);
 
     params.push(pageSize, (page - 1) * pageSize);
+    // openTaskCount (spec v4 E2, assignment suggestions): tasks whose current
+    // status is non-final — finality read from the workflow data, no status
+    // key in code (same mechanism as the deactivate guard below).
     const { rows } = await pool.query(
       `SELECT u.id, u.name, u.email, u.phone, u.is_active,
               u.department_id, d.name AS department_name,
+              (SELECT COUNT(*)::int
+               FROM task t
+               JOIN request r ON r.id = t.request_id
+               JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+               JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = t.status
+               WHERE t.employee_id = u.id AND (s->>'is_final')::boolean = FALSE
+              ) AS open_task_count,
               COUNT(*) OVER()::int AS total
        FROM users u
        JOIN department d ON d.id = u.department_id
@@ -87,6 +97,7 @@ router.get('/', async (req, res, next) => {
         isActive: r.is_active,
         departmentId: r.department_id,
         departmentName: r.department_name,
+        openTaskCount: r.open_task_count,
       })),
       page,
       pageSize,
