@@ -8,25 +8,38 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const router = express.Router();
 router.use(requireAuth, requireRole('monitor'));
 
+// Spec v4: every query is scoped to the monitor's department — the dashboard
+// shows their board, not the whole organization's.
 router.get('/stats', async (req, res, next) => {
   try {
+    const dept = [req.user.department_id];
     const [byCategory, byService, byPriority] = await Promise.all([
       pool.query(
         `SELECT s->>'category' AS category, COUNT(*)::int AS count
          FROM request r
+         JOIN service_type st ON st.id = r.service_type_id
          JOIN workflow_definition w ON w.service_type_id = r.service_type_id
          JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
-         GROUP BY 1`
+         WHERE st.department_id = $1
+         GROUP BY 1`,
+        dept
       ),
       pool.query(
         `SELECT st.id, st.name, COUNT(r.id)::int AS count
          FROM service_type st
          LEFT JOIN request r ON r.service_type_id = st.id
-         WHERE st.enabled
+         WHERE st.enabled AND st.department_id = $1
          GROUP BY st.id, st.name
-         ORDER BY st.id`
+         ORDER BY st.id`,
+        dept
       ),
-      pool.query('SELECT priority, COUNT(*)::int AS count FROM request GROUP BY priority'),
+      pool.query(
+        `SELECT priority, COUNT(*)::int AS count
+         FROM request r JOIN service_type st ON st.id = r.service_type_id
+         WHERE st.department_id = $1
+         GROUP BY priority`,
+        dept
+      ),
     ]);
 
     const categoryCounts = Object.fromEntries(byCategory.rows.map((r) => [r.category, r.count]));
@@ -55,10 +68,12 @@ function localDayKey(d) {
 router.get('/chart', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT to_char(created_at::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
-       FROM request
-       WHERE created_at >= (CURRENT_DATE - INTERVAL '29 days')
-       GROUP BY 1`
+      `SELECT to_char(r.created_at::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+       FROM request r JOIN service_type st ON st.id = r.service_type_id
+       WHERE r.created_at >= (CURRENT_DATE - INTERVAL '29 days')
+         AND st.department_id = $1
+       GROUP BY 1`,
+      [req.user.department_id]
     );
     const counts = Object.fromEntries(rows.map((r) => [r.day, r.count]));
     const days = [];

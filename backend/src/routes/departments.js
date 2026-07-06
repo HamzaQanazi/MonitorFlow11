@@ -8,10 +8,17 @@ const router = express.Router();
 router.use(requireAuth);
 router.use(requireRole('monitor', 'admin'));
 
-// GET /departments
+// GET /departments — admin sees all; a monitor sees only their own (spec v4
+// department scoping), which keeps every department picker in the monitor UI
+// correct without any client-side filtering.
 router.get('/', async (req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT id, name FROM department ORDER BY name');
+    const { rows } =
+      req.user.role === 'admin'
+        ? await pool.query('SELECT id, name FROM department ORDER BY name')
+        : await pool.query('SELECT id, name FROM department WHERE id = $1', [
+            req.user.department_id,
+          ]);
     res.json({ departments: rows });
   } catch (err) {
     next(err);

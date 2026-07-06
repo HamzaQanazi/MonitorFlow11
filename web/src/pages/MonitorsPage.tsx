@@ -16,12 +16,18 @@ interface Monitor {
   email: string
   phone: string | null
   isActive: boolean
+  departmentId: number
+  departmentName: string
 }
 interface ListResponse {
   monitors: Monitor[]
   page: number
   pageSize: number
   total: number
+}
+interface Department {
+  id: number
+  name: string
 }
 type FieldErrors = Record<string, string>
 
@@ -41,7 +47,14 @@ export default function MonitorsPage() {
 
   const [data, setData] = useState<ListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [departments, setDepartments] = useState<Department[]>([])
   const [search, setSearch] = useState(q)
+
+  useEffect(() => {
+    apiFetch<{ departments: Department[] }>('/departments')
+      .then((res) => setDepartments(res.departments))
+      .catch(() => {})
+  }, [])
 
   const [dialog, setDialog] = useState<
     | { kind: 'create' }
@@ -181,7 +194,7 @@ export default function MonitorsPage() {
                 <tr>
                   <th scope="col">Name</th>
                   <th scope="col">Email</th>
-                  <th scope="col">Phone</th>
+                  <th scope="col">Department</th>
                   <th scope="col">Status</th>
                   <th scope="col" className="emp-actions-col">
                     Actions
@@ -193,7 +206,7 @@ export default function MonitorsPage() {
                   <tr key={m.id}>
                     <td className="req-service">{m.name}</td>
                     <td className="emp-email">{m.email}</td>
-                    <td>{m.phone ?? '—'}</td>
+                    <td>{m.departmentName}</td>
                     <td>
                       <span className={`emp-badge${m.isActive ? ' is-active' : ' is-inactive'}`}>
                         {m.isActive ? 'Active' : 'Inactive'}
@@ -249,9 +262,11 @@ export default function MonitorsPage() {
         </>
       )}
 
-      {dialog?.kind === 'create' && <MonitorForm onClose={() => setDialog(null)} onDone={onDone} />}
+      {dialog?.kind === 'create' && (
+        <MonitorForm departments={departments} onClose={() => setDialog(null)} onDone={onDone} />
+      )}
       {dialog?.kind === 'edit' && (
-        <MonitorForm monitor={dialog.monitor} onClose={() => setDialog(null)} onDone={onDone} />
+        <MonitorForm departments={departments} monitor={dialog.monitor} onClose={() => setDialog(null)} onDone={onDone} />
       )}
       {dialog?.kind === 'deactivate' && (
         <DeactivateDialog monitor={dialog.monitor} onClose={() => setDialog(null)} onDone={onDone} />
@@ -264,12 +279,15 @@ export default function MonitorsPage() {
 }
 
 // Create (no monitor) or edit (monitor given). Create sends the initial
-// password; edit changes name/phone only.
+// password; edit changes name/phone/department. Spec v4: every monitor
+// belongs to a department — the select is required on create.
 function MonitorForm({
+  departments,
   monitor,
   onClose,
   onDone,
 }: {
+  departments: Department[]
   monitor?: Monitor
   onClose: () => void
   onDone: () => void
@@ -279,6 +297,7 @@ function MonitorForm({
   const [email, setEmail] = useState(monitor?.email ?? '')
   const [password, setPassword] = useState('')
   const [phone, setPhone] = useState(monitor?.phone ?? '')
+  const [depId, setDepId] = useState(String(monitor?.departmentId ?? departments[0]?.id ?? ''))
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
 
@@ -296,12 +315,12 @@ function MonitorForm({
       if (isEdit) {
         await apiFetch(`/monitors/${monitor!.id}`, {
           method: 'PATCH',
-          body: { name, phone: phone || null },
+          body: { name, phone: phone || null, departmentId: Number(depId) },
         })
       } else {
         await apiFetch('/monitors', {
           method: 'POST',
-          body: { name, email, password, phone: phone || null },
+          body: { name, email, password, phone: phone || null, departmentId: Number(depId) },
         })
       }
       onDone()
@@ -341,6 +360,17 @@ function MonitorForm({
           <span>Phone (optional)</span>
           <input value={phone ?? ''} onChange={(e) => setPhone(e.target.value)} />
           {errors.phone && <em className="field-err">{errors.phone}</em>}
+        </label>
+        <label className="field">
+          <span>Department</span>
+          <select className="req-select" value={depId} onChange={(e) => setDepId(e.target.value)}>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          {errors.departmentId && <em className="field-err">{errors.departmentId}</em>}
         </label>
         {errors._ && <p className="assign-error">{errors._}</p>}
         <div className="dialog-actions">

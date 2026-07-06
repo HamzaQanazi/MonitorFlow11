@@ -174,7 +174,8 @@ router.get('/:id', async (req, res, next) => {
     if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
 
     const { rows } = await pool.query(
-      `SELECT r.*, st.name AS service_type_name, w.statuses AS workflow_statuses,
+      `SELECT r.*, st.name AS service_type_name, st.department_id AS service_department_id,
+              w.statuses AS workflow_statuses,
               u.id AS requester_id, u.name AS requester_name, u.email AS requester_email,
               u.phone AS requester_phone
        FROM request r
@@ -187,6 +188,10 @@ router.get('/:id', async (req, res, next) => {
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     const r = rows[0];
     if (req.user.role === 'user' && r.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    // Spec v4: monitors are department-scoped (404-over-403).
+    if (req.user.role === 'monitor' && r.service_department_id !== req.user.department_id) {
       return res.status(404).json({ error: 'Not found' });
     }
 
@@ -417,12 +422,17 @@ async function loadCommentableRequest(req, res) {
     return null;
   }
   const { rows } = await pool.query(
-    `SELECT r.id, r.user_id, st.name AS service_name
+    `SELECT r.id, r.user_id, st.name AS service_name, st.department_id
      FROM request r JOIN service_type st ON st.id = r.service_type_id
      WHERE r.id = $1`,
     [id]
   );
-  if (!rows.length || (req.user.role === 'user' && rows[0].user_id !== req.user.id)) {
+  if (
+    !rows.length ||
+    (req.user.role === 'user' && rows[0].user_id !== req.user.id) ||
+    // Spec v4: monitors comment within their department only.
+    (req.user.role === 'monitor' && rows[0].department_id !== req.user.department_id)
+  ) {
     res.status(404).json({ error: 'Not found' });
     return null;
   }
@@ -457,10 +467,12 @@ router.post('/:id/comments', async (req, res, next) => {
           [request.user_id, request.id, message]
         );
       } else {
+        // Spec v4: only the monitors of the request's department are notified.
         await client.query(
           `INSERT INTO notification (user_id, request_id, type, message)
-           SELECT id, $1, 'comment', $2 FROM users WHERE role = 'monitor' AND is_active`,
-          [request.id, message]
+           SELECT id, $1, 'comment', $2 FROM users
+           WHERE role = 'monitor' AND is_active AND department_id = $3`,
+          [request.id, message, request.department_id]
         );
       }
       await client.query('COMMIT');
@@ -525,10 +537,13 @@ router.patch('/:id/priority', requireRole('monitor'), async (req, res, next) => 
 
     await client.query('BEGIN');
     const { rows } = await client.query(
-      'SELECT id, status, priority FROM request WHERE id = $1 FOR UPDATE',
+      `SELECT r.id, r.status, r.priority, st.department_id
+       FROM request r JOIN service_type st ON st.id = r.service_type_id
+       WHERE r.id = $1 FOR UPDATE OF r`,
       [id]
     );
-    if (!rows.length) {
+    // Spec v4: cross-department requests look nonexistent to a monitor.
+    if (!rows.length || rows[0].department_id !== req.user.department_id) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
@@ -587,7 +602,9 @@ router.patch('/:id/assign', requireRole('monitor'), async (req, res, next) => {
        FOR UPDATE OF r`,
       [id]
     );
-    if (!rows.length) {
+    // Spec v4: a monitor can only assign within their own department; a
+    // cross-department request looks nonexistent (404-over-403).
+    if (!rows.length || rows[0].department_id !== req.user.department_id) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }

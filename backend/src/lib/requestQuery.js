@@ -33,6 +33,10 @@ function buildRequestFilter(q, user) {
   };
 
   if (user.role === 'user' || q.userId === 'me') add('r.user_id = ?', user.id);
+  // Spec v4: monitors are department-scoped — they see only requests whose
+  // service type belongs to their department. A monitor with no department
+  // (should not exist) matches nothing: fail closed, not open.
+  if (user.role === 'monitor') add('st.department_id = ?', user.department_id);
   if (q.status !== undefined) add('r.status = ?', q.status);
   if (q.category !== undefined) add("s->>'category' = ?", q.category);
   if (q.serviceTypeId !== undefined) add('r.service_type_id = ?', Number(q.serviceTypeId));

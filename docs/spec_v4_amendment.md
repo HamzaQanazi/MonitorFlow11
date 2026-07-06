@@ -154,6 +154,31 @@ Buffer note: this schedule re-lands us on the original W7/W8 endgame with the sa
 
 ---
 
+## J. Department-scoped monitors (added after the draft; confirmed by Student 1)
+
+Reverses the v3 Section 14 limitation "single organization, broad Monitor role".
+
+- **Every monitor belongs to a department** (`users.department_id`, already in the schema; `POST /monitors` requires `departmentId`, admin can change it). The admin assigns monitors to departments — that is the point of the admin role.
+- **Scope rule:** a monitor sees and manages only requests whose service type belongs to their department. Everything outside is **404** (the 404-over-403 rule), like cross-user access.
+- **Where it is enforced (server-side):** the shared request query builder (list/reports/CSV in one place) · the workflow engine's post-lock ownership check (all transitions, overrides, cancel, assign) · request detail/comments/priority · file downloads · dashboard stats+chart · employees management (a monitor manages only their department's staff; creating/moving an employee into another department is 422) · `GET /departments` returns only the monitor's own department (admin sees all).
+- **Notification scoping:** "notify all monitors" (task_rejected, comment, future escalation) → only the monitors of the request's department.
+- **Seed:** one monitor per seeded department (`monitor@` → IT, `monitor2@` → Facilities); demo history actors resolved per department.
+- **Consequence (documented):** no single account sees the whole board. If a "head of operations" view is wanted later, relax to nullable department = org-wide monitor (small change, no rework).
+
+### Additional must-pass negatives
+
+| # | Test | Expect |
+|---|---|---|
+| 26 | Monitor GETs a request of another department | 404 |
+| 27 | Monitor assigns/overrides/comments/prioritizes cross-department | 404 |
+| 28 | Monitor lists requests / dashboard / reports | own department's rows only |
+| 29 | Monitor creates an employee in another department | 422 |
+| 30 | Employee rejects a task | only same-department monitors notified |
+| 31 | Monitor downloads a file of another department's request | 404 |
+| 32 | `POST /monitors` without `departmentId` | 422 |
+
+---
+
 ## Open questions for the sign-off session
 
 1. **Audit event list** — is account+configuration scope enough, or does the supervisor expect login events too? (Draft says no — noise.)

@@ -120,7 +120,7 @@ async function executeTransition({
     // Lock the request row before any validation (Section 5 locking rule).
     const { rows } = await client.query(
       `SELECT r.id, r.user_id, r.status, r.service_type_id, st.name AS service_name,
-              w.statuses, w.transitions
+              st.department_id, w.statuses, w.transitions
        FROM request r
        JOIN service_type st ON st.id = r.service_type_id
        JOIN workflow_definition w ON w.service_type_id = r.service_type_id
@@ -130,6 +130,13 @@ async function executeTransition({
     );
     if (!rows.length) throw new WorkflowError(404, 'Not found');
     const request = rows[0];
+
+    // Spec v4 department scoping: a monitor acting outside their department
+    // must not learn the request exists (404-over-403), same as the user and
+    // employee ownership checks in resolveTransition.
+    if (user.role === 'monitor' && request.department_id !== user.department_id) {
+      throw new WorkflowError(404, 'Not found');
+    }
 
     const { rows: taskRows } = await client.query(
       'SELECT id, employee_id FROM task WHERE request_id = $1',
@@ -186,10 +193,16 @@ async function executeTransition({
       ]
     );
     if (transition.action === 'reject') {
+      // Spec v4: only the monitors of the request's department are notified.
       await client.query(
         `INSERT INTO notification (user_id, request_id, type, message)
-         SELECT id, $1, 'task_rejected', $2 FROM users WHERE role = 'monitor' AND is_active`,
-        [request.id, `${user.name} rejected the task for request #${request.id} (${request.service_name}): ${note}`]
+         SELECT id, $1, 'task_rejected', $2 FROM users
+         WHERE role = 'monitor' AND is_active AND department_id = $3`,
+        [
+          request.id,
+          `${user.name} rejected the task for request #${request.id} (${request.service_name}): ${note}`,
+          request.department_id,
+        ]
       );
     }
 

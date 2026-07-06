@@ -134,6 +134,16 @@ Per `docs/spec_v4_amendment.md` (DRAFT — supervisor-requested; built first bec
 - Seed: `admin@monitorflow.dev` account; `audit_event` in the truncate list.
 - Smoke 39/39 (role cells incl. must-pass #19/#20/#23, created-monitor login + operational access, temp-password round trip, 404 shaping, deactivated-JWT 401, audit rows for all 7 action types). Unit tests 28/28. Reseeded to canonical after.
 
+### Spec v4 slice 2 — Monitors Management page + admin shell routing (web, commit `351a1a6`)
+- Admin uses the web console: `AuthContext` accepts monitor+admin, `RoleRoute` in `main.tsx` role-gates every page (admin ↔ monitor deep links redirect), shell nav is role-dependent, bell hidden for admin (no triggers target it). `MonitorsPage.tsx` = Employees Management clone (create/edit/activate/deactivate/reset-password, last-monitor 409 inline). Verified live in headless Edge; tsc + lint + build green.
+
+### Spec v4 slice 3 — department-scoped monitors (amendment Section J)
+- **Every monitor belongs to a department**; scope = requests whose service type is in it, everything else 404. Enforced at: `buildRequestFilter` (list/reports/CSV in one place), the engine's post-lock check (all transitions/overrides/cancel/assign), request detail/comments/priority, file downloads, dashboard stats+chart.
+- **Employees management scoped**: monitor manages own-department staff only (cross-dept ids 404, cross-dept create/move 422). `GET /departments`: monitor sees own only; admin all — keeps every web picker correct with zero client-side filtering.
+- **Notifications scoped**: task_rejected + comment fan-out to the request's department's monitors only.
+- **Monitors surface**: `departmentId` required on create, editable, embedded in responses; MonitorsPage gains the department column + picker.
+- Seed: `monitor@` → IT, `monitor2@` (Malak) → Facilities; demo history actors per department. Smoke 31/31 (cross-dept 404 cells, scoped dashboard/reports/CSV totals, notification fan-out checks, file IDOR across departments, regressions). Unit 28/28. tsc/lint/build green. Reseeded after.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
@@ -141,7 +151,8 @@ All password `Password123!` (re-run `npm run seed` to reset):
 | Email | Role |
 |---|---|
 | admin@monitorflow.dev | admin (spec v4) |
-| monitor@monitorflow.dev | monitor |
+| monitor@monitorflow.dev | monitor (IT) |
+| monitor2@monitorflow.dev | monitor (Facilities) |
 | tech@monitorflow.dev | employee (IT) |
 | tech2@monitorflow.dev | employee (IT) |
 | cleaner@monitorflow.dev | employee (Facilities) |

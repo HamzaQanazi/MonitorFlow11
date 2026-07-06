@@ -14,7 +14,15 @@ router.use(requireAuth);
 router.use(requireRole('admin'));
 
 function publicMonitor(r) {
-  return { id: r.id, name: r.name, email: r.email, phone: r.phone, isActive: r.is_active };
+  return {
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    isActive: r.is_active,
+    departmentId: r.department_id,
+    departmentName: r.department_name,
+  };
 }
 
 // A missing id OR a non-monitor user must look nonexistent on this
@@ -22,7 +30,11 @@ function publicMonitor(r) {
 async function loadMonitor(id) {
   if (!Number.isInteger(id)) return null;
   const { rows } = await pool.query(
-    `SELECT id, name, email, phone, is_active FROM users WHERE id = $1 AND role = 'monitor'`,
+    `SELECT u.id, u.name, u.email, u.phone, u.is_active, u.department_id,
+            d.name AS department_name
+     FROM users u
+     LEFT JOIN department d ON d.id = u.department_id
+     WHERE u.id = $1 AND u.role = 'monitor'`,
     [id]
   );
   return rows[0] || null;
@@ -39,18 +51,20 @@ router.get('/', async (req, res, next) => {
     if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) bad.push('pageSize');
     if (bad.length) return res.status(400).json({ error: `Invalid query params: ${bad.join(', ')}` });
 
-    const where = ["role = 'monitor'"];
+    const where = ["u.role = 'monitor'"];
     const params = [];
     if (q.q) {
       params.push(`%${q.q}%`);
-      where.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length})`);
+      where.push(`(u.name ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
     }
     params.push(pageSize, (page - 1) * pageSize);
     const { rows } = await pool.query(
-      `SELECT id, name, email, phone, is_active, COUNT(*) OVER()::int AS total
-       FROM users
+      `SELECT u.id, u.name, u.email, u.phone, u.is_active, u.department_id,
+              d.name AS department_name, COUNT(*) OVER()::int AS total
+       FROM users u
+       LEFT JOIN department d ON d.id = u.department_id
        WHERE ${where.join(' AND ')}
-       ORDER BY name
+       ORDER BY u.name
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
@@ -68,7 +82,7 @@ router.get('/', async (req, res, next) => {
 // POST /monitors — create a monitor; admin sets the initial password.
 router.post('/', async (req, res, next) => {
   try {
-    const { name, email, password, phone } = req.body || {};
+    const { name, email, password, phone, departmentId } = req.body || {};
     const errors = {};
     if (!name || typeof name !== 'string' || !name.trim()) errors.name = 'Name is required';
     if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -77,26 +91,34 @@ router.post('/', async (req, res, next) => {
     if (!password || typeof password !== 'string' || password.length < 8) {
       errors.password = 'Password must be at least 8 characters';
     }
+    // Spec v4 department scoping: every monitor belongs to a department.
+    if (!Number.isInteger(departmentId)) errors.departmentId = 'A department is required';
     if (Object.keys(errors).length) return res.status(422).json({ errors });
+
+    const dept = await pool.query('SELECT id FROM department WHERE id = $1', [departmentId]);
+    if (!dept.rows.length) return res.status(422).json({ errors: { departmentId: 'Unknown department' } });
 
     const password_hash = await bcrypt.hash(password, 10);
     let created;
     try {
       created = await withTx(async (tx) => {
         const { rows } = await tx.query(
-          `INSERT INTO users (name, email, password_hash, role, phone)
-           VALUES ($1, $2, $3, 'monitor', $4)
-           RETURNING id, name, email, phone, is_active`,
-          [name.trim(), email.toLowerCase(), password_hash, phone || null]
+          `INSERT INTO users (name, email, password_hash, role, phone, department_id)
+           VALUES ($1, $2, $3, 'monitor', $4, $5)
+           RETURNING id, email`,
+          [name.trim(), email.toLowerCase(), password_hash, phone || null, departmentId]
         );
-        await logAudit(tx, req.user.id, 'monitor.created', 'user', rows[0].id, { email: rows[0].email });
+        await logAudit(tx, req.user.id, 'monitor.created', 'user', rows[0].id, {
+          email: rows[0].email,
+          departmentId,
+        });
         return rows[0];
       });
     } catch (err) {
       if (err.code === '23505') return res.status(422).json({ errors: { email: 'Email is already registered' } });
       throw err;
     }
-    res.status(201).json({ monitor: publicMonitor(created) });
+    res.status(201).json({ monitor: publicMonitor(await loadMonitor(created.id)) });
   } catch (err) {
     next(err);
   }
@@ -108,28 +130,37 @@ router.patch('/:id', async (req, res, next) => {
     const mon = await loadMonitor(Number(req.params.id));
     if (!mon) return res.status(404).json({ error: 'Not found' });
 
-    const { name, phone } = req.body || {};
+    const { name, phone, departmentId } = req.body || {};
     const errors = {};
     if (name !== undefined && (typeof name !== 'string' || !name.trim())) errors.name = 'Name cannot be empty';
     if (phone !== undefined && phone !== null && typeof phone !== 'string') errors.phone = 'Phone must be text';
+    if (departmentId !== undefined && !Number.isInteger(departmentId)) errors.departmentId = 'Invalid department';
     if (Object.keys(errors).length) return res.status(422).json({ errors });
+
+    if (departmentId !== undefined) {
+      const dept = await pool.query('SELECT id FROM department WHERE id = $1', [departmentId]);
+      if (!dept.rows.length) return res.status(422).json({ errors: { departmentId: 'Unknown department' } });
+    }
 
     await withTx(async (tx) => {
       await tx.query(
         `UPDATE users SET
            name = COALESCE($1, name),
-           phone = CASE WHEN $2::boolean THEN $3 ELSE phone END
-         WHERE id = $4`,
+           phone = CASE WHEN $2::boolean THEN $3 ELSE phone END,
+           department_id = COALESCE($4, department_id)
+         WHERE id = $5`,
         [
           name === undefined ? null : name.trim(),
           phone !== undefined,
           phone === undefined ? null : phone,
+          departmentId === undefined ? null : departmentId,
           mon.id,
         ]
       );
       await logAudit(tx, req.user.id, 'monitor.updated', 'user', mon.id, {
         ...(name !== undefined ? { name: name.trim() } : {}),
         ...(phone !== undefined ? { phone } : {}),
+        ...(departmentId !== undefined ? { departmentId } : {}),
       });
     });
     res.json({ monitor: publicMonitor(await loadMonitor(mon.id)) });

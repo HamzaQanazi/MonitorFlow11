@@ -169,7 +169,10 @@ const services = [
 const DEV_PASSWORD = 'Password123!';
 const accounts = [
   { name: 'Adel Admin', email: 'admin@monitorflow.dev', role: 'admin', department: null },
-  { name: 'Mona Monitor', email: 'monitor@monitorflow.dev', role: 'monitor', department: null },
+  // Spec v4: monitors are department-scoped — one per seeded department so
+  // both services stay demoable.
+  { name: 'Mona Monitor', email: 'monitor@monitorflow.dev', role: 'monitor', department: 'IT' },
+  { name: 'Malak Monitor', email: 'monitor2@monitorflow.dev', role: 'monitor', department: 'Facilities' },
   { name: 'Ehab Technician', email: 'tech@monitorflow.dev', role: 'employee', department: 'IT' },
   // Second IT employee so reassignment can be exercised and demoed.
   { name: 'Rana Technician', email: 'tech2@monitorflow.dev', role: 'employee', department: 'IT' },
@@ -363,7 +366,11 @@ async function seed() {
     }
 
     const requesterId = accountIds['user@monitorflow.dev'];
-    const monitorId = accountIds['monitor@monitorflow.dev'];
+    // Monitor actions in demo history come from the right department's monitor.
+    const monitorByDept = {
+      IT: accountIds['monitor@monitorflow.dev'],
+      Facilities: accountIds['monitor2@monitorflow.dev'],
+    };
     const HOUR = 3600e3;
 
     for (const [i, demo] of demoRequests.entries()) {
@@ -393,7 +400,7 @@ async function seed() {
           );
           changedBy = t.allowed_role === 'user' ? requesterId
             : t.allowed_role === 'employee' ? employeeId
-            : monitorId;
+            : monitorByDept[svc.department];
         }
         await client.query(
           `INSERT INTO request_status_history (request_id, status, changed_by, changed_at)

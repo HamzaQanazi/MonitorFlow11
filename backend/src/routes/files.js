@@ -116,11 +116,13 @@ router.get('/:id', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT f.original_filename, f.mime_type, f.storage_path, f.uploaded_by,
               f.request_id, f.task_id,
-              r.user_id AS owner_id, pt.employee_id AS assignee_id
+              r.user_id AS owner_id, pt.employee_id AS assignee_id,
+              st.department_id AS service_department_id
        FROM file_attachment f
        LEFT JOIN task ft ON ft.id = f.task_id
        LEFT JOIN request r ON r.id = COALESCE(f.request_id, ft.request_id)
        LEFT JOIN task pt ON pt.request_id = r.id
+       LEFT JOIN service_type st ON st.id = r.service_type_id
        WHERE f.id = $1`,
       [req.params.id]
     );
@@ -132,7 +134,8 @@ router.get('/:id', async (req, res, next) => {
       f &&
       (pending
         ? f.uploaded_by === req.user.id
-        : req.user.role === 'monitor' ||
+        : // Spec v4: monitors download within their department only.
+          (req.user.role === 'monitor' && f.service_department_id === req.user.department_id) ||
           (req.user.role === 'user' && f.owner_id === req.user.id) ||
           (req.user.role === 'employee' && f.assignee_id === req.user.id));
     if (!allowed) return res.status(404).json({ error: 'Not found' });

@@ -26,17 +26,17 @@ function publicEmployee(r) {
 }
 
 // Load an employee by id, joined to its department. Returns null for a
-// missing id OR a non-employee user (a user/monitor id must look nonexistent
-// on this monitor-facing surface → 404).
-async function loadEmployee(id) {
+// missing id, a non-employee user, OR (spec v4) an employee outside the
+// calling monitor's department — all must look nonexistent → 404.
+async function loadEmployee(id, departmentId) {
   if (!Number.isInteger(id)) return null;
   const { rows } = await pool.query(
     `SELECT u.id, u.name, u.email, u.phone, u.is_active, u.department_id,
             d.name AS department_name
      FROM users u
      LEFT JOIN department d ON d.id = u.department_id
-     WHERE u.id = $1 AND u.role = 'employee'`,
-    [id]
+     WHERE u.id = $1 AND u.role = 'employee' AND u.department_id = $2`,
+    [id, departmentId]
   );
   return rows[0] || null;
 }
@@ -59,6 +59,9 @@ router.get('/', async (req, res, next) => {
       params.push(value);
       where.push(sql.replaceAll('?', `$${params.length}`));
     };
+    // Spec v4: a monitor manages their own department's staff only. The
+    // departmentId param still validates but can only narrow within this.
+    add('u.department_id = ?', req.user.department_id);
     if (q.departmentId !== undefined) add('u.department_id = ?', Number(q.departmentId));
     if (q.q) add('(u.name ILIKE ? OR u.email ILIKE ?)', `%${q.q}%`);
 
@@ -109,8 +112,10 @@ router.post('/', async (req, res, next) => {
     if (!Number.isInteger(departmentId)) errors.departmentId = 'A department is required';
     if (Object.keys(errors).length) return res.status(422).json({ errors });
 
-    const dept = await pool.query('SELECT id FROM department WHERE id = $1', [departmentId]);
-    if (!dept.rows.length) return res.status(422).json({ errors: { departmentId: 'Unknown department' } });
+    // Spec v4: monitors create employees in their own department only.
+    if (departmentId !== req.user.department_id) {
+      return res.status(422).json({ errors: { departmentId: 'Must be your own department' } });
+    }
 
     const password_hash = await bcrypt.hash(password, 10);
     let inserted;
@@ -139,7 +144,7 @@ router.post('/', async (req, res, next) => {
 // PATCH /employees/{id} — edit name / phone / department
 router.patch('/:id', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id));
+    const emp = await loadEmployee(Number(req.params.id), req.user.department_id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
     const { name, phone, departmentId } = req.body || {};
@@ -149,9 +154,10 @@ router.patch('/:id', async (req, res, next) => {
     if (departmentId !== undefined && !Number.isInteger(departmentId)) errors.departmentId = 'Invalid department';
     if (Object.keys(errors).length) return res.status(422).json({ errors });
 
-    if (departmentId !== undefined) {
-      const dept = await pool.query('SELECT id FROM department WHERE id = $1', [departmentId]);
-      if (!dept.rows.length) return res.status(422).json({ errors: { departmentId: 'Unknown department' } });
+    // Spec v4: an employee cannot be moved out of the monitor's department
+    // (that would need an org-level actor; today no one has that power).
+    if (departmentId !== undefined && departmentId !== req.user.department_id) {
+      return res.status(422).json({ errors: { departmentId: 'Must be your own department' } });
     }
 
     await withTx(async (tx) => {
@@ -175,7 +181,7 @@ router.patch('/:id', async (req, res, next) => {
         ...(departmentId !== undefined ? { departmentId } : {}),
       });
     });
-    res.json({ employee: publicEmployee(await loadEmployee(emp.id)) });
+    res.json({ employee: publicEmployee(await loadEmployee(emp.id, req.user.department_id)) });
   } catch (err) {
     next(err);
   }
@@ -184,7 +190,7 @@ router.patch('/:id', async (req, res, next) => {
 // PATCH /employees/{id}/activate
 router.patch('/:id/activate', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id));
+    const emp = await loadEmployee(Number(req.params.id), req.user.department_id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
     await withTx(async (tx) => {
       await tx.query('UPDATE users SET is_active = TRUE WHERE id = $1', [emp.id]);
@@ -201,7 +207,7 @@ router.patch('/:id/activate', async (req, res, next) => {
 // data, not a hardcoded status key: reassign the open task first.
 router.patch('/:id/deactivate', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id));
+    const emp = await loadEmployee(Number(req.params.id), req.user.department_id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
     const open = await pool.query(
@@ -234,7 +240,7 @@ router.patch('/:id/deactivate', async (req, res, next) => {
 // returned once (no forced-change flow — documented MVP limitation).
 router.patch('/:id/reset-password', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id));
+    const emp = await loadEmployee(Number(req.params.id), req.user.department_id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
     const tempPassword = `Temp-${crypto.randomBytes(6).toString('base64url')}`;
     const password_hash = await bcrypt.hash(tempPassword, 10);
@@ -253,7 +259,7 @@ router.patch('/:id/reset-password', async (req, res, next) => {
 // the workflow data). Read-only monitor view of assignment progress.
 router.get('/:id/tasks', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id));
+    const emp = await loadEmployee(Number(req.params.id), req.user.department_id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
     const { rows } = await pool.query(
