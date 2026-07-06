@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
+import { useAuth } from '../auth/AuthContext'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 
@@ -33,6 +34,14 @@ interface ListResponse {
   total: number
 }
 
+// Actor filter options: every audit actor is the admin or a monitor.
+// Inactive monitors stay listed — their past writes are still in the log.
+interface MonitorOption {
+  id: number
+  name: string
+  isActive: boolean
+}
+
 function actionLabel(action: string) {
   const [who, what] = action.split('.')
   return `${who[0].toUpperCase()}${who.slice(1)} ${what.replaceAll('_', ' ')}`
@@ -46,15 +55,18 @@ function detailText(detail: AuditEvent['detail']) {
 }
 
 export default function AuditPage() {
+  const { user } = useAuth()
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
   const action = params.get('action') ?? ''
+  const actorId = params.get('actorId') ?? ''
   const dateFrom = params.get('dateFrom') ?? ''
   const dateTo = params.get('dateTo') ?? ''
-  const hasFilters = Boolean(action || dateFrom || dateTo)
+  const hasFilters = Boolean(action || actorId || dateFrom || dateTo)
 
   const [data, setData] = useState<ListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [monitors, setMonitors] = useState<MonitorOption[]>([])
 
   const setFilter = useCallback(
     (key: string, value: string) => {
@@ -81,17 +93,25 @@ export default function AuditPage() {
   const load = useCallback(async () => {
     const qs = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
     if (action) qs.set('action', action)
+    if (actorId) qs.set('actorId', actorId)
     if (dateFrom) qs.set('dateFrom', dateFrom)
     if (dateTo) qs.set('dateTo', dateTo)
     const res = await apiFetch<ListResponse>(`/audit-events?${qs.toString()}`)
     setData(res)
     setError(null)
-  }, [page, action, dateFrom, dateTo])
+  }, [page, action, actorId, dateFrom, dateTo])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- setError fires only in the async catch, not synchronously
     load().catch((err: Error) => setError(err.message))
   }, [load])
+
+  // Names for the actor dropdown; on failure it just stays at "All actors".
+  useEffect(() => {
+    apiFetch<{ monitors: MonitorOption[] }>('/monitors?pageSize=100')
+      .then((res) => setMonitors(res.monitors))
+      .catch(() => {})
+  }, [])
 
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
 
@@ -119,6 +139,21 @@ export default function AuditPage() {
             {ACTIONS.map((a) => (
               <option key={a} value={a}>
                 {actionLabel(a)}
+              </option>
+            ))}
+          </select>
+          <select
+            className="req-select"
+            aria-label="Filter by actor"
+            value={actorId}
+            onChange={(e) => setFilter('actorId', e.target.value)}
+          >
+            <option value="">All actors</option>
+            {user && <option value={user.id}>{user.name} (you)</option>}
+            {monitors.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+                {m.isActive ? '' : ' (inactive)'}
               </option>
             ))}
           </select>
