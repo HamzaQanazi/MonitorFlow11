@@ -184,7 +184,8 @@
   font-weight: 600;
 }
 
-.req-when {
+.req-when,
+.req-age {
   text-align: right;
   color: var(--muted);
   white-space: nowrap;
@@ -377,6 +378,7 @@
 /* In split mode the list is a picker: keep service, requester, status. */
 .req-body.is-split .req-table .req-id,
 .req-body.is-split .req-table .req-when,
+.req-body.is-split .req-table .req-age,
 .req-body.is-split .req-table .req-priority {
   display: none;
 }

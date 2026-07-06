@@ -60,6 +60,16 @@ function formatWhen(iso: string) {
   return d.toLocaleDateString(undefined, opts)
 }
 
+// Age since the last status/priority/assignment write — the board-level view
+// of the escalation story (thresholds are per-service data, so no cutoff is
+// styled here; the sweep owns the actual alerting).
+function formatAge(iso: string) {
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60_000))
+  if (mins < 60) return `${mins}m`
+  if (mins < 48 * 60) return `${Math.floor(mins / 60)}h`
+  return `${Math.floor(mins / (24 * 60))}d`
+}
+
 export default function RequestsPage() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
@@ -317,6 +327,9 @@ export default function RequestsPage() {
                   <th scope="col" className="req-when">
                     Created
                   </th>
+                  <th scope="col" className="req-age">
+                    Age
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -351,6 +364,9 @@ export default function RequestsPage() {
                       {PRIORITY_LABEL[r.priority] ?? r.priority}
                     </td>
                     <td className="req-when">{formatWhen(r.createdAt)}</td>
+                    <td className="req-age" title={`Last update ${formatWhen(r.updatedAt)}`}>
+                      {formatAge(r.updatedAt)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
