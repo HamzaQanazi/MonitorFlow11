@@ -168,6 +168,11 @@ Per `docs/spec_v4_amendment.md` (DRAFT — supervisor-requested; built first bec
 ### Guard hardening — department-scoped last-monitor rule (`9bb04f3`, `76c13f9`)
 - Deactivating or moving (`departmentId` edit) the last active monitor **of a department** → 409. An orphaned department was a silent outage: requests invisible to every monitor, all monitor-facing notifications (incl. the escalation sweep) inserting zero rows. Strengthens v4 must-pass #23 from global to per-department. Seed gains a second IT monitor (Majed, `monitor3@monitorflow.dev`) so a successful deactivation stays demoable.
 
+### Week 7 — Android release build check (Student 1)
+- `flutter build apk --release` builds green (50.1 MB). First run failed on a corrupted (empty) local NDK 28.2.13676358 — deleted per Flutter's fix note and Gradle re-downloaded it cleanly.
+- **Release-blocker manifest fixes** (verified inside the APK via `aapt dump badging`): `INTERNET` permission added to the main manifest (release doesn't inherit the debug/profile overlays — a release APK had zero API access); `tel:` package-visibility `<queries>` entry so tap-to-call resolves the dialer on Android 11+; app label `monitorflow_mobile` → `MonitorFlow`.
+- **Demo note:** a release APK on a *physical* device defaults to `http://10.0.2.2:3000` (emulator-only). Build device demos with `--dart-define=API_BASE_URL=http://<host>/api/v1`.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
