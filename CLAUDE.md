@@ -26,7 +26,7 @@ Two seeded service configurations (different fields, structurally different work
 - **No visual Workflow Configuration UI.** Same rule — `WORKFLOW_DEFINITION` is seed-only.
 - **Form and workflow definitions are immutable once any request exists for their service type.** No versioning system is built; changing a definition requires wiping that service type's request data via the seed script. This is a documented MVP limitation, not a bug.
 - **No WebSockets.** All "live" updates use polling. Intervals: notifications 30s, task/request lists 30s, detail pages on-focus refresh only.
-- **No push notifications, no draft saving, no signature capture, no interactive map picker, no self-service password reset** — explicitly cut for MVP. If asked to build one, say so instead of proceeding.
+- **No push notifications, no draft saving, no signature capture, no self-service password reset** — explicitly cut for MVP. If asked to build one, say so instead of proceeding. *(The interactive map picker was cut here in v3 and deliberately reinstated by the v5 amendment — see `docs/spec_v5_map_amendment.md`.)*
 - **No new pages beyond the 14 listed in Section 4.** If a task seems to need a new page, say so — don't add one silently.
 - **Every permission rule in Section 6 must be enforced server-side**, never only hidden in the UI.
 - **No status keys hardcoded in application code.** Code reasons about statuses only via `category` and transition `action` flags (Section 9). If a feature seems to need a hardcoded status key, flag it.
@@ -247,7 +247,7 @@ Base path: `/api/v1`. Bearer JWT on every route except `POST /auth/register` and
 {
   "id": "string — unique within the form, stable key used in form_response",
   "label": "string",
-  "type": "text | multiline | number | date | dropdown | radio | checkbox | photo",
+  "type": "text | multiline | number | date | dropdown | radio | checkbox | photo | location",
   "required": true,
   "options": [{"value": "k", "label": "Label"}],
   "min": 0,
@@ -259,6 +259,7 @@ Base path: `/api/v1`. Bearer JWT on every route except `POST /auth/register` and
 - `options`: required for `dropdown`/`radio`, forbidden for other types.
 - `min`/`max`: for `number` = value bounds; for `text`/`multiline` = length bounds; omit when unused.
 - `checkbox` = single boolean. `photo` = stores a FILE_ATTACHMENT id (two-step contract, Section 7).
+- `location` (v5 amendment — `docs/spec_v5_map_amendment.md`) = `{lat, lng}` object, lat ∈ [-90,90], lng ∈ [-180,180], exactly two keys; max one location field per form (seed-time check); no options/min/max.
 - **Deliberately excluded** (do not add — this is not a form-builder platform): default values, conditional/branching fields, regex patterns, custom validation messages (generate generic ones from `label`), multi-file fields, sections/pages, computed fields.
 
 ### Backend validation (one generic function, driven entirely by the schema)
@@ -370,7 +371,7 @@ Steps within weeks follow the dependency chain: schema → auth → permission m
 
 ## 12. Explicitly removed from scope (do not build without a deliberate re-scoping decision)
 
-Visual Form Builder UI · Visual Workflow Configuration UI · standalone Operations Monitor page · WebSocket live refresh · push notifications · interactive map pin picker · signature capture · draft saving on Create Request · user satisfaction ratings · multi-organization administration · payments · advanced report design/BI analytics · continuous GPS tracking / route optimization · **self-service forgot/reset password (email flow)** · **request deadlines** · **form/workflow versioning** · **refresh tokens / server-side logout** · **per-assignment task audit rows** (history notes suffice).
+Visual Form Builder UI · Visual Workflow Configuration UI · standalone Operations Monitor page · WebSocket live refresh · push notifications · ~~interactive map pin picker~~ (reinstated by the v5 amendment — `docs/spec_v5_map_amendment.md`; GPS tracking stays removed) · signature capture · draft saving on Create Request · user satisfaction ratings · multi-organization administration · payments · advanced report design/BI analytics · continuous GPS tracking / route optimization · **self-service forgot/reset password (email flow)** · **request deadlines** · **form/workflow versioning** · **refresh tokens / server-side logout** · **per-assignment task audit rows** (history notes suffice).
 
 ---
 

@@ -173,6 +173,10 @@ Per `docs/spec_v4_amendment.md` (DRAFT — supervisor-requested; built first bec
 - **Release-blocker manifest fixes** (verified inside the APK via `aapt dump badging`): `INTERNET` permission added to the main manifest (release doesn't inherit the debug/profile overlays — a release APK had zero API access); `tel:` package-visibility `<queries>` entry so tap-to-call resolves the dialer on Android 11+; app label `monitorflow_mobile` → `MonitorFlow`.
 - **Demo note:** a release APK on a *physical* device defaults to `http://10.0.2.2:3000` (emulator-only). Build device demos with `--dart-define=API_BASE_URL=http://<host>/api/v1`.
 
+### Spec v5 — map feature (amendment `docs/spec_v5_map_amendment.md`, plan `docs/map_feature_plan.md`)
+
+- **Slice 0 — decision record**: amendment doc written; CLAUDE.md Sections 2/8/12 carry inline pointers (narrow reversal of the map-picker cut; GPS tracking stays removed; `location` = 9th field type; no new pages; matrix/triggers unchanged). Freeze slips to next Monday — agreed by both students 2026-07-07.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):
