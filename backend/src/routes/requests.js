@@ -33,6 +33,11 @@ function listItem(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     requester: { id: row.requester_id, name: row.requester_name },
+    // v5 map amendment: the web map's data — pin position + tooltip employee.
+    location: row.location_lat === null ? null : { lat: row.location_lat, lng: row.location_lng },
+    assignedEmployee: row.assigned_employee_id
+      ? { id: row.assigned_employee_id, name: row.assigned_employee_name }
+      : null,
   };
 }
 
@@ -65,15 +70,31 @@ router.post('/', async (req, res, next) => {
 
     const initial = service.statuses.find((s) => s.is_initial);
 
+    // v5 map amendment: denormalize the location field (max one per form)
+    // into request columns so list queries never dig into the JSONB.
+    const locationField = service.field_schema.find((f) => f.type === 'location');
+    const location =
+      locationField && formResponse[locationField.id] && typeof formResponse[locationField.id] === 'object'
+        ? formResponse[locationField.id]
+        : null;
+
     const client = await pool.connect();
     let created;
     try {
       await client.query('BEGIN');
       ({ rows: [created] } = await client.query(
-        `INSERT INTO request (user_id, service_type_id, form_response, status, priority)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO request (user_id, service_type_id, form_response, status, priority, location_lat, location_lng)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, service_type_id, status, priority, created_at, updated_at`,
-        [req.user.id, service.id, JSON.stringify(formResponse), initial.key, service.default_priority]
+        [
+          req.user.id,
+          service.id,
+          JSON.stringify(formResponse),
+          initial.key,
+          service.default_priority,
+          location ? location.lat : null,
+          location ? location.lng : null,
+        ]
       ));
       await client.query(
         `INSERT INTO request_status_history (request_id, status, changed_by, changed_at)
@@ -140,12 +161,16 @@ router.get('/', async (req, res, next) => {
               r.status, s->>'label' AS status_label, s->>'category' AS category,
               r.priority, r.created_at, r.updated_at,
               u.id AS requester_id, u.name AS requester_name,
+              r.location_lat, r.location_lng,
+              tk.employee_id AS assigned_employee_id, emp.name AS assigned_employee_name,
               COUNT(*) OVER()::int AS total
        FROM request r
        JOIN service_type st ON st.id = r.service_type_id
        JOIN users u ON u.id = r.user_id
        JOIN workflow_definition w ON w.service_type_id = r.service_type_id
        JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
+       LEFT JOIN task tk ON tk.request_id = r.id
+       LEFT JOIN users emp ON emp.id = tk.employee_id
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
        ORDER BY r.created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
