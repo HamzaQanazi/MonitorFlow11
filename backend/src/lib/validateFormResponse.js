@@ -82,6 +82,19 @@ async function validateFormResponse(fields, response, { db, userId }) {
         }
         break;
 
+      case 'location': {
+        const isObj = value && typeof value === 'object' && !Array.isArray(value);
+        const keysOk = isObj && Object.keys(value).length === 2;
+        const latOk = keysOk && typeof value.lat === 'number' && Number.isFinite(value.lat)
+          && value.lat >= -90 && value.lat <= 90;
+        const lngOk = keysOk && typeof value.lng === 'number' && Number.isFinite(value.lng)
+          && value.lng >= -180 && value.lng <= 180;
+        if (!latOk || !lngOk) {
+          errors[field.id] = `${field.label} must be a map location`;
+        }
+        break;
+      }
+
       case 'photo':
         if (typeof value !== 'string' || !UUID_RE.test(value)) {
           errors[field.id] = `${field.label} must be an uploaded attachment id`;
