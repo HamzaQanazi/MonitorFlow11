@@ -9,6 +9,7 @@ import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../models/request.dart';
 import '../theme.dart';
+import '../widgets/category_chips.dart';
 import '../widgets/states.dart';
 import 'request_detail_screen.dart';
 
@@ -23,6 +24,7 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
   List<RequestSummary>? _requests;
   Object? _error;
   Timer? _poll;
+  String? _categoryFilter; // chip toggle, same behavior as the employee queue
 
   @override
   void initState() {
@@ -85,18 +87,48 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
         ),
       );
     }
+    final counts = <String, int>{};
+    for (final r in _requests!) {
+      counts[r.status.category] = (counts[r.status.category] ?? 0) + 1;
+    }
+    final filtered = _categoryFilter == null
+        ? _requests!
+        : _requests!.where((r) => r.status.category == _categoryFilter).toList();
+
     return RefreshIndicator(
       color: MfColors.amber600,
       onRefresh: _load,
-      child: ListView.separated(
+      child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
-        itemCount: _requests!.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 12),
-        itemBuilder: (context, i) => _RequestCard(
-          request: _requests![i],
-          onReturn: () => _load(silent: true), // detail may have changed things
-        ),
+        children: [
+          CategoryChips(
+            counts: counts,
+            selected: _categoryFilter,
+            onToggle: (cat) => setState(
+                () => _categoryFilter = _categoryFilter == cat ? null : cat),
+          ),
+          const SizedBox(height: 16),
+          if (filtered.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: EmptyState(
+                icon: Icons.filter_alt_off_outlined,
+                title: 'No requests in this category',
+                action: OutlinedButton(
+                  onPressed: () => setState(() => _categoryFilter = null),
+                  child: const Text('Clear filter'),
+                ),
+              ),
+            ),
+          for (final r in filtered) ...[
+            _RequestCard(
+              request: r,
+              onReturn: () => _load(silent: true), // detail may have changed things
+            ),
+            const SizedBox(height: 12),
+          ],
+        ],
       ),
     );
   }

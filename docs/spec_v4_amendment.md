@@ -148,7 +148,7 @@ Buffer note: this schedule re-lands us on the original W7/W8 endgame with the sa
 | 20 | Admin calls `GET /requests` (or any operational endpoint) | 403 |
 | 21 | Service import with invalid workflow (e.g. two `is_initial`) | 422, validator message |
 | 22 | Change `departmentId` on a service with requests | 409 |
-| 23 | Deactivate the last active monitor | 409 |
+| 23 | Deactivate the last active monitor **of a department** (or move them out via `departmentId`) — an orphaned department's requests are invisible to every monitor and its escalations have zero recipients | 409 |
 | 24 | Second sweep pass on an already-escalated request | no duplicate notification |
 | 25 | Non-admin calls `GET /audit-events` | 403 |
 

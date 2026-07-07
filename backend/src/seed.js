@@ -175,14 +175,17 @@ const DEV_PASSWORD = 'Password123!';
 const accounts = [
   { name: 'Adel Admin', email: 'admin@monitorflow.dev', role: 'admin', department: null },
   // Spec v4: monitors are department-scoped — one per seeded department so
-  // both services stay demoable.
+  // both services stay demoable. IT gets a second monitor so a successful
+  // deactivation can be demoed despite the last-monitor-of-department guard.
   { name: 'Mona Monitor', email: 'monitor@monitorflow.dev', role: 'monitor', department: 'IT' },
   { name: 'Malak Monitor', email: 'monitor2@monitorflow.dev', role: 'monitor', department: 'Facilities' },
-  { name: 'Ehab Technician', email: 'tech@monitorflow.dev', role: 'employee', department: 'IT' },
+  { name: 'Majed Monitor', email: 'monitor3@monitorflow.dev', role: 'monitor', department: 'IT' },
+  { name: 'Ehab Technician', email: 'tech@monitorflow.dev', role: 'employee', department: 'IT', phone: '+970 59 200 1001' },
   // Second IT employee so reassignment can be exercised and demoed.
-  { name: 'Rana Technician', email: 'tech2@monitorflow.dev', role: 'employee', department: 'IT' },
-  { name: 'Fadia Cleaner', email: 'cleaner@monitorflow.dev', role: 'employee', department: 'Facilities' },
-  { name: 'Uma User', email: 'user@monitorflow.dev', role: 'user', department: null },
+  { name: 'Rana Technician', email: 'tech2@monitorflow.dev', role: 'employee', department: 'IT', phone: '+970 59 200 1002' },
+  { name: 'Fadia Cleaner', email: 'cleaner@monitorflow.dev', role: 'employee', department: 'Facilities', phone: '+970 59 200 1003' },
+  // Phone makes the employee app's tap-to-call demoable on seeded tasks.
+  { name: 'Uma User', email: 'user@monitorflow.dev', role: 'user', department: null, phone: '+970 59 100 2000' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -364,9 +367,10 @@ async function seed() {
     const accountIds = {};
     for (const acc of accounts) {
       const { rows } = await client.query(
-        `INSERT INTO users (name, email, password_hash, role, department_id)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [acc.name, acc.email, passwordHash, acc.role, acc.department ? departmentIds[acc.department] : null]
+        `INSERT INTO users (name, email, password_hash, role, department_id, phone)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [acc.name, acc.email, passwordHash, acc.role, acc.department ? departmentIds[acc.department] : null,
+         acc.phone || null]
       );
       accountIds[acc.email] = rows[0].id;
       console.log(`seeded ${acc.role} account ${acc.email}`);

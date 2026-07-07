@@ -188,6 +188,41 @@ void main() {
     });
   });
 
+  group('initial values ("Request again" prefill)', () {
+    testWidgets('prefills every type except photo and round-trips on submit',
+        (tester) async {
+      final key = GlobalKey<DynamicFormState>();
+      await tester.pumpWidget(MaterialApp(
+        theme: buildTheme(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: DynamicForm(
+              key: key,
+              fields: parse(equipmentRepairJson),
+              initialValues: const {
+                'equipment_type': 'printer',
+                'location': 'Room 214',
+                'problem_description': 'Jams on duplex jobs.',
+                'photo': 'someone-elses-attachment-id',
+                'urgent': true,
+              },
+            ),
+          ),
+        ),
+      ));
+
+      expect(find.text('Room 214'), findsOneWidget);
+      expect(find.text('Jams on duplex jobs.'), findsOneWidget);
+      final response = key.currentState!.submit();
+      expect(response, isNotNull);
+      expect(response!['equipment_type'], 'printer');
+      expect(response['urgent'], true);
+      // The old attachment id must NOT carry over — it belongs to the
+      // original request and the server would reject its reuse.
+      expect(response.containsKey('photo'), isFalse);
+    });
+  });
+
   group('server errors are authoritative', () {
     testWidgets('applyServerErrors shows 422 messages keyed by field id',
         (tester) async {

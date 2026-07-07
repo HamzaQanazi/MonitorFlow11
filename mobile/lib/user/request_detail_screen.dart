@@ -16,6 +16,7 @@ import '../models/workflow.dart';
 import '../theme.dart';
 import '../widgets/form_response_view.dart';
 import '../widgets/states.dart';
+import 'create_request_screen.dart';
 
 class RequestDetailScreen extends StatefulWidget {
   final int requestId;
@@ -184,6 +185,39 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
     );
   }
 
+  /// "Request again" — reopen Create Request prefilled with this request's
+  /// answers. The catalogue is re-checked first: the service may have been
+  /// disabled since (GET /services returns enabled only).
+  Future<void> _requestAgain() async {
+    final api = context.read<AuthState>().api;
+    final int sid = _detail!.summary.serviceTypeId;
+    ServiceType? service;
+    try {
+      final json = await api.get('/services');
+      service = (json['services'] as List<dynamic>)
+          .map((s) => ServiceType.fromJson(s as Map<String, dynamic>))
+          .where((s) => s.id == sid)
+          .firstOrNull;
+    } on Exception {
+      service = null;
+    }
+    if (!mounted) return;
+    if (service == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This service is not available right now.')),
+      );
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CreateRequestScreen(
+          service: service!,
+          initialResponse: _detail!.formResponse,
+        ),
+      ),
+    );
+  }
+
   Future<void> _act(String path, Map<String, dynamic> body) async {
     setState(() => _acting = true);
     final api = context.read<AuthState>().api;
@@ -235,6 +269,9 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
     final confirm = _workflow?.confirmFrom(statusKey);
     final dispute = _workflow?.disputeFrom(statusKey);
     final cancel = d.taskExists ? null : _workflow?.cancelFrom(statusKey);
+    // The request has run its course — offer a prefilled resubmission.
+    final finished =
+        const {'closed', 'terminated'}.contains(d.summary.status.category);
 
     return RefreshIndicator(
       color: MfColors.amber600,
@@ -308,6 +345,17 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
             const _SectionTitle('Comments'),
             const SizedBox(height: 12),
             for (final c in d.comments) _CommentTile(comment: c),
+          ],
+          if (finished) ...[
+            const SizedBox(height: 28),
+            OutlinedButton.icon(
+              onPressed: _acting ? null : _requestAgain,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+              ),
+              icon: const Icon(Icons.replay_outlined, size: 20),
+              label: const Text('Request again'),
+            ),
           ],
           if (cancel != null) ...[
             const SizedBox(height: 28),

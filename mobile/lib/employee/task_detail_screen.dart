@@ -7,6 +7,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
@@ -88,6 +89,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
           _requestFields = FormFieldDef.parseSchema(json['fields'] as List<dynamic>));
     } on Exception {
       // keep the fallback rendering
+    }
+  }
+
+  Future<void> _call(String phone) async {
+    final ok = await launchUrl(Uri(scheme: 'tel', path: phone))
+        .then((v) => v, onError: (_) => false);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No phone app available on this device')),
+      );
     }
   }
 
@@ -312,8 +323,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
                       style: const TextStyle(fontWeight: FontWeight.w600)),
                 ),
                 if (d.requesterPhone != null && d.requesterPhone!.isNotEmpty)
-                  Text(d.requesterPhone!,
-                      style: const TextStyle(color: MfColors.muted)),
+                  // Tap-to-call: the field-ops path from seeing a task to
+                  // reaching the requester. tel: needs a phone app — on
+                  // platforms without one (e.g. desktop) we say so instead.
+                  TextButton.icon(
+                    onPressed: () => _call(d.requesterPhone!),
+                    icon: const Icon(Icons.call, size: 18),
+                    label: Text(d.requesterPhone!),
+                  ),
               ],
             ),
           ),

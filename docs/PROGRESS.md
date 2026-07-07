@@ -157,6 +157,17 @@ Per `docs/spec_v4_amendment.md` (DRAFT — supervisor-requested; built first bec
 - Mobile notifications list renders the `escalation` type with its own icon (fallback already existed — no crash risk).
 - Smoke 10/10 (all three rules fire, department/owner recipients verified, dedup, re-arm after a status change, openTaskCount). Unit 28/28. tsc/lint/build green. Reseeded after.
 
+### Pre-freeze polish — five small features (decided by Student 1, W7 Monday)
+- **Requests Management: Age column** (`9851f8f`): relative time since `updated_at` (m/h/d, exact time on hover) — the board-level view of the escalation story. Hidden in split mode.
+- **Audit Log: actor filter** (`b3906e2`): URL-backed actor select over the existing `actorId` param; options from `GET /monitors` + the signed-in admin; inactive monitors listed.
+- **Task Details: tap-to-call** (`e9271fd`, `57c4b09`): requester phone is a `tel:` button (url_launcher); seed accounts gained phone numbers so it's demoable.
+- **My Requests: category chips** (`f2187d1`): the employee-queue chips extracted to shared `widgets/category_chips.dart` (counts-map API) and reused; toggle-to-filter with clear-filter empty state.
+- **Request Details: "Request again"** (`52c681a`): on a closed/terminated request, reopens Create Request prefilled from the old `form_response` via new renderer `initialValues` (photo ids deliberately dropped — server rejects reuse); catalogue re-checked in case the service was disabled. Renderer widget test added (20 green).
+- Verified: web features live in headless Chromium (tsc/lint green); mobile via analyze + 20 widget tests + Windows release build. **Manual on-device pass of the three mobile features still worthwhile before freeze** (tap-to-call especially — tel: behavior differs per device).
+
+### Guard hardening — department-scoped last-monitor rule (`9bb04f3`, `76c13f9`)
+- Deactivating or moving (`departmentId` edit) the last active monitor **of a department** → 409. An orphaned department was a silent outage: requests invisible to every monitor, all monitor-facing notifications (incl. the escalation sweep) inserting zero rows. Strengthens v4 must-pass #23 from global to per-department. Seed gains a second IT monitor (Majed, `monitor3@monitorflow.dev`) so a successful deactivation stays demoable.
+
 ## Seeded dev accounts
 
 All password `Password123!` (re-run `npm run seed` to reset):

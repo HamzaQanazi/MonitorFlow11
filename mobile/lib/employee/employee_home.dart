@@ -12,6 +12,7 @@ import '../models/task.dart';
 import '../shared/notifications_screen.dart';
 import '../shared/profile_screen.dart';
 import '../theme.dart';
+import '../widgets/category_chips.dart';
 import '../widgets/states.dart';
 import 'task_detail_screen.dart';
 
@@ -58,6 +59,14 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       if (!mounted) return;
       if (!silent || _tasks == null) setState(() => _error = e);
     }
+  }
+
+  Map<String, int> _categoryCounts() {
+    final counts = <String, int>{};
+    for (final t in _tasks!) {
+      counts[t.status.category] = (counts[t.status.category] ?? 0) + 1;
+    }
+    return counts;
   }
 
   /// An employee notification points at a request; find their task for it.
@@ -170,8 +179,8 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
-          _CategoryChips(
-            tasks: _tasks!,
+          CategoryChips(
+            counts: _categoryCounts(),
             selected: _categoryFilter,
             onToggle: (cat) => setState(
                 () => _categoryFilter = _categoryFilter == cat ? null : cat),
@@ -241,79 +250,6 @@ class _SectionHeader extends StatelessWidget {
           ),
         ),
       );
-}
-
-/// Category filter chips — the web board's vocabulary, toggled the same
-/// way. Counts come from the unfiltered list.
-class _CategoryChips extends StatelessWidget {
-  final List<TaskSummary> tasks;
-  final String? selected;
-  final void Function(String category) onToggle;
-
-  const _CategoryChips({
-    required this.tasks,
-    required this.selected,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final counts = <String, int>{};
-    for (final t in tasks) {
-      counts[t.status.category] = (counts[t.status.category] ?? 0) + 1;
-    }
-    final cats =
-        kCategoryColors.keys.where((c) => (counts[c] ?? 0) > 0).toList();
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final cat in cats) ...[
-            _chip(cat, counts[cat]!),
-            const SizedBox(width: 8),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _chip(String cat, int count) {
-    final c = categoryColors(cat);
-    final isSelected = selected == cat;
-    return Material(
-      color: isSelected ? c.tint : MfColors.bg,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(999),
-        side: BorderSide(color: isSelected ? c.accent : MfColors.border),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: () => onToggle(cat),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(color: c.accent, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '${cat.replaceAll('_', ' ')} · $count',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: isSelected ? c.ink : MfColors.muted,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 

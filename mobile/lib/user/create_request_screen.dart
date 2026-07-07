@@ -15,7 +15,10 @@ import '../widgets/states.dart';
 class CreateRequestScreen extends StatefulWidget {
   final ServiceType service;
 
-  const CreateRequestScreen({super.key, required this.service});
+  /// "Request again": prefill from a previous request's form_response.
+  final Map<String, dynamic>? initialResponse;
+
+  const CreateRequestScreen({super.key, required this.service, this.initialResponse});
 
   @override
   State<CreateRequestScreen> createState() => _CreateRequestScreenState();
@@ -119,6 +122,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                 DynamicForm(
                   key: _formKey,
                   fields: snap.data!,
+                  initialValues: widget.initialResponse,
                   // Pending upload (no parent): POST /requests links the
                   // attachment to the new request in its transaction.
                   photoUploader: (filename, bytes) async {

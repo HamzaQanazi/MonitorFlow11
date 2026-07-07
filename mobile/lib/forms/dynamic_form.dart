@@ -22,7 +22,17 @@ class DynamicForm extends StatefulWidget {
   /// context has nowhere to attach an upload yet).
   final PhotoUploader? photoUploader;
 
-  const DynamicForm({super.key, required this.fields, this.photoUploader});
+  /// Prefill from an earlier form_response ("Request again"). Photo values
+  /// are ignored — an attachment id belongs to its original request and
+  /// would be rejected by the server; the user attaches a fresh one.
+  final Map<String, dynamic>? initialValues;
+
+  const DynamicForm({
+    super.key,
+    required this.fields,
+    this.photoUploader,
+    this.initialValues,
+  });
 
   @override
   State<DynamicForm> createState() => DynamicFormState();
@@ -41,10 +51,14 @@ class DynamicFormState extends State<DynamicForm> {
     super.initState();
     for (final f in widget.fields) {
       if (f.type == FieldType.checkbox) _values[f.id] = false;
+      final initial =
+          f.type == FieldType.photo ? null : widget.initialValues?[f.id];
+      if (initial != null) _values[f.id] = initial;
       if (f.type == FieldType.text ||
           f.type == FieldType.multiline ||
           f.type == FieldType.number) {
-        _textControllers[f.id] = TextEditingController();
+        _textControllers[f.id] =
+            TextEditingController(text: initial?.toString() ?? '');
       }
     }
   }
