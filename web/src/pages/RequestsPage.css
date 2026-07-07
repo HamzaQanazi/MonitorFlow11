@@ -817,3 +817,97 @@
   opacity: 0.55;
   cursor: default;
 }
+
+/* ---- v5 map view (spec_v5_map_amendment.md) ---- */
+
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.view-toggle button {
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  background: var(--bg);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.view-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+
+.view-toggle button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.req-map {
+  height: min(68vh, 640px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.req-map .leaflet-container {
+  width: 100%;
+  height: 100%;
+  font: inherit;
+}
+
+.req-map-banner {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.req-map-footnote {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Pin: teardrop in the status category accent, white outline for contrast on
+   tiles. Color always travels with the tooltip text (Status-Owns-Color). */
+.map-pin {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  background: var(--_c, var(--cat-closed));
+}
+
+.map-pin.is-new { --_c: var(--cat-new); }
+.map-pin.is-triage { --_c: var(--cat-triage); }
+.map-pin.is-in_progress { --_c: var(--cat-in_progress); }
+.map-pin.is-done { --_c: var(--cat-done); }
+.map-pin.is-closed { --_c: var(--cat-closed); }
+.map-pin.is-terminated { --_c: var(--cat-terminated); }
+
+/* Clusters mix categories — neutral count circle, never a category color. */
+.map-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--border-strong);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+}
