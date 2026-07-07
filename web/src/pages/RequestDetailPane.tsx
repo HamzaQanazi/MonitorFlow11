@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { apiFetch, ApiError, getToken } from '../lib/api'
 
 // Files need the Authorization header, so downloads can't be plain links —
@@ -110,7 +110,7 @@ function formatSize(bytes: number) {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
-function fieldValue(f: Field, v: unknown): string {
+function fieldValue(f: Field, v: unknown): ReactNode {
   if (v === undefined || v === null || v === '') return '—'
   switch (f.type) {
     case 'checkbox':
@@ -122,6 +122,23 @@ function fieldValue(f: Field, v: unknown): string {
       return 'Photo attached'
     case 'date':
       return formatDateTime(`${String(v)}T00:00:00`).split(',')[0]
+    case 'location': {
+      // v5 map amendment: coords + a link out — no embedded map in the pane.
+      const loc = v as { lat: number; lng: number }
+      if (typeof loc?.lat !== 'number' || typeof loc?.lng !== 'number') return String(v)
+      return (
+        <>
+          {loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}{' '}
+          <a
+            href={`https://www.openstreetmap.org/?mlat=${loc.lat}&mlon=${loc.lng}#map=16/${loc.lat}/${loc.lng}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open in OpenStreetMap ↗
+          </a>
+        </>
+      )
+    }
     default:
       return String(v)
   }

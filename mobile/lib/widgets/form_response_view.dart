@@ -4,6 +4,7 @@
 // become a friendly marker. Falls back to prettified ids when the schema
 // isn't available (fetch failed) — never blocks the page on it.
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../forms/form_schema.dart';
 import '../theme.dart';
@@ -37,10 +38,7 @@ class FormResponseView extends StatelessWidget {
                     child: Text(row.$1,
                         style: const TextStyle(color: MfColors.muted, fontSize: 13)),
                   ),
-                  Expanded(
-                    flex: 3,
-                    child: Text(row.$2, style: const TextStyle(fontSize: 13)),
-                  ),
+                  Expanded(flex: 3, child: row.$2),
                 ],
               ),
             ),
@@ -49,17 +47,28 @@ class FormResponseView extends StatelessWidget {
     );
   }
 
-  List<(String, String)> _rows() {
-    final rows = <(String, String)>[];
+  static const _valueStyle = TextStyle(fontSize: 13);
+
+  List<(String, Widget)> _rows() {
+    final rows = <(String, Widget)>[];
     final remaining = Map<String, dynamic>.of(response);
 
     // Schema order first, then anything the schema doesn't know about.
     for (final f in fields ?? const <FormFieldDef>[]) {
       if (!remaining.containsKey(f.id)) continue;
-      rows.add((f.label, _display(f, remaining.remove(f.id))));
+      final value = remaining.remove(f.id);
+      // Location rows are tappable → the device's maps app (v5 amendment).
+      if (f.type == FieldType.location && value is Map) {
+        rows.add((f.label, _LocationValue(value: value)));
+      } else {
+        rows.add((f.label, Text(_display(f, value), style: _valueStyle)));
+      }
     }
     for (final entry in remaining.entries) {
-      rows.add((entry.key.replaceAll('_', ' '), '${entry.value}'));
+      rows.add((
+        entry.key.replaceAll('_', ' '),
+        Text('${entry.value}', style: _valueStyle),
+      ));
     }
     return rows;
   }
@@ -79,5 +88,52 @@ class FormResponseView extends StatelessWidget {
       default:
         return '$value';
     }
+  }
+}
+
+/// Coords that open in the device's maps app (`geo:`), falling back to the
+/// OpenStreetMap website when no maps app can handle it.
+class _LocationValue extends StatelessWidget {
+  final Map value;
+
+  const _LocationValue({required this.value});
+
+  Future<void> _open(BuildContext context) async {
+    final lat = (value['lat'] as num).toDouble();
+    final lng = (value['lng'] as num).toDouble();
+    final geo = Uri.parse('geo:$lat,$lng?q=$lat,$lng');
+    final ok = await launchUrl(geo).then((v) => v, onError: (_) => false);
+    if (!ok) {
+      await launchUrl(
+        Uri.parse('https://www.openstreetmap.org/?mlat=$lat&mlon=$lng#map=16/$lat/$lng'),
+        mode: LaunchMode.externalApplication,
+      ).then((v) => v, onError: (_) => false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lat = value['lat'], lng = value['lng'];
+    if (lat is! num || lng is! num) return Text('$value', style: const TextStyle(fontSize: 13));
+    return InkWell(
+      onTap: () => _open(context),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}',
+              style: const TextStyle(
+                fontSize: 13,
+                color: MfColors.amber600,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(Icons.map_outlined, size: 15, color: MfColors.amber600),
+        ],
+      ),
+    );
   }
 }

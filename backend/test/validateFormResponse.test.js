@@ -40,6 +40,7 @@ const fields = [
   },
   { id: 'pets', label: 'Pets', type: 'checkbox', required: false },
   { id: 'pic', label: 'Photo', type: 'photo', required: false },
+  { id: 'spot', label: 'Location', type: 'location', required: false },
 ];
 
 const validResponse = {
@@ -130,6 +131,44 @@ test('photo: malformed id, nonexistent id, and foreign owner all rejected', asyn
     const errors = await validateFormResponse(fields, { ...validResponse, pic: bad }, ctx);
     assert.match(errors.pic, /uploaded attachment/);
   }
+});
+
+test('location: valid coords pass, optional absence passes', async () => {
+  let errors = await validateFormResponse(fields, { ...validResponse, spot: { lat: 31.95, lng: 35.91 } }, ctx);
+  assert.deepEqual(errors, {});
+  errors = await validateFormResponse(fields, validResponse, ctx);
+  assert.deepEqual(errors, {});
+});
+
+test('location: boundary values pass', async () => {
+  const errors = await validateFormResponse(
+    fields, { ...validResponse, spot: { lat: -90, lng: 180 } }, ctx
+  );
+  assert.deepEqual(errors, {});
+});
+
+test('location: bad shapes and out-of-range coords rejected', async () => {
+  const bads = [
+    'amman',                              // string
+    42,                                   // number
+    ['31.95', '35.91'],                   // array
+    { lat: 31.95 },                       // missing lng
+    { lat: 31.95, lng: 35.91, alt: 800 }, // extra key
+    { lat: '31.95', lng: 35.91 },         // string lat
+    { lat: NaN, lng: 35.91 },             // non-finite
+    { lat: 91, lng: 35.91 },              // lat out of range
+    { lat: 31.95, lng: -181 },            // lng out of range
+  ];
+  for (const bad of bads) {
+    const errors = await validateFormResponse(fields, { ...validResponse, spot: bad }, ctx);
+    assert.match(errors.spot, /must be a map location/, JSON.stringify(bad));
+  }
+});
+
+test('location: required location missing is a required error', async () => {
+  const reqFields = [{ id: 'spot', label: 'Location', type: 'location', required: true }];
+  const errors = await validateFormResponse(reqFields, {}, ctx);
+  assert.equal(errors.spot, 'Location is required');
 });
 
 test('multiple failures report per-field simultaneously', async () => {

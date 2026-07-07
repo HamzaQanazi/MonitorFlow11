@@ -1,7 +1,7 @@
 // Seed-time validation for FORM_DEFINITION.field_schema (CLAUDE.md Section 8).
 // The API trusts stored schemas, so everything here must hold before insert.
 
-const FIELD_TYPES = ['text', 'multiline', 'number', 'date', 'dropdown', 'radio', 'checkbox', 'photo'];
+const FIELD_TYPES = ['text', 'multiline', 'number', 'date', 'dropdown', 'radio', 'checkbox', 'photo', 'location'];
 const OPTION_TYPES = ['dropdown', 'radio'];
 const BOUNDED_TYPES = ['number', 'text', 'multiline'];
 
@@ -13,6 +13,7 @@ function validateFieldSchema(fields) {
 
   const errors = [];
   const seenIds = new Set();
+  let locationFieldSeen = false;
 
   fields.forEach((field, i) => {
     const at = `field[${i}]${field && field.id ? ` "${field.id}"` : ''}`;
@@ -36,6 +37,13 @@ function validateFieldSchema(fields) {
     if (!FIELD_TYPES.includes(field.type)) {
       errors.push(`${at}: invalid type "${field.type}"`);
       return; // remaining checks depend on a known type
+    }
+
+    if (field.type === 'location') {
+      if (locationFieldSeen) {
+        errors.push(`${at}: at most one location field per form`);
+      }
+      locationFieldSeen = true;
     }
 
     if (OPTION_TYPES.includes(field.type)) {

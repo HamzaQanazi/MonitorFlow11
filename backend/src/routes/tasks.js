@@ -95,11 +95,13 @@ router.get('/', async (req, res, next) => {
               r.service_type_id, st.name AS service_type_name,
               r.status, s->>'label' AS status_label, s->>'category' AS category,
               r.priority, r.created_at AS request_created_at,
+              r.location_lat, r.location_lng, fd.field_schema,
               COUNT(*) OVER()::int AS total
        FROM task t
        JOIN request r ON r.id = t.request_id
        JOIN service_type st ON st.id = r.service_type_id
        JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+       JOIN form_definition fd ON fd.service_type_id = r.service_type_id AND fd.form_type = 'request'
        JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
        WHERE ${where.join(' AND ')}
        ORDER BY t.assigned_at DESC
@@ -117,6 +119,14 @@ router.get('/', async (req, res, next) => {
         priority: r.priority,
         assignedAt: r.assigned_at,
         requestCreatedAt: r.request_created_at,
+        // v5 map amendment: the list feed must not leak what
+        // stripHiddenFields hides in detail — emit coords only when the
+        // form's location field (max one) is employee-visible.
+        location:
+          r.location_lat !== null &&
+          r.field_schema.some((f) => f.type === 'location' && f.visible_to_employee !== false)
+            ? { lat: r.location_lat, lng: r.location_lng }
+            : null,
       })),
       page,
       pageSize,

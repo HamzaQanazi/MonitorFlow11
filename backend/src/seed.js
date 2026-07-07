@@ -47,6 +47,9 @@ const equipmentRepairRequestForm = [
   { id: 'problem_description', label: 'Problem description', type: 'multiline', required: true, max: 1000 },
   { id: 'photo', label: 'Photo of the problem', type: 'photo', required: false },
   { id: 'urgent', label: 'Urgent?', type: 'checkbox', required: false },
+  // v5 map amendment. Optional here (required on Service B) — config variance
+  // the demo points at. Id avoids the existing 'location' text field above.
+  { id: 'site_location', label: 'Location on map', type: 'location', required: false },
 ];
 
 const equipmentRepairCompletionForm = [
@@ -109,6 +112,8 @@ const homeCleaningRequestForm = [
   { id: 'address', label: 'Address', type: 'text', required: true, max: 200, visible_to_employee: true },
   // visible_to_employee: false demonstrates field-level filtering on GET /tasks/{id}
   { id: 'gate_code', label: 'Gate code', type: 'text', required: false, max: 20, visible_to_employee: false },
+  // v5 map amendment: required — the cleaner needs the exact visit spot.
+  { id: 'visit_location', label: 'Visit location', type: 'location', required: true, visible_to_employee: true },
 ];
 
 const homeCleaningCompletionForm = [
@@ -196,11 +201,13 @@ const accounts = [
 // task row is created whenever the walk passes through an assignment.
 // ---------------------------------------------------------------------------
 
-const aForm = (equipment_type, location, problem_description, urgent = false) => ({
+const aForm = (equipment_type, location, problem_description, urgent = false, coords = null) => ({
   equipment_type, location, problem_description, urgent,
+  ...(coords ? { site_location: coords } : {}),
 });
-const bForm = (preferred_date, pkg, num_rooms, has_pets, address, gate_code) => ({
-  preferred_date, package: pkg, num_rooms, has_pets, address,
+// coords is mandatory on B — visit_location is a required field.
+const bForm = (preferred_date, pkg, num_rooms, has_pets, address, coords, gate_code) => ({
+  preferred_date, package: pkg, num_rooms, has_pets, address, visit_location: coords,
   ...(gate_code ? { gate_code } : {}),
 });
 
@@ -212,27 +219,28 @@ const walkTo = (walk, key) => walk.slice(0, walk.indexOf(key) + 1);
 const demoRequests = [
   // Service A: Equipment Repair
   { svc: 0, priority: 'high', daysAgo: 0, path: walkTo(A_WALK, 'submitted'),
-    form: aForm('printer', 'Room 214', 'Printer jams on every duplex job and shows error E-04.', true) },
+    form: aForm('printer', 'Room 214', 'Printer jams on every duplex job and shows error E-04.', true, { lat: 31.9622, lng: 35.8994 }) },
   { svc: 0, priority: 'medium', daysAgo: 1, path: walkTo(A_WALK, 'submitted'),
-    form: aForm('laptop', 'Reception desk', 'Battery drains from full to empty in under an hour.') },
+    form: aForm('laptop', 'Reception desk', 'Battery drains from full to empty in under an hour.', false, { lat: 31.9539, lng: 35.9106 }) },
   { svc: 0, priority: 'medium', daysAgo: 2, path: walkTo(A_WALK, 'approved'),
-    form: aForm('desktop', 'Lab 3, seat 12', 'No display output after the last power cut; fans spin up.') },
+    form: aForm('desktop', 'Lab 3, seat 12', 'No display output after the last power cut; fans spin up.', false, { lat: 31.9455, lng: 35.9284 }) },
   { svc: 0, priority: 'high', daysAgo: 3, path: walkTo(A_WALK, 'assigned'), employee: 'tech@monitorflow.dev',
-    form: aForm('network', 'Server room B', 'Switch port 14 flapping — link drops every few minutes.', true) },
+    form: aForm('network', 'Server room B', 'Switch port 14 flapping — link drops every few minutes.', true, { lat: 31.9711, lng: 35.8867 }) },
   { svc: 0, priority: 'medium', daysAgo: 4, path: walkTo(A_WALK, 'accepted'), employee: 'tech@monitorflow.dev',
-    form: aForm('laptop', 'Room 108', 'Keyboard keys Q and W stopped responding.') },
+    form: aForm('laptop', 'Room 108', 'Keyboard keys Q and W stopped responding.', false, { lat: 31.938, lng: 35.8961 }) },
   { svc: 0, priority: 'high', daysAgo: 5, path: walkTo(A_WALK, 'in_progress'), employee: 'tech@monitorflow.dev',
-    form: aForm('desktop', 'Finance office', 'PC restarts randomly under load, twice today.', true) },
+    form: aForm('desktop', 'Finance office', 'PC restarts randomly under load, twice today.', true, { lat: 31.9847, lng: 35.9128 }) },
   { svc: 0, priority: 'low', daysAgo: 8, path: [...walkTo(A_WALK, 'in_progress'), 'awaiting_parts'], employee: 'tech@monitorflow.dev',
-    form: aForm('printer', 'Room 301', 'Faded print on the left half of every page — likely drum unit.') },
+    form: aForm('printer', 'Room 301', 'Faded print on the left half of every page — likely drum unit.', false, { lat: 31.9265, lng: 35.9412 }) },
   { svc: 0, priority: 'medium', daysAgo: 9, path: walkTo(A_WALK, 'completed'), employee: 'tech@monitorflow.dev',
-    form: aForm('laptop', 'Room 122', 'Screen flickers at low brightness levels.'),
+    form: aForm('laptop', 'Room 122', 'Screen flickers at low brightness levels.', false, { lat: 31.95, lng: 35.924 }),
     completion: { work_performed: 'Reseated the display cable and updated the panel driver; retested at all brightness levels.', parts_used: 'None' } },
   { svc: 0, priority: 'low', daysAgo: 14, path: walkTo(A_WALK, 'confirmed'), employee: 'tech@monitorflow.dev',
-    form: aForm('desktop', 'Room 210', 'Very slow startup, over five minutes to desktop.'),
+    // ~300 m from Room 122 above — the IT map's cluster merge/split pair.
+    form: aForm('desktop', 'Room 210', 'Very slow startup, over five minutes to desktop.', false, { lat: 31.9527, lng: 35.924 }),
     completion: { work_performed: 'Replaced failing HDD with SSD, cloned system, verified boot in 40 seconds.', parts_used: '480GB SSD' } },
   { svc: 0, priority: 'medium', daysAgo: 21, path: walkTo(A_WALK, 'confirmed'), employee: 'tech@monitorflow.dev',
-    form: aForm('network', 'Room 115', 'Wall port dead — no link light on any device.'),
+    form: aForm('network', 'Room 115', 'Wall port dead — no link light on any device.', false, { lat: 31.9955, lng: 35.8745 }),
     completion: { work_performed: 'Re-terminated the wall port and patched it through on the floor switch.', parts_used: 'RJ45 keystone' } },
   { svc: 0, priority: 'low', daysAgo: 6, path: ['submitted', 'rejected'],
     form: aForm('other', 'Cafeteria', 'Coffee machine displays descale warning.') },
@@ -241,28 +249,29 @@ const demoRequests = [
 
   // Service B: Home Cleaning Visit
   { svc: 1, priority: 'low', daysAgo: 0, path: walkTo(B_WALK, 'booked'),
-    form: bForm('2026-07-08', 'standard', 3, false, '14 Olive Street, Apt 2') },
+    form: bForm('2026-07-08', 'standard', 3, false, '14 Olive Street, Apt 2', { lat: 31.9421, lng: 35.9198 }) },
   { svc: 1, priority: 'medium', daysAgo: 2, path: walkTo(B_WALK, 'booked'),
-    form: bForm('2026-07-06', 'deep', 5, true, '9 Cedar Lane', '4417') },
+    form: bForm('2026-07-06', 'deep', 5, true, '9 Cedar Lane', { lat: 31.976, lng: 35.8452 }, '4417') },
   { svc: 1, priority: 'low', daysAgo: 3, path: walkTo(B_WALK, 'assigned'), employee: 'cleaner@monitorflow.dev',
-    form: bForm('2026-07-05', 'standard', 2, false, '31 Harbor Road, floor 3') },
+    form: bForm('2026-07-05', 'standard', 2, false, '31 Harbor Road, floor 3', { lat: 31.9058, lng: 35.931 }) },
   { svc: 1, priority: 'low', daysAgo: 5, path: walkTo(B_WALK, 'accepted'), employee: 'cleaner@monitorflow.dev',
-    form: bForm('2026-07-04', 'standard', 4, true, '5 Almond Court') },
+    form: bForm('2026-07-04', 'standard', 4, true, '5 Almond Court', { lat: 31.9902, lng: 35.937 }) },
   { svc: 1, priority: 'medium', daysAgo: 1, path: walkTo(B_WALK, 'en_route'), employee: 'cleaner@monitorflow.dev',
-    form: bForm('2026-07-03', 'deep', 6, false, '22 Palm Avenue', '0091') },
+    form: bForm('2026-07-03', 'deep', 6, false, '22 Palm Avenue', { lat: 31.9515, lng: 35.8815 }, '0091') },
   { svc: 1, priority: 'high', daysAgo: 0, path: walkTo(B_WALK, 'in_service'), employee: 'cleaner@monitorflow.dev',
-    form: bForm('2026-07-03', 'deep', 8, true, '2 Jasmine Boulevard, villa 7') },
+    // ~300 m from 22 Palm Avenue above — the Facilities map's cluster pair.
+    form: bForm('2026-07-03', 'deep', 8, true, '2 Jasmine Boulevard, villa 7', { lat: 31.9542, lng: 35.8815 }) },
   { svc: 1, priority: 'low', daysAgo: 7, path: walkTo(B_WALK, 'completed'), employee: 'cleaner@monitorflow.dev',
-    form: bForm('2026-06-27', 'standard', 3, false, '18 Maple Walk'),
+    form: bForm('2026-06-27', 'standard', 3, false, '18 Maple Walk', { lat: 31.9188, lng: 35.889 }),
     completion: { rooms_cleaned: 3, notes: 'All rooms done; left windows ajar to air out the kitchen.' } },
   { svc: 1, priority: 'low', daysAgo: 12, path: walkTo(B_WALK, 'confirmed'), employee: 'cleaner@monitorflow.dev',
-    form: bForm('2026-06-22', 'standard', 2, false, '7 Birch Close'),
+    form: bForm('2026-06-22', 'standard', 2, false, '7 Birch Close', { lat: 31.9633, lng: 35.95 }),
     completion: { rooms_cleaned: 2 } },
   { svc: 1, priority: 'medium', daysAgo: 26, path: walkTo(B_WALK, 'confirmed'), employee: 'cleaner@monitorflow.dev',
-    form: bForm('2026-06-08', 'deep', 5, true, '40 Rosewood Drive', '2203'),
+    form: bForm('2026-06-08', 'deep', 5, true, '40 Rosewood Drive', { lat: 31.933, lng: 35.86 }, '2203'),
     completion: { rooms_cleaned: 5, notes: 'Deep clean complete; pet hair filter replaced in the vacuum.' } },
   { svc: 1, priority: 'low', daysAgo: 24, path: ['booked', 'cancelled'],
-    form: bForm('2026-06-12', 'standard', 1, false, '3 Fig Tree Lane') },
+    form: bForm('2026-06-12', 'standard', 1, false, '3 Fig Tree Lane', { lat: 31.8995, lng: 35.9045 }) },
 ];
 
 function validateAll() {
@@ -412,11 +421,15 @@ async function seed() {
       const times = demo.path.map((_, s) => new Date(created.getTime() + s * step));
       const currentStatus = demo.path[demo.path.length - 1];
 
+      // v5 map amendment: denormalize the location field the same way
+      // POST /requests does.
+      const locField = svc.requestForm.find((f) => f.type === 'location');
+      const coords = (locField && demo.form[locField.id]) || null;
       const { rows } = await client.query(
-        `INSERT INTO request (user_id, service_type_id, form_response, status, priority, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        `INSERT INTO request (user_id, service_type_id, form_response, status, priority, created_at, updated_at, location_lat, location_lng)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
         [requesterId, svc.id, JSON.stringify(demo.form), currentStatus, demo.priority,
-         created, times[times.length - 1]]
+         created, times[times.length - 1], coords ? coords.lat : null, coords ? coords.lng : null]
       );
       const requestId = rows[0].id;
 

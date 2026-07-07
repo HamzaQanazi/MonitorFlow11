@@ -15,6 +15,7 @@ import '../theme.dart';
 import '../widgets/category_chips.dart';
 import '../widgets/states.dart';
 import 'task_detail_screen.dart';
+import 'task_map_view.dart';
 
 class EmployeeHomeScreen extends StatefulWidget {
   const EmployeeHomeScreen({super.key});
@@ -29,6 +30,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   Timer? _poll;
   String? _categoryFilter; // chip toggle, same behavior as the web board
   bool _showHistory = false;
+  bool _mapMode = false; // v5: list ⇄ map view of the same filtered queue
 
   @override
   void initState() {
@@ -172,6 +174,55 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     final history = filtered.where((t) => historyCats.contains(t.status.category)).toList()
       ..sort((a, b) => b.assignedAt.compareTo(a.assignedAt));
 
+    final toggle = Center(
+      child: SegmentedButton<bool>(
+        showSelectedIcon: false,
+        segments: const [
+          ButtonSegment(value: false, icon: Icon(Icons.list, size: 18), label: Text('List')),
+          ButtonSegment(value: true, icon: Icon(Icons.map_outlined, size: 18), label: Text('Map')),
+        ],
+        selected: {_mapMode},
+        onSelectionChanged: (s) => setState(() => _mapMode = s.first),
+      ),
+    );
+
+    if (_mapMode) {
+      // Pins are active work only — finished/terminated tasks stay in the
+      // list's History fold (same category set, no status keys).
+      final mapTasks =
+          filtered.where((t) => !historyCats.contains(t.status.category)).toList();
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Column(
+              children: [
+                toggle,
+                const SizedBox(height: 12),
+                CategoryChips(
+                  counts: _categoryCounts(),
+                  selected: _categoryFilter,
+                  onToggle: (cat) => setState(
+                      () => _categoryFilter = _categoryFilter == cat ? null : cat),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: TaskMapView(
+              tasks: mapTasks,
+              onOpen: (t) async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => TaskDetailScreen(taskId: t.id)),
+                );
+                _load(silent: true);
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
     return RefreshIndicator(
       color: MfColors.amber600,
       onRefresh: _load,
@@ -179,6 +230,8 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
+          toggle,
+          const SizedBox(height: 12),
           CategoryChips(
             counts: _categoryCounts(),
             selected: _categoryFilter,

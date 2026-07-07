@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import RequestDetailPane from './RequestDetailPane'
+import RequestsMapView from './RequestsMapView'
 import './RequestsPage.css'
 
 // Categories are the closed enum from CLAUDE.md Section 9 — the only workflow
@@ -49,6 +50,11 @@ interface Service {
   departmentId: number
 }
 
+interface EmployeeOption {
+  id: number
+  name: string
+}
+
 function formatWhen(iso: string) {
   const d = new Date(iso)
   const now = new Date()
@@ -80,13 +86,17 @@ export default function RequestsPage() {
   const serviceTypeId = params.get('service') ?? ''
   const priority = params.get('priority') ?? ''
   const q = params.get('q') ?? ''
-  const hasFilters = Boolean(category || serviceTypeId || priority || q)
+  const employeeId = params.get('employee') ?? ''
+  // v5: list ⇄ map over the same filters (no new page — a view mode).
+  const view = params.get('view') === 'map' ? 'map' : 'list'
+  const hasFilters = Boolean(category || serviceTypeId || priority || q || employeeId)
 
   const [data, setData] = useState<ListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
   const [services, setServices] = useState<Service[]>([])
+  const [employees, setEmployees] = useState<EmployeeOption[]>([])
   const [search, setSearch] = useState(q)
 
   const setFilter = useCallback(
@@ -109,7 +119,10 @@ export default function RequestsPage() {
 
   function clearFilters() {
     setSearch('')
-    setParams(new URLSearchParams(), { replace: true })
+    // Clearing filters is not a view switch — stay on the map if we're on it.
+    setParams(view === 'map' ? new URLSearchParams({ view: 'map' }) : new URLSearchParams(), {
+      replace: true,
+    })
   }
 
   // Detail pane routing: /requests/:id, keeping the filter query string.
@@ -131,11 +144,12 @@ export default function RequestsPage() {
     if (serviceTypeId) qs.set('serviceTypeId', serviceTypeId)
     if (priority) qs.set('priority', priority)
     if (q) qs.set('q', q)
+    if (employeeId) qs.set('employeeId', employeeId)
     const res = await apiFetch<ListResponse>(`/requests?${qs.toString()}`)
     setData(res)
     setUpdatedAt(new Date())
     setError(null)
-  }, [page, category, serviceTypeId, priority, q])
+  }, [page, category, serviceTypeId, priority, q, employeeId])
 
   useEffect(() => {
     let cancelled = false
@@ -164,6 +178,11 @@ export default function RequestsPage() {
   useEffect(() => {
     apiFetch<{ services: Service[] }>('/services')
       .then((res) => setServices(res.services))
+      .catch(() => {})
+    // Employee filter options (ReportsPage pattern); pageSize 100 = API max,
+    // fine at this project's employee count.
+    apiFetch<{ employees: EmployeeOption[] }>('/employees?pageSize=100')
+      .then((res) => setEmployees(res.employees))
       .catch(() => {})
   }, [])
 
@@ -260,6 +279,35 @@ export default function RequestsPage() {
               </option>
             ))}
           </select>
+          <select
+            className="req-select"
+            aria-label="Filter by assigned employee"
+            value={employeeId}
+            onChange={(e) => setFilter('employee', e.target.value)}
+          >
+            <option value="">All employees</option>
+            {employees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.name}
+              </option>
+            ))}
+          </select>
+          <div className="view-toggle" role="group" aria-label="View as">
+            <button
+              type="button"
+              aria-pressed={view === 'list'}
+              onClick={() => setFilter('view', '')}
+            >
+              List
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === 'map'}
+              onClick={() => setFilter('view', 'map')}
+            >
+              Map
+            </button>
+          </div>
           {hasFilters && (
             <button type="button" className="req-clear" onClick={clearFilters}>
               Clear filters
@@ -270,7 +318,16 @@ export default function RequestsPage() {
 
       <div className={`req-body${selectedId !== null ? ' is-split' : ''}`}>
         <div className="req-main">
-      {error ? (
+      {view === 'map' ? (
+        <RequestsMapView
+          category={category}
+          serviceTypeId={serviceTypeId}
+          priority={priority}
+          q={q}
+          employeeId={employeeId}
+          openDetail={openDetail}
+        />
+      ) : error ? (
         <div className="req-status">
           <p className="req-status-msg">Couldn’t load requests: {error}</p>
           <button

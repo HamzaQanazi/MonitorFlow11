@@ -13,6 +13,10 @@ class TaskSummary {
   final String priority;
   final DateTime assignedAt;
 
+  /// v5 map amendment: the request's location, null when the form has none,
+  /// the field was left empty, or the server hid it (visible_to_employee).
+  final ({double lat, double lng})? location;
+
   const TaskSummary({
     required this.id,
     required this.requestId,
@@ -21,17 +25,24 @@ class TaskSummary {
     required this.status,
     required this.priority,
     required this.assignedAt,
+    this.location,
   });
 
-  factory TaskSummary.fromJson(Map<String, dynamic> json) => TaskSummary(
-        id: json['id'] as int,
-        requestId: json['requestId'] as int,
-        serviceTypeId: json['serviceTypeId'] as int,
-        serviceTypeName: json['serviceTypeName'] as String,
-        status: StatusInfo.fromJson(json['status'] as Map<String, dynamic>),
-        priority: json['priority'] as String,
-        assignedAt: DateTime.parse(json['assignedAt'] as String),
-      );
+  factory TaskSummary.fromJson(Map<String, dynamic> json) {
+    final loc = json['location'] as Map<String, dynamic>?;
+    return TaskSummary(
+      id: json['id'] as int,
+      requestId: json['requestId'] as int,
+      serviceTypeId: json['serviceTypeId'] as int,
+      serviceTypeName: json['serviceTypeName'] as String,
+      status: StatusInfo.fromJson(json['status'] as Map<String, dynamic>),
+      priority: json['priority'] as String,
+      assignedAt: DateTime.parse(json['assignedAt'] as String),
+      location: loc == null
+          ? null
+          : (lat: (loc['lat'] as num).toDouble(), lng: (loc['lng'] as num).toDouble()),
+    );
+  }
 }
 
 class TaskDetail {
