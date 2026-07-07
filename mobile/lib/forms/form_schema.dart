@@ -11,6 +11,7 @@ enum FieldType {
   radio,
   checkbox,
   photo,
+  location,
   unsupported;
 
   static FieldType parse(String? raw) => switch (raw) {
@@ -22,6 +23,7 @@ enum FieldType {
         'radio' => radio,
         'checkbox' => checkbox,
         'photo' => photo,
+        'location' => location,
         _ => unsupported,
       };
 }
@@ -116,6 +118,17 @@ class FormFieldDef {
         return value is String && value.isNotEmpty
             ? null
             : '$label must be an uploaded attachment id';
+      case FieldType.location:
+        if (value is Map) {
+          final lat = value['lat'];
+          final lng = value['lng'];
+          if (value.length == 2 &&
+              lat is num && lat.isFinite && lat >= -90 && lat <= 90 &&
+              lng is num && lng.isFinite && lng >= -180 && lng <= 180) {
+            return null;
+          }
+        }
+        return '$label must be a map location';
       case FieldType.unsupported:
         return null; // handled above — unreachable
     }

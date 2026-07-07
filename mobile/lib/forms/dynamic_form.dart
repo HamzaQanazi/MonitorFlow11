@@ -15,12 +15,22 @@ import 'form_schema.dart';
 /// two-step contract). The host screen owns the endpoint specifics.
 typedef PhotoUploader = Future<String> Function(String filename, List<int> bytes);
 
+/// Opens a map picker (v5 amendment) seeded with the current value and
+/// returns the chosen `{lat, lng}`, or null if the user backed out. Injected
+/// like PhotoUploader so the renderer stays free of map dependencies.
+typedef LocationPicker = Future<Map<String, dynamic>?> Function(
+    Map<String, dynamic>? current);
+
 class DynamicForm extends StatefulWidget {
   final List<FormFieldDef> fields;
 
   /// When null, photo fields render as a disabled placeholder (the host
   /// context has nowhere to attach an upload yet).
   final PhotoUploader? photoUploader;
+
+  /// When null, location fields render as a disabled placeholder. Unlike
+  /// photo, location values prefill from initialValues — coords are reusable.
+  final LocationPicker? locationPicker;
 
   /// Prefill from an earlier form_response ("Request again"). Photo values
   /// are ignored — an attachment id belongs to its original request and
@@ -31,6 +41,7 @@ class DynamicForm extends StatefulWidget {
     super.key,
     required this.fields,
     this.photoUploader,
+    this.locationPicker,
     this.initialValues,
   });
 
@@ -136,6 +147,7 @@ class DynamicFormState extends State<DynamicForm> {
       FieldType.radio => _radioField(field, error),
       FieldType.checkbox => _checkboxField(field, error),
       FieldType.photo => _photoField(field, error),
+      FieldType.location => _locationField(field, error),
       FieldType.unsupported => _unsupportedField(field, error),
     };
   }
@@ -382,6 +394,98 @@ class DynamicFormState extends State<DynamicForm> {
     } finally {
       if (mounted) setState(() => _photoBusy.remove(field.id));
     }
+  }
+
+  Widget _locationField(FormFieldDef field, String? error) {
+    // Mirrors the photo field's null-callback contract: no picker = honest
+    // disabled placeholder, never blocks an optional field.
+    if (widget.locationPicker == null) {
+      return _GroupShell(
+        field: field,
+        error: error,
+        child: Container(
+          key: ValueKey('field-${field.id}'),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: MfColors.surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: MfColors.border),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.location_off_outlined, color: MfColors.muted),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Map picker is not available here yet',
+                  style: TextStyle(color: MfColors.muted),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final value = _values[field.id] as Map<String, dynamic>?;
+    Future<void> pick() async {
+      final picked = await widget.locationPicker!(value);
+      if (picked != null) _setValue(field.id, picked);
+    }
+
+    return _GroupShell(
+      field: field,
+      error: error,
+      child: Container(
+        key: ValueKey('field-${field.id}'),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: MfColors.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: MfColors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              value != null ? Icons.place : Icons.place_outlined,
+              color: value != null ? MfColors.amber600 : MfColors.muted,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                value != null
+                    ? '${(value['lat'] as num).toStringAsFixed(5)}, '
+                        '${(value['lng'] as num).toStringAsFixed(5)}'
+                    : 'No location set',
+                style: TextStyle(
+                  color: value != null ? MfColors.ink : MfColors.muted,
+                  fontSize: 14,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (value != null) ...[
+              TextButton(
+                key: ValueKey('field-${field.id}-remove'),
+                onPressed: () {
+                  setState(() {
+                    _values.remove(field.id);
+                    _errors.remove(field.id);
+                  });
+                },
+                child: const Text('Remove'),
+              ),
+              TextButton(onPressed: pick, child: const Text('Change')),
+            ] else
+              TextButton(
+                key: ValueKey('field-${field.id}-set'),
+                onPressed: pick,
+                child: const Text('Set location'),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _unsupportedField(FormFieldDef field, String? error) {

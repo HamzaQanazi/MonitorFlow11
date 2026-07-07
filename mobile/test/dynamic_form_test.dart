@@ -18,7 +18,8 @@ const equipmentRepairJson = '''
   {"id":"location","max":100,"type":"text","label":"Room / location","required":true},
   {"id":"problem_description","max":1000,"type":"multiline","label":"Problem description","required":true},
   {"id":"photo","type":"photo","label":"Photo of the problem","required":false},
-  {"id":"urgent","type":"checkbox","label":"Urgent?","required":false}
+  {"id":"urgent","type":"checkbox","label":"Urgent?","required":false},
+  {"id":"site_location","type":"location","label":"Location on map","required":false}
 ]
 ''';
 
@@ -30,23 +31,32 @@ const homeCleaningJson = '''
   {"id":"num_rooms","max":20,"min":1,"type":"number","label":"Number of rooms","required":true},
   {"id":"has_pets","type":"checkbox","label":"Pets at home?","required":false},
   {"id":"address","max":200,"type":"text","label":"Address","required":true,"visible_to_employee":true},
-  {"id":"gate_code","max":20,"type":"text","label":"Gate code","required":false,"visible_to_employee":false}
+  {"id":"gate_code","max":20,"type":"text","label":"Gate code","required":false,"visible_to_employee":false},
+  {"id":"visit_location","type":"location","label":"Visit location","required":true,"visible_to_employee":true}
 ]
 ''';
 
 List<FormFieldDef> parse(String json) =>
     FormFieldDef.parseSchema(jsonDecode(json) as List<dynamic>);
 
-Widget wrap(Key key, List<FormFieldDef> fields) => MaterialApp(
+Widget wrap(Key key, List<FormFieldDef> fields, {LocationPicker? picker}) =>
+    MaterialApp(
       theme: buildTheme(),
       home: Scaffold(
-        body: SingleChildScrollView(child: DynamicForm(key: key, fields: fields)),
+        body: SingleChildScrollView(
+          child: DynamicForm(key: key, fields: fields, locationPicker: picker),
+        ),
       ),
     );
 
+// Stub picker: no flutter_map in widget tests — returns fixed coords.
+const stubCoords = {'lat': 31.95, 'lng': 35.91};
+Future<Map<String, dynamic>?> stubPicker(Map<String, dynamic>? current) async =>
+    stubCoords;
+
 void main() {
   group('schema → correct widgets', () {
-    testWidgets('Equipment Repair renders all five fields in order', (tester) async {
+    testWidgets('Equipment Repair renders all six fields in order', (tester) async {
       final key = GlobalKey<DynamicFormState>();
       await tester.pumpWidget(wrap(key, parse(equipmentRepairJson)));
 
@@ -55,10 +65,13 @@ void main() {
       expect(find.byKey(const ValueKey('field-problem_description')), findsOneWidget);
       expect(find.byKey(const ValueKey('field-photo')), findsOneWidget);
       expect(find.byKey(const ValueKey('field-urgent')), findsOneWidget);
+      expect(find.byKey(const ValueKey('field-site_location')), findsOneWidget);
       expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
       expect(find.byType(CheckboxListTile), findsOneWidget);
       // No photoUploader passed → the photo field is an honest placeholder.
       expect(find.text('Photo upload is not available here yet'), findsOneWidget);
+      // Same contract for location with no picker (v5).
+      expect(find.text('Map picker is not available here yet'), findsOneWidget);
       // Required fields are marked; optional ones aren't.
       expect(find.text('Equipment type *'), findsOneWidget);
       expect(find.text('Urgent?'), findsOneWidget);
@@ -75,6 +88,7 @@ void main() {
       expect(find.byKey(const ValueKey('field-has_pets')), findsOneWidget);
       expect(find.byKey(const ValueKey('field-address')), findsOneWidget);
       expect(find.byKey(const ValueKey('field-gate_code')), findsOneWidget);
+      expect(find.byKey(const ValueKey('field-visit_location')), findsOneWidget);
       expect(find.byType(RadioListTile<String>), findsNWidgets(2));
     });
   });
@@ -91,6 +105,7 @@ void main() {
       expect(find.text('Cleaning package is required'), findsOneWidget);
       expect(find.text('Number of rooms is required'), findsOneWidget);
       expect(find.text('Address is required'), findsOneWidget);
+      expect(find.text('Visit location is required'), findsOneWidget);
       // Optional fields don't error.
       expect(find.text('Gate code is required'), findsNothing);
     });
@@ -123,7 +138,7 @@ void main() {
 
     testWidgets('valid response map has server-expected JSON types', (tester) async {
       final key = GlobalKey<DynamicFormState>();
-      await tester.pumpWidget(wrap(key, parse(homeCleaningJson)));
+      await tester.pumpWidget(wrap(key, parse(homeCleaningJson), picker: stubPicker));
 
       // Pick today via the real date picker dialog.
       await tester.tap(find.byKey(const ValueKey('field-preferred_date')));
@@ -134,6 +149,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('field-package-deep')));
       await tester.enterText(find.byKey(const ValueKey('field-num_rooms')), '3');
       await tester.enterText(find.byKey(const ValueKey('field-address')), '12 Main St');
+      await tester.tap(find.byKey(const ValueKey('field-visit_location-set')));
       await tester.pump();
 
       final response = key.currentState!.submit();
@@ -143,6 +159,7 @@ void main() {
       expect(response['num_rooms'], isA<num>()); // JSON number, not string
       expect(response['has_pets'], false); // checkbox always sends its bool
       expect(response['address'], '12 Main St');
+      expect(response['visit_location'], stubCoords); // {lat, lng} object
       expect(response.containsKey('gate_code'), isFalse); // empty optional omitted
     });
 
@@ -220,6 +237,93 @@ void main() {
       // The old attachment id must NOT carry over — it belongs to the
       // original request and the server would reject its reuse.
       expect(response.containsKey('photo'), isFalse);
+    });
+  });
+
+  group('location field (v5, stub picker — no flutter_map in widget tests)', () {
+    final locationOnly = parse(
+        '[{"id":"visit_location","type":"location","label":"Visit location","required":true}]');
+
+    testWidgets('card renders unset state with Set button', (tester) async {
+      final key = GlobalKey<DynamicFormState>();
+      await tester.pumpWidget(wrap(key, locationOnly, picker: stubPicker));
+
+      expect(find.text('No location set'), findsOneWidget);
+      expect(find.byKey(const ValueKey('field-visit_location-set')), findsOneWidget);
+    });
+
+    testWidgets('picked value lands in submit() and renders coords', (tester) async {
+      final key = GlobalKey<DynamicFormState>();
+      await tester.pumpWidget(wrap(key, locationOnly, picker: stubPicker));
+
+      await tester.tap(find.byKey(const ValueKey('field-visit_location-set')));
+      await tester.pump();
+      expect(find.text('31.95000, 35.91000'), findsOneWidget);
+      expect(key.currentState!.submit()!['visit_location'], stubCoords);
+    });
+
+    testWidgets('picker receives the current value on Change', (tester) async {
+      Map<String, dynamic>? seen;
+      final key = GlobalKey<DynamicFormState>();
+      await tester.pumpWidget(wrap(key, locationOnly, picker: (current) async {
+        seen = current;
+        return stubCoords;
+      }));
+
+      await tester.tap(find.byKey(const ValueKey('field-visit_location-set')));
+      await tester.pump();
+      expect(seen, isNull); // nothing set yet
+      await tester.tap(find.text('Change'));
+      await tester.pump();
+      expect(seen, stubCoords); // Change hands the picker the existing pin
+    });
+
+    testWidgets('Remove clears the value and required blocks again', (tester) async {
+      final key = GlobalKey<DynamicFormState>();
+      await tester.pumpWidget(wrap(key, locationOnly, picker: stubPicker));
+
+      await tester.tap(find.byKey(const ValueKey('field-visit_location-set')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('field-visit_location-remove')));
+      await tester.pump();
+
+      expect(find.text('No location set'), findsOneWidget);
+      expect(key.currentState!.submit(), isNull);
+      await tester.pump();
+      expect(find.text('Visit location is required'), findsOneWidget);
+    });
+
+    testWidgets('prefills from initialValues (unlike photo, coords are reusable)',
+        (tester) async {
+      final key = GlobalKey<DynamicFormState>();
+      await tester.pumpWidget(MaterialApp(
+        theme: buildTheme(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: DynamicForm(
+              key: key,
+              fields: locationOnly,
+              locationPicker: stubPicker,
+              initialValues: const {'visit_location': {'lat': 31.9, 'lng': 35.9}},
+            ),
+          ),
+        ),
+      ));
+
+      expect(find.text('31.90000, 35.90000'), findsOneWidget);
+      expect(key.currentState!.submit()!['visit_location'],
+          {'lat': 31.9, 'lng': 35.9});
+    });
+
+    testWidgets('null picker renders the disabled placeholder and never blocks '
+        'an optional field', (tester) async {
+      final optional = parse(
+          '[{"id":"site_location","type":"location","label":"Location on map","required":false}]');
+      final key = GlobalKey<DynamicFormState>();
+      await tester.pumpWidget(wrap(key, optional));
+
+      expect(find.text('Map picker is not available here yet'), findsOneWidget);
+      expect(key.currentState!.submit(), isNotNull); // optional → submits fine
     });
   });
 

@@ -8,6 +8,7 @@ import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../forms/dynamic_form.dart';
 import '../forms/form_schema.dart';
+import '../forms/location_picker_screen.dart';
 import '../models/request.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
@@ -135,6 +136,13 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                     return (json['attachment'] as Map<String, dynamic>)['id']
                         as String;
                   },
+                  locationPicker: (current) =>
+                      Navigator.push<Map<String, dynamic>>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => LocationPickerScreen(initial: current),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 ElevatedButton(
