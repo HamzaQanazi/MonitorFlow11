@@ -112,16 +112,7 @@ Same engine, same code, different JSON — the structural differences are what t
 
 ## Design language
 
-North Star: **"The Dispatch Board"** — a calm, orderly dispatch office. Every screen answers *where is this request and what happens next* before anything else. Learns from Linear / Things 3 / Samsara; explicitly rejects the generic Bootstrap admin template (stock sidebar, four identical stat cards, badge soup, default-blue) and Jira-style overload. One visual language across all three surfaces.
-
-- **The Restrained Rule:** neutral surfaces carry the interface; the **Workwear Amber** primary (hue ~57°) appears on ≤10% of any screen — actions, focus, brand moments only. Pure-white body background (warmth lives in the primary, not the surface).
-- **The Status-Owns-Color Rule:** the six categories get one fixed color-and-shape assignment, reused identically everywhere (`--cat-*` in `tokens.css`, `kCategoryColors` in Flutter). No other element borrows a status color; status is **never** color alone — always paired with its seeded label.
-- **Typography:** one humanist sans family across web + mobile; hierarchy from weight/size, never a second face. Dashboard body capped ~65–75ch.
-- **Elevation:** flat by default; depth from tonal layering + 1px borders. Shadows only as a response to state (dialogs, sticky headers). A resting card that casts a shadow is wrong.
-- **Every state is a designed state:** loading/empty/error on every list; confirm dialog (with a note field where the workflow demands one) on every destructive/terminal action.
-- **Accessibility target WCAG 2.1 AA:** ≥4.5:1 body / ≥3:1 large text, keyboard nav + visible focus on web, `prefers-reduced-motion` alternatives, schema-driven fields generate bound labels + per-field error association in the renderer once.
-
-Exact OKLCH tokens, type scale, and components live in code (`web/src/styles/tokens.css`, `mobile/lib/theme.dart`), which is the source of truth for values.
+Design strategy and system live in **`PRODUCT.md`** (register, audience, principles, accessibility) and **`DESIGN.md`** (North Star "The Dispatch Board", the Restrained Rule, the Status-Owns-Color rule, typography, elevation). Read both before building any UI. Exact OKLCH tokens, type scale, and components live in code (`web/src/styles/tokens.css`, `mobile/lib/theme.dart`) — the source of truth for values.
 
 ---
 
