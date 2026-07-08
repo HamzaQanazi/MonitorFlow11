@@ -7,7 +7,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../theme.dart';
 
-const _amman = LatLng(31.95, 35.91);
+const _nablus = LatLng(32.22, 35.26);
 
 class LocationPickerScreen extends StatefulWidget {
   /// Existing {lat, lng} value when changing a set location.
@@ -55,7 +55,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
           Expanded(
             child: FlutterMap(
               options: MapOptions(
-                initialCenter: _picked ?? _amman,
+                initialCenter: _picked ?? _nablus,
                 initialZoom: _picked != null ? 16 : 12,
                 onTap: (_, latLng) => setState(() => _picked = latLng),
               ),

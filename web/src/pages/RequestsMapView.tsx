@@ -11,7 +11,7 @@ import { apiFetch } from '../lib/api'
 
 const POLL_MS = 30_000
 const MAP_PAGE_SIZE = 100 // API max — the documented map data-volume limit
-const AMMAN: [number, number] = [31.95, 35.91]
+const NABLUS: [number, number] = [32.22, 35.26]
 
 interface MapRow {
   id: number
@@ -131,7 +131,7 @@ export default function RequestsMapView({ category, serviceTypeId, priority, q, 
         </div>
       ) : (
         <div className="req-map">
-          <MapContainer center={AMMAN} zoom={12} scrollWheelZoom>
+          <MapContainer center={NABLUS} zoom={12} scrollWheelZoom>
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
