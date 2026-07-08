@@ -10,6 +10,7 @@ Tracks completed work against the CLAUDE.md Section 10 plan. Update this when a 
 
 ### Week 2 — backend / Student 2 (commits `8930731`, `ce9acfe`, `4247d7a`)
 - **Seed script** (`npm run seed`): wipes all data and reseeds — IT + Facilities departments, Equipment Repair + Home Cleaning Visit, 4 form definitions, both Section 9.4 workflows, dev accounts. Seed-time validation in `backend/src/lib/formSchema.js` + `workflowSchema.js` runs before any insert.
+- **Per-company config** (`backend/src/company-config.js`, added later): the departments + services (form fields, workflows, escalation thresholds) live in this one file — the only file edited when handing the platform to a new company. `seed.js` imports `{ services }` from it; demo accounts + the demo request queue stay in `seed.js`. `SEED_DEMO_DATA=false npm run seed` seeds only departments + services + the admin account (clean client handover — admin then creates monitors → employees in-app); unset/default seeds the full demo state. Still config-path-only, no write API (Section 2/15).
 - **Config read endpoints** (`backend/src/routes/services.js`): `GET /services`, `GET /services/{id}/forms/request|completion`, `GET /services/{id}/workflow`. Auth required, no role gate (decided: the Section 6 catalogue row gates the *page*, not these reads — employees need completion forms, monitors need workflow metadata).
 - **Form validation function** (`backend/src/lib/validateFormResponse.js`): Section 8 rules, errors keyed by field id, photo ownership checked via injected `db`. 13 unit tests (`npm test`, node:test).
 
@@ -219,4 +220,5 @@ All password `Password123!` (re-run `npm run seed` to reset):
 
 - Postgres 18 local service, DB `monitorflow`, creds in `backend/.env`
 - Run order for a fresh start: `npm run migrate` → `npm run seed` → `npm start`
+- New-company handover: edit `backend/src/company-config.js` (departments + services), change `adminAccount`/`DEV_PASSWORD` in `seed.js`, then `SEED_DEMO_DATA=false npm run seed` for a clean start with no demo data.
 - Web: `cd web && pnpm dev` → http://localhost:5173 (backend must be on :3000 for the proxy). Browser checks use Playwright with installed Edge (`channel: 'msedge'`); there is no Chrome on the dev machine.
