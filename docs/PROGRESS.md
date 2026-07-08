@@ -17,6 +17,7 @@ Configurable, multi-sector service-request and field-operations platform: two Fl
 Two amendments are **approved but not yet built:**
 - **AI layer (spec v6 — proposed):** three features on a shared "LLM output is never trusted, always re-validated" spine — form auto-fill, triage suggestion, and a seed-time config generator. See the AI layer section under Features.
 - **Crew & internal chat (spec v7 — proposed):** more than one employee per request (one task, a lead + a crew set) plus a request-scoped internal monitor↔crew chat thread. See the Crew & internal chat section under Features.
+- **Ops analytics + PDF report (spec v8 — proposed):** mine the existing `REQUEST_STATUS_HISTORY` audit trail for cycle time, time-in-category, and per-employee throughput — cards on the existing Dashboard, plus a branded PDF export (charts + KPIs) on Basic Reports alongside the existing CSV. See the Ops analytics section under Features.
 
 Backend `node --test` at 38/38; Flutter `flutter test` at 26/26; web builds/lints green. The two seeded services flow end-to-end (submit → assign → complete → confirm) on both apps.
 
@@ -144,6 +145,24 @@ Two composed features. Outside the frozen spec — approved as a deliberate both
 - **Touches:** `REQUEST_COMMENT` schema · comment endpoints (filter by visibility + who's allowed) · notification fan-out · §6 matrix + its tests · Employee Task Details + Monitor detail pane (render/tab the internal thread). No new page.
 
 **Build order:** crew first (it defines who's in the chat group), then the internal thread on top. Both changes to the §6 permission matrix are the main cost — each new ✅/❌ gets a test.
+
+### Ops analytics (spec v8 — proposed, not yet built)
+
+Mine data the system **already captures** — every transition writes a `REQUEST_STATUS_HISTORY` row with `changed_at`, `changed_by`, and the status (whose category the workflow JSONB resolves). None of it is currently computed. Turning that audit trail into metrics is the cheapest "smart dashboard" win: no new table, no new capture, no new page. Outside the frozen spec — approved as a both-students re-scope; log the decision date here when work starts.
+
+- **Metrics (all derived from history timestamps + category, never a status key):** avg time-to-resolution per service type (initial → `closed`-category), time-in-each-category breakdown, first-response time (created → first non-initial transition), per-employee completion counts / throughput. Category-based grouping only — same rule as the rest of the dashboard.
+- **Endpoint:** one new monitor-only read, e.g. `GET /dashboard/analytics`, reusing the standard list filters (service/priority/date range) and the existing dashboard query patterns. **Department-scoped** for monitors, exactly like `GET /dashboard/stats` (v4 rule) — a monitor only sees their department's numbers.
+- **UI:** cards + a chart or two on the **existing Dashboard Overview** — no new page. Reuses the 30s poll and the current stat-card/chart components.
+- **Guardrails:** monitor-only + department-scoped (403/scoped like every dashboard route); pure read over existing rows, no schema change; categories only.
+- **Touches:** `+1` dashboard endpoint (SQL over `REQUEST_STATUS_HISTORY` + workflow-category join) · a section on `DashboardPage`. Low–medium effort, mostly the SQL.
+- **Pairs with v6:** these aggregates are exactly the inputs an "insights" LLM card could later narrate ("resolution time up 30% this week") — but v8 is plain analytics; no AI dependency.
+
+**PDF report (Basic Reports) — the same metrics, delivered as a branded document.** A second export button beside the existing CSV. The CSV (`GET /reports/export.csv`, frozen §7 contract, machine-readable) **stays** — PDF is added, not a replacement (dropping CSV would need its own re-scope decision and loses real data-portability value).
+- **Generated client-side** from the already-rendered React report/dashboard charts — no server-side PDF, no headless-browser dependency. One client lib (`jsPDF` + chart capture, or `react-pdf`); or, as the near-free fallback, a `@media print` stylesheet + `window.print()`.
+- **Contents:** header (company, date range, applied filters) → KPI row → 2–3 existing charts (category donut, 30-day trend, priority bar) → per-employee table → the detail rows (same data as the CSV).
+- **KPIs (all from `REQUEST_STATUS_HISTORY`, via the v8 endpoint — never recomputed a second way):** total requests · completion rate (closed vs terminated) · **avg first-response time** (created → first non-initial transition) · **avg time-to-resolution** (initial → `closed`-category) · escalation/breach count (from the v4 escalation data).
+- **Demo caveat — seed timestamps:** these time metrics are only meaningful if requests have realistic timestamps. The current seed can insert rows near one instant, collapsing every duration to ~0. **Stagger the seed's `created_at` and history `changed_at` values** so the metrics read as real on demo day — the metric is sound; degenerate seed data is the only thing that makes it look bad.
+- **Touches:** `+1` client dependency (PDF lib, client-side only) · an "Export PDF" action on `ReportsPage` reusing the v8 numbers. No new page, no new endpoint, no server change.
 
 ---
 
