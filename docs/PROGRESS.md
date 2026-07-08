@@ -14,6 +14,10 @@ Configurable, multi-sector service-request and field-operations platform: two Fl
 - **Admin role (spec v4):** a fourth role that manages monitor accounts + configuration, department-scoped monitors, an audit log, and escalation/staleness alerts.
 - **Map feature (spec v5):** a `location` field type picked on a map, plus read-only map views on the Employee and Monitor apps.
 
+Two amendments are **approved but not yet built:**
+- **AI layer (spec v6 — proposed):** three features on a shared "LLM output is never trusted, always re-validated" spine — form auto-fill, triage suggestion, and a seed-time config generator. See the AI layer section under Features.
+- **Crew & internal chat (spec v7 — proposed):** more than one employee per request (one task, a lead + a crew set) plus a request-scoped internal monitor↔crew chat thread. See the Crew & internal chat section under Features.
+
 Backend `node --test` at 38/38; Flutter `flutter test` at 26/26; web builds/lints green. The two seeded services flow end-to-end (submit → assign → complete → confirm) on both apps.
 
 ---
@@ -108,6 +112,39 @@ Same engine, same code, different JSON — the structural differences are what t
 - **`backend/src/company-config.js`** is the single file edited per deployment: the company's departments + services (form fields, workflows, escalation thresholds). `seed.js` imports `{ services }` from it and validates everything before writing. There is no write API — config enters only through the seed path.
 - **`SEED_DEMO_DATA=false`** seeds only departments + services + the admin account (clean client handover); the admin then creates monitors → employees in-app. Unset/default seeds the full demo state (accounts + demo request queue). Verified on a scratch DB (see below).
 
+### AI layer (spec v6 — proposed, not yet built)
+
+Three AI features on **one principle: the LLM is never trusted — its output always passes through a validator that already exists.** One shared module (`backend/src/ai.js`), one env var (`LLM_API_KEY`, never committed, reuses the JWT-secret env pattern), one function (prompt + expected JSON schema → parsed JSON). Every feature reuses that spine; no per-feature AI plumbing. All three are outside the frozen v3/v5 spec and were approved as a deliberate both-students re-scope; none adds a new page or a hardcoded status key.
+
+**Two directions, one story:** features 1–2 read the dynamic schemas at runtime (fill the config); feature 3 writes them at build time (author the config). Same schemas, same validators, both ways — the config-driven engine is clean enough that AI can both fill it and author it. That is the v6 thesis line.
+
+- **1. Form auto-fill (User app, Create Request).** `POST /services/{id}/forms/request/suggest` `{text}` → a draft `form_response` built from the service's `field_schema` + the user's sentence. Pre-fills the dynamic renderer; user reviews/edits; real submit is the unchanged `POST /requests`. **Guardrail:** the existing form validator (`validateFormResponse.js`) — bad LLM output → 422, user corrects. No new page.
+- **2. Triage suggestion (Monitor, Requests Management detail).** `POST /requests/suggest-triage` `{text}` → `{serviceTypeId, priority, reason}`, shown as an advisory hint. **Guardrail:** advisory only — the monitor still assigns/sets priority through the existing endpoints, so the workflow engine and permission matrix stay authoritative. Never writes status/priority itself.
+- **3. Config generator (seed-time CLI, the wow).** `node scripts/ai-seed.js "<service description>"` → LLM emits a `FORM_DEFINITION` + `WORKFLOW_DEFINITION` pair → piped straight through the **existing seed-time validator** (`formSchema.js` + workflow checks) → on pass, printed / offered for append to `company-config.js`; human reviews and commits. **Respects the hard constraints:** no runtime API, no builder UI, definitions stay seed-only, human-in-the-loop — it is an authoring aid for the seed path, not a config endpoint. The validator (one initial / ≥1 final, action-at-most-once, from/to existence, valid categories) rejects anything the LLM gets wrong.
+
+**Build order when implemented:** `ai.js` spine + feature 1 (smallest, proves the pattern) → feature 2 (near-free after 1) → feature 3 (biggest — the prompt must teach the workflow rules, but the seed-time validator is the backstop). Adds one dependency (an LLM SDK). Log the re-scope decision date here when work starts.
+
+### Crew & internal chat (spec v7 — proposed, not yet built)
+
+Two composed features. Outside the frozen spec — approved as a deliberate both-students re-scope; log the decision date here when work starts. **Guiding rule: preserve the workflow engine's one-status-machine-per-request invariant (§5) untouched.** Neither feature adds a new page or a hardcoded status key.
+
+**Crew (more than one employee per request) — one task, a lead + a set.** The supervisor's "same service done by more than one employee" = a *crew on one job*, not independent sub-jobs. Modeled as **one TASK row (one status, one completion) with a set of assignees beside it** — the cheap fit that keeps `REQUEST 1—1 TASK`, the `TASK.request_id` UNIQUE constraint, the `TASK.status`↔`REQUEST.status` sync, the task lock, and the workflow engine all unchanged.
+- **Schema:** new join table **`TASK_ASSIGNEE (task_id, employee_id, assigned_at)`**. `TASK.employee_id` stays as the **lead**.
+- **Roles within a task:** the **lead drives the workflow** (accept / reject / status / complete / submits the single completion form). **Crew members are view + comment + upload only** — this keeps the engine's single-actor assumption, so no "two employees both complete" race beyond the existing row lock.
+- **Ownership widens, doesn't multiply:** read/comment/upload checks become `me ∈ {lead} ∪ assignees`; workflow-mutating actions stay lead-only.
+- **Assignment:** the assign endpoint gains add/remove-crew (same-department 422 applies per member, as today). Rejected: the *expensive* N-tasks-per-request model — it forces per-task status machines that contradict §5, breaks completion/reject/valid-transitions, and buys no extra crew behavior. Only revisit if the real requirement turns out to be independent sub-jobs (a different feature).
+- **Touches:** `+1` table · assign endpoint (crew add/remove) · task ownership checks · deactivation rule (removing a crew member is fine; deactivating the **lead** of an open task → 409, reassign lead first) · `assigned` notification fan-out to each new member · Employee Task Details + Monitor detail pane show the crew. No new page, no WebSockets, engine untouched.
+
+**Internal chat (monitor ↔ crew, request-scoped) — reuses `REQUEST_COMMENT`.** Promotes the "internal monitor↔technician note channel" from Future work. Not a global chat room (that would need a new page + WebSockets — both hard-cut); an internal thread scoped to a request, riding the existing 30s comment poll.
+- **Schema:** add **`visibility`** to `REQUEST_COMMENT` — `customer` (existing user↔monitors thread, unchanged) vs `internal` (new monitor↔crew thread). One column, one enum. No second comments system.
+- **Permissions (the real change — edits the §6 matrix):** on `internal` comments the **crew (lead + assignees)** and **department-scoped monitors** read + write; **users never see them**. The "Employee comments/reads = ❌" cells flip to ✅ **for internal visibility only**. Every flipped cell needs a permission test (per the testing rule).
+- **The "group" is free:** it's "the monitors + the request's crew" — defined by department + assignment, no membership table, no invites/rooms. Composes directly with the crew feature above.
+- **Live-ish, no WebSockets:** the internal thread rides the comment views' existing 30s poll. "Polling latency" limitation, same as everything else.
+- **Notifications:** reuse the `comment` type; an internal comment fans out to the crew + monitors, never the user. Keep the two audiences firewalled — a separate internal thread, not the customer thread opened to employees.
+- **Touches:** `REQUEST_COMMENT` schema · comment endpoints (filter by visibility + who's allowed) · notification fan-out · §6 matrix + its tests · Employee Task Details + Monitor detail pane (render/tab the internal thread). No new page.
+
+**Build order:** crew first (it defines who's in the chat group), then the internal thread on top. Both changes to the §6 permission matrix are the main cost — each new ✅/❌ gets a test.
+
 ---
 
 ## Design language
@@ -186,4 +223,4 @@ Redundant `TASK.status` (intentional denormalization) · immutable definitions, 
 
 ## Future work (post-MVP, for the report)
 
-- **Internal monitor↔technician note channel.** Comments today are customer-facing only (user ↔ monitors; employees excluded server-side). A real field-ops deployment needs a monitor→technician relay ("gate code changed", "bring extra RAM"). Deliberately out of MVP — it touches the permission matrix + tests, the notification-trigger table, and the employee Task Details UI. The clean version is a *separate* internal note type (not opening the customer thread to the technician). Interim mitigation already works: monitor→tech intent flows via assignment/reassignment/status/rejection notes, all in the timeline and pushed as notifications.
+- **Internal monitor↔technician note channel.** *(Promoted to spec v7 — see the Crew & internal chat section under Features.)* Comments today are customer-facing only (user ↔ monitors; employees excluded server-side). A real field-ops deployment needs a monitor→technician relay ("gate code changed", "bring extra RAM"). The v7 design is a *separate* internal note type (not opening the customer thread to the technician). Interim mitigation already works: monitor→tech intent flows via assignment/reassignment/status/rejection notes, all in the timeline and pushed as notifications.
