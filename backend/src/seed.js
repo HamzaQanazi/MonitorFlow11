@@ -7,178 +7,26 @@ const pool = require('./db');
 const { validateFieldSchema } = require('./lib/formSchema');
 const { validateWorkflowDefinition } = require('./lib/workflowSchema');
 const { validateFormResponse } = require('./lib/validateFormResponse');
+// Departments + services live in company-config.js — the one file edited per
+// deployment (Section 15: config only ever enters via the seed path).
+const { services } = require('./company-config');
 
-const status = (key, label, category, flags = {}) => ({
-  key,
-  label,
-  category,
-  is_initial: flags.initial === true,
-  is_final: flags.final === true,
-});
-
-const transition = (from, to, allowed_role, extra = {}) => ({
-  from,
-  to,
-  allowed_role,
-  action: extra.action || null,
-  requires_note: extra.note === true,
-  requires_completion_form: extra.form === true,
-});
-
-// ---------------------------------------------------------------------------
-// Service A: Equipment Repair (IT) — approval gate, hold loop, rejected terminal
-// ---------------------------------------------------------------------------
-
-const equipmentRepairRequestForm = [
-  {
-    id: 'equipment_type',
-    label: 'Equipment type',
-    type: 'dropdown',
-    required: true,
-    options: [
-      { value: 'laptop', label: 'Laptop' },
-      { value: 'desktop', label: 'Desktop PC' },
-      { value: 'printer', label: 'Printer' },
-      { value: 'network', label: 'Network equipment' },
-      { value: 'other', label: 'Other' },
-    ],
-  },
-  { id: 'location', label: 'Room / location', type: 'text', required: true, max: 100 },
-  { id: 'problem_description', label: 'Problem description', type: 'multiline', required: true, max: 1000 },
-  { id: 'photo', label: 'Photo of the problem', type: 'photo', required: false },
-  { id: 'urgent', label: 'Urgent?', type: 'checkbox', required: false },
-  // v5 map amendment. Optional here (required on Service B) — config variance
-  // the demo points at. Id avoids the existing 'location' text field above.
-  { id: 'site_location', label: 'Location on map', type: 'location', required: false },
-];
-
-const equipmentRepairCompletionForm = [
-  { id: 'work_performed', label: 'Work performed', type: 'multiline', required: true, max: 1000 },
-  { id: 'parts_used', label: 'Parts used', type: 'text', required: false, max: 200 },
-  { id: 'after_photo', label: 'Photo after repair', type: 'photo', required: false },
-];
-
-const equipmentRepairWorkflow = {
-  statuses: [
-    status('submitted', 'Submitted', 'new', { initial: true }),
-    status('approved', 'Approved', 'triage'),
-    status('assigned', 'Assigned', 'triage'),
-    status('accepted', 'Accepted', 'in_progress'),
-    status('in_progress', 'In Progress', 'in_progress'),
-    status('awaiting_parts', 'Awaiting Parts', 'in_progress'),
-    status('completed', 'Completed', 'done'),
-    status('confirmed', 'Resolved', 'closed', { final: true }),
-    status('rejected', 'Rejected', 'terminated', { final: true }),
-    status('cancelled', 'Cancelled', 'terminated', { final: true }),
-  ],
-  transitions: [
-    transition('submitted', 'approved', 'monitor'),
-    transition('submitted', 'rejected', 'monitor', { note: true }),
-    transition('submitted', 'cancelled', 'user', { note: true }),
-    transition('submitted', 'cancelled', 'monitor', { note: true }),
-    transition('approved', 'assigned', 'monitor'),
-    transition('approved', 'cancelled', 'monitor', { note: true }),
-    transition('assigned', 'accepted', 'employee', { action: 'accept' }),
-    transition('assigned', 'approved', 'employee', { action: 'reject', note: true }),
-    transition('assigned', 'cancelled', 'monitor', { note: true }),
-    transition('accepted', 'in_progress', 'employee'),
-    transition('in_progress', 'awaiting_parts', 'employee', { note: true }),
-    transition('in_progress', 'completed', 'employee', { action: 'complete', form: true }),
-    transition('awaiting_parts', 'in_progress', 'employee'),
-    transition('completed', 'confirmed', 'user', { action: 'confirm' }),
-    transition('completed', 'in_progress', 'user', { action: 'dispute', note: true }),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-// Service B: Home Cleaning Visit (Facilities) — no approval gate, field-visit
-// states, no rejected terminal
-// ---------------------------------------------------------------------------
-
-const homeCleaningRequestForm = [
-  { id: 'preferred_date', label: 'Preferred date', type: 'date', required: true },
-  {
-    id: 'package',
-    label: 'Cleaning package',
-    type: 'radio',
-    required: true,
-    options: [
-      { value: 'standard', label: 'Standard cleaning' },
-      { value: 'deep', label: 'Deep cleaning' },
-    ],
-  },
-  { id: 'num_rooms', label: 'Number of rooms', type: 'number', required: true, min: 1, max: 20 },
-  { id: 'has_pets', label: 'Pets at home?', type: 'checkbox', required: false },
-  { id: 'address', label: 'Address', type: 'text', required: true, max: 200, visible_to_employee: true },
-  // visible_to_employee: false demonstrates field-level filtering on GET /tasks/{id}
-  { id: 'gate_code', label: 'Gate code', type: 'text', required: false, max: 20, visible_to_employee: false },
-  // v5 map amendment: required — the cleaner needs the exact visit spot.
-  { id: 'visit_location', label: 'Visit location', type: 'location', required: true, visible_to_employee: true },
-];
-
-const homeCleaningCompletionForm = [
-  { id: 'rooms_cleaned', label: 'Rooms cleaned', type: 'number', required: true, min: 1, max: 20 },
-  { id: 'notes', label: 'Notes for the customer', type: 'multiline', required: false, max: 1000 },
-];
-
-const homeCleaningWorkflow = {
-  statuses: [
-    status('booked', 'Booked', 'new', { initial: true }),
-    status('assigned', 'Assigned', 'triage'),
-    status('accepted', 'Scheduled', 'in_progress'),
-    status('en_route', 'On the Way', 'in_progress'),
-    status('in_service', 'Service in Progress', 'in_progress'),
-    status('completed', 'Completed', 'done'),
-    status('confirmed', 'Closed', 'closed', { final: true }),
-    status('cancelled', 'Cancelled', 'terminated', { final: true }),
-  ],
-  transitions: [
-    transition('booked', 'assigned', 'monitor'),
-    transition('booked', 'cancelled', 'user', { note: true }),
-    transition('booked', 'cancelled', 'monitor', { note: true }),
-    transition('assigned', 'accepted', 'employee', { action: 'accept' }),
-    transition('assigned', 'booked', 'employee', { action: 'reject', note: true }),
-    transition('assigned', 'cancelled', 'monitor', { note: true }),
-    transition('accepted', 'en_route', 'employee'),
-    transition('en_route', 'in_service', 'employee'),
-    transition('in_service', 'completed', 'employee', { action: 'complete', form: true }),
-    transition('completed', 'confirmed', 'user', { action: 'confirm' }),
-    transition('completed', 'in_service', 'user', { action: 'dispute', note: true }),
-  ],
-};
-
-// ---------------------------------------------------------------------------
-
-// Escalation thresholds (spec v4 E1) are deliberately demo-friendly so the
-// sweep visibly fires on the seeded queue: several demo requests are already
-// past these ages when the seed runs.
-const services = [
-  {
-    name: 'Equipment Repair',
-    department: 'IT',
-    default_priority: 'medium',
-    escalation: { unassigned: 4, stale: 20, confirm: 24 },
-    requestForm: equipmentRepairRequestForm,
-    completionForm: equipmentRepairCompletionForm,
-    workflow: equipmentRepairWorkflow,
-  },
-  {
-    name: 'Home Cleaning Visit',
-    department: 'Facilities',
-    default_priority: 'low',
-    escalation: { unassigned: 4, stale: 20, confirm: 24 },
-    requestForm: homeCleaningRequestForm,
-    completionForm: homeCleaningCompletionForm,
-    workflow: homeCleaningWorkflow,
-  },
-];
+// SEED_DEMO_DATA=false → seed only departments, services, and the admin
+// account (a clean handover to a real company). Default seeds the demo
+// accounts + request queue too (dev/demo state). When off, editing
+// company-config.js can't break the demo fixtures below — there are none.
+const SEED_DEMO_DATA = process.env.SEED_DEMO_DATA !== 'false';
 
 // The admin account is seed-only (spec v4 Section A — monitors are now
 // admin-created); the monitor/employee/user rows are dev fixtures so every
 // developer/demo starts from identical state (Section 15).
 const DEV_PASSWORD = 'Password123!';
-const accounts = [
-  { name: 'Adel Admin', email: 'admin@monitorflow.dev', role: 'admin', department: null },
+// The admin account is always seeded — it's seed-only (spec v4 Section A) and a
+// real handover needs it to create the company's monitors, who create
+// employees. Change the email/password before deploying to a client.
+const adminAccount = { name: 'Adel Admin', email: 'admin@monitorflow.dev', role: 'admin', department: null };
+// Everything below is demo/dev fixtures — seeded only when SEED_DEMO_DATA is on.
+const demoAccounts = [
   // Spec v4: monitors are department-scoped — one per seeded department so
   // both services stay demoable. IT gets a second monitor so a successful
   // deactivation can be demoed despite the last-monitor-of-department guard.
@@ -374,7 +222,7 @@ async function seed() {
 
     const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);
     const accountIds = {};
-    for (const acc of accounts) {
+    for (const acc of [adminAccount, ...(SEED_DEMO_DATA ? demoAccounts : [])]) {
       const { rows } = await client.query(
         `INSERT INTO users (name, email, password_hash, role, department_id, phone)
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
@@ -385,6 +233,9 @@ async function seed() {
       console.log(`seeded ${acc.role} account ${acc.email}`);
     }
 
+    // Demo fixtures (accounts + request queue) only — real handovers stop at
+    // departments + services + admin (SEED_DEMO_DATA=false).
+    if (SEED_DEMO_DATA) {
     const requesterId = accountIds['user@monitorflow.dev'];
     // Monitor actions in demo history come from the right department's monitor.
     const monitorByDept = {
@@ -396,7 +247,7 @@ async function seed() {
     // (spec v4 Section C): admin creates monitors, each department's monitor
     // creates its employees.
     const adminId = accountIds['admin@monitorflow.dev'];
-    for (const acc of accounts) {
+    for (const acc of demoAccounts) {
       if (acc.role !== 'monitor' && acc.role !== 'employee') continue;
       await client.query(
         `INSERT INTO audit_event (actor_id, action, entity_type, entity_id, detail)
@@ -463,9 +314,11 @@ async function seed() {
       }
     }
     console.log(`seeded ${demoRequests.length} demo requests`);
+    } // ponytail: inner block kept at its original indent — gate is a wrapper, not a rewrite
 
     await client.query('COMMIT');
-    console.log(`\nDone. All seeded accounts use password: ${DEV_PASSWORD}`);
+    const note = SEED_DEMO_DATA ? `All seeded accounts use password: ${DEV_PASSWORD}` : 'Admin account seeded; add monitors via the app.';
+    console.log(`\nDone. ${note}`);
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(`Seed failed: ${err.message}`);
