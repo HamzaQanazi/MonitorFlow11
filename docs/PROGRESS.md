@@ -221,4 +221,24 @@ All password `Password123!` (re-run `npm run seed` to reset):
 - Postgres 18 local service, DB `monitorflow`, creds in `backend/.env`
 - Run order for a fresh start: `npm run migrate` → `npm run seed` → `npm start`
 - New-company handover: edit `backend/src/company-config.js` (departments + services), change `adminAccount`/`DEV_PASSWORD` in `seed.js`, then `SEED_DEMO_DATA=false npm run seed` for a clean start with no demo data.
+
+### Verifying a handover on a scratch DB
+
+Rehearse a clean client handover against a throwaway database (never the dev DB). Run from `backend/`; `BASE` points at local postgres (creds in `.env`):
+
+```bash
+BASE="postgresql://<user>:<pass>@localhost:5432"
+
+# 1. create scratch db
+node -e "const {Client}=require('pg');(async()=>{const c=new Client({connectionString:'$BASE/postgres'});await c.connect();await c.query('DROP DATABASE IF EXISTS monitorflow_scratch');await c.query('CREATE DATABASE monitorflow_scratch');await c.end()})()"
+
+# 2. migrate + seed with demo data OFF (the handover path)
+DATABASE_URL="$BASE/monitorflow_scratch" node src/migrate.js
+DATABASE_URL="$BASE/monitorflow_scratch" SEED_DEMO_DATA=false node src/seed.js
+
+# 3. drop it when done
+node -e "const {Client}=require('pg');(async()=>{const c=new Client({connectionString:'$BASE/postgres'});await c.connect();await c.query(\"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='monitorflow_scratch' AND pid<>pg_backend_pid()\");await c.query('DROP DATABASE IF EXISTS monitorflow_scratch');await c.end()})()"
+```
+
+Expected clean-handover state: 2 departments, 2 services (4 form defs + 2 workflows), **1 user — admin only**, 0 requests/tasks/audit rows. The seed prints *"Admin account seeded; add monitors via the app."* (Verified 2026-07-08; default demo-on seed on the same scratch DB still produces 8 users / 22 requests / 14 tasks.)
 - Web: `cd web && pnpm dev` → http://localhost:5173 (backend must be on :3000 for the proxy). Browser checks use Playwright with installed Edge (`channel: 'msedge'`); there is no Chrome on the dev machine.
