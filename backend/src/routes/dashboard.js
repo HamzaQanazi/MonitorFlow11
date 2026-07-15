@@ -3,16 +3,17 @@
 // no status key appears in this code (Section 9).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireCapability } = require('../middleware/auth');
+const { subtreeIds } = require('../lib/scope');
 
 const router = express.Router();
-router.use(requireAuth, requireRole('monitor'));
+router.use(requireAuth, requireCapability('view_all'));
 
-// Spec v4: every query is scoped to the monitor's department — the dashboard
-// shows their board, not the whole organization's.
+// Gate 2: every query is scoped to the services the oversight actor's subtree
+// owns — the dashboard shows their board, not the whole organization's.
 router.get('/stats', async (req, res, next) => {
   try {
-    const dept = [req.user.department_id];
+    const dept = [await subtreeIds(req.user.id)];
     const [byCategory, byService, byPriority] = await Promise.all([
       pool.query(
         `SELECT s->>'category' AS category, COUNT(*)::int AS count
@@ -20,7 +21,7 @@ router.get('/stats', async (req, res, next) => {
          JOIN service_type st ON st.id = r.service_type_id
          JOIN workflow_definition w ON w.service_type_id = r.service_type_id
          JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
-         WHERE st.department_id = $1
+         WHERE st.owner_id = ANY($1)
          GROUP BY 1`,
         dept
       ),
@@ -28,7 +29,7 @@ router.get('/stats', async (req, res, next) => {
         `SELECT st.id, st.name, COUNT(r.id)::int AS count
          FROM service_type st
          LEFT JOIN request r ON r.service_type_id = st.id
-         WHERE st.enabled AND st.department_id = $1
+         WHERE st.enabled AND st.owner_id = ANY($1)
          GROUP BY st.id, st.name
          ORDER BY st.id`,
         dept
@@ -36,7 +37,7 @@ router.get('/stats', async (req, res, next) => {
       pool.query(
         `SELECT priority, COUNT(*)::int AS count
          FROM request r JOIN service_type st ON st.id = r.service_type_id
-         WHERE st.department_id = $1
+         WHERE st.owner_id = ANY($1)
          GROUP BY priority`,
         dept
       ),
@@ -71,9 +72,9 @@ router.get('/chart', async (req, res, next) => {
       `SELECT to_char(r.created_at::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
        FROM request r JOIN service_type st ON st.id = r.service_type_id
        WHERE r.created_at >= (CURRENT_DATE - INTERVAL '29 days')
-         AND st.department_id = $1
+         AND st.owner_id = ANY($1)
        GROUP BY 1`,
-      [req.user.department_id]
+      [await subtreeIds(req.user.id)]
     );
     const counts = Object.fromEntries(rows.map((r) => [r.day, r.count]));
     const days = [];

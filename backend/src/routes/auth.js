@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { loadCapabilities } = require('../lib/capabilities');
 
 const router = express.Router();
 
@@ -11,7 +12,8 @@ const LOGIN_MAX_ATTEMPTS = 5;
 const loginAttempts = new Map();
 
 function rateLimitLogin(req, res, next) {
-  const key = `${(req.body.email || '').toLowerCase()}|${req.ip}`;
+  const identifier = req.body.identifier || req.body.email || '';
+  const key = `${identifier.toLowerCase()}|${req.ip}`;
   const now = Date.now();
   const entry = loginAttempts.get(key);
   if (!entry || now > entry.resetAt) {
@@ -25,9 +27,16 @@ function rateLimitLogin(req, res, next) {
   next();
 }
 
-function publicUser(row) {
-  const { id, name, email, role, phone, department_id } = row;
-  return { id, name, email, role, phone, departmentId: department_id };
+function publicUser(row, capabilities) {
+  const { id, name, email, role, phone, department_id, login_identifier } = row;
+  return {
+    id, name, email, role, phone,
+    departmentId: department_id,
+    loginIdentifier: login_identifier,
+    // Two-gate model: clients read capabilities to show/hide oversight surfaces
+    // (the server still enforces every one — Gate 1). Absent = none.
+    capabilities: capabilities ? [...capabilities] : [],
+  };
 }
 
 function signToken(user) {
@@ -50,10 +59,12 @@ router.post('/register', async (req, res, next) => {
     const password_hash = await bcrypt.hash(password, 10);
     let rows;
     try {
+      // Self-registration creates the `user` kind only; login_identifier is the
+      // email (employees get EMP-xxxx ids at seed/creation time instead).
       ({ rows } = await pool.query(
-        `INSERT INTO users (name, email, password_hash, role, phone)
-         VALUES ($1, $2, $3, 'user', $4)
-         RETURNING id, name, email, role, phone, department_id`,
+        `INSERT INTO users (name, email, password_hash, role, phone, login_identifier)
+         VALUES ($1, $2, $3, 'user', $4, $2)
+         RETURNING id, name, email, role, phone, department_id, login_identifier`,
         [name.trim(), email.toLowerCase(), password_hash, phone || null]
       ));
     } catch (err) {
@@ -72,25 +83,33 @@ router.post('/register', async (req, res, next) => {
 
 router.post('/login', rateLimitLogin, async (req, res, next) => {
   try {
-    const { email, password } = req.body || {};
-    if (!email || !password) {
+    // Generic login: users authenticate with their email, employees with an
+    // EMP-xxxx id — both stored in login_identifier. `email` still accepted for
+    // back-compat with existing clients. Case-insensitive match.
+    const identifier = (req.body || {}).identifier || (req.body || {}).email;
+    const { password } = req.body || {};
+    if (!identifier || !password) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email.toLowerCase()]);
+    const { rows } = await pool.query(
+      'SELECT * FROM users WHERE lower(login_identifier) = lower($1)',
+      [identifier]
+    );
     const user = rows[0];
     const ok = user && (await bcrypt.compare(password, user.password_hash));
     if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
     if (!user.is_active) return res.status(401).json({ error: 'Account is not active' });
 
-    res.json({ token: signToken(user), user: publicUser(user) });
+    const capabilities = await loadCapabilities(user, pool);
+    res.json({ token: signToken(user), user: publicUser(user, capabilities) });
   } catch (err) {
     next(err);
   }
 });
 
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: publicUser(req.user) });
+  res.json({ user: publicUser(req.user, req.user.capabilities) });
 });
 
 module.exports = router;

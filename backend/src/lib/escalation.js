@@ -15,7 +15,7 @@ const NOT_ALREADY_ESCALATED = `NOT EXISTS (
        )`;
 
 async function runEscalationSweep() {
-  // Rule 1: unassigned too long (new/triage, no task) → department monitors.
+  // Rule 1: unassigned too long (new/triage, no task) → the service owner.
   const unassigned = await pool.query(
     `INSERT INTO notification (user_id, request_id, type, message)
      SELECT m.id, r.id, 'escalation',
@@ -25,7 +25,7 @@ async function runEscalationSweep() {
      JOIN service_type st ON st.id = r.service_type_id
      JOIN workflow_definition w ON w.service_type_id = r.service_type_id
      JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
-     JOIN users m ON m.role = 'monitor' AND m.is_active AND m.department_id = st.department_id
+     JOIN users m ON m.id = st.owner_id AND m.is_active
      WHERE s->>'category' IN ('new', 'triage')
        AND NOT EXISTS (SELECT 1 FROM task t WHERE t.request_id = r.id)
        AND st.escalate_unassigned_hours IS NOT NULL
@@ -33,7 +33,7 @@ async function runEscalationSweep() {
        AND ${NOT_ALREADY_ESCALATED}`
   );
 
-  // Rule 2: in_progress with no status change too long → department monitors.
+  // Rule 2: in_progress with no status change too long → the service owner.
   const stale = await pool.query(
     `INSERT INTO notification (user_id, request_id, type, message)
      SELECT m.id, r.id, 'escalation',
@@ -43,7 +43,7 @@ async function runEscalationSweep() {
      JOIN service_type st ON st.id = r.service_type_id
      JOIN workflow_definition w ON w.service_type_id = r.service_type_id
      JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
-     JOIN users m ON m.role = 'monitor' AND m.is_active AND m.department_id = st.department_id
+     JOIN users m ON m.id = st.owner_id AND m.is_active
      WHERE s->>'category' = 'in_progress'
        AND st.escalate_stale_hours IS NOT NULL
        AND r.updated_at < now() - st.escalate_stale_hours * INTERVAL '1 hour'

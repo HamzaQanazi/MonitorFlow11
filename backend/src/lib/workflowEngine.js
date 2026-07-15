@@ -8,6 +8,14 @@
 // → note / completion-form requirements (422 / 409) → write both statuses +
 // history + notifications in the same transaction → commit.
 const pool = require('../db');
+const { ownerInScope } = require('./scope');
+
+// An oversight employee (level grants view_all) is the two-gate stand-in for
+// the old `monitor` role: it owns nothing, sees everything, and acts as the
+// workflow's `monitor` actor. Field employees hold no capabilities.
+function isOversightActor(user) {
+  return user.role === 'employee' && user.capabilities instanceof Set && user.capabilities.has('view_all');
+}
 
 class WorkflowError extends Error {
   constructor(status, message) {
@@ -50,11 +58,13 @@ function resolveTransition({
   completionValidated = false,
 }) {
   // Ownership first: a non-owner must not learn whether a transition exists
-  // (404-over-403, Section 6). Monitors own nothing and see everything.
+  // (404-over-403, Section 6). An oversight employee owns nothing and sees
+  // everything (like the old monitor); a field employee must own the task.
+  const oversight = isOversightActor(user);
   if (user.role === 'user' && requestUserId !== user.id) {
     throw new WorkflowError(404, 'Not found');
   }
-  if (user.role === 'employee' && taskEmployeeId !== user.id) {
+  if (user.role === 'employee' && !oversight && taskEmployeeId !== user.id) {
     throw new WorkflowError(404, 'Not found');
   }
 
@@ -64,7 +74,12 @@ function resolveTransition({
   if (!t) {
     throw new WorkflowError(409, 'This transition is not valid from the current status');
   }
-  if (t.allowed_role !== user.role) throw new WorkflowError(403, 'Forbidden');
+  // Actor-role match (role→capability shim, Phase 4 renames allowed_role):
+  // requester ⇒ `user` transitions, oversight employee ⇒ `monitor`, field
+  // employee ⇒ `employee`. Each account acts as exactly one workflow actor.
+  const actsAs =
+    user.role === 'user' ? 'user' : oversight ? 'monitor' : 'employee';
+  if (t.allowed_role !== actsAs) throw new WorkflowError(403, 'Forbidden');
   if (t.requires_note && !(note && note.trim())) {
     throw new WorkflowError(422, 'A note is required for this transition');
   }
@@ -83,7 +98,11 @@ function resolveTransition({
 const OVERRIDE_TARGET_CATEGORIES = ['terminated', 'triage', 'in_progress'];
 
 function resolveOverride({ statuses, currentStatus, user, to, note }) {
-  if (user.role !== 'monitor') throw new WorkflowError(403, 'Forbidden');
+  // The override endpoint requires the `override` capability specifically
+  // (Gate 1), not merely oversight — a lead without it cannot force statuses.
+  if (!(user.capabilities instanceof Set && user.capabilities.has('override'))) {
+    throw new WorkflowError(403, 'Forbidden');
+  }
   const target = statuses.find((s) => s.key === to);
   if (!target) throw new WorkflowError(422, 'Target is not a status in this workflow');
   if (!OVERRIDE_TARGET_CATEGORIES.includes(target.category)) {
@@ -120,7 +139,7 @@ async function executeTransition({
     // Lock the request row before any validation (Section 5 locking rule).
     const { rows } = await client.query(
       `SELECT r.id, r.user_id, r.status, r.service_type_id, st.name AS service_name,
-              st.department_id, w.statuses, w.transitions
+              st.department_id, st.owner_id, w.statuses, w.transitions
        FROM request r
        JOIN service_type st ON st.id = r.service_type_id
        JOIN workflow_definition w ON w.service_type_id = r.service_type_id
@@ -131,10 +150,10 @@ async function executeTransition({
     if (!rows.length) throw new WorkflowError(404, 'Not found');
     const request = rows[0];
 
-    // Spec v4 department scoping: a monitor acting outside their department
-    // must not learn the request exists (404-over-403), same as the user and
-    // employee ownership checks in resolveTransition.
-    if (user.role === 'monitor' && request.department_id !== user.department_id) {
+    // Gate 2 scoping: an oversight employee acting on a request whose service
+    // owner is outside their subtree must not learn it exists (404-over-403),
+    // same as the user/employee ownership checks in resolveTransition.
+    if (isOversightActor(user) && !(await ownerInScope(user.id, request.owner_id, client))) {
       throw new WorkflowError(404, 'Not found');
     }
 
@@ -192,16 +211,16 @@ async function executeTransition({
         `Your request #${request.id} (${request.service_name}) is now “${newStatus.label}”.`,
       ]
     );
-    if (transition.action === 'reject') {
-      // Spec v4: only the monitors of the request's department are notified.
+    if (transition.action === 'reject' && request.owner_id) {
+      // Two-gate model: the rejection goes to the service's oversight owner
+      // (the queue's escalation target), not a department-wide monitor list.
       await client.query(
         `INSERT INTO notification (user_id, request_id, type, message)
-         SELECT id, $1, 'task_rejected', $2 FROM users
-         WHERE role = 'monitor' AND is_active AND department_id = $3`,
+         VALUES ($1, $2, 'task_rejected', $3)`,
         [
+          request.owner_id,
           request.id,
           `${user.name} rejected the task for request #${request.id} (${request.service_name}): ${note}`,
-          request.department_id,
         ]
       );
     }

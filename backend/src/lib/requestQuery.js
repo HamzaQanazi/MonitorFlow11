@@ -10,8 +10,10 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // { where, params, page, pageSize }. `where` refers to aliases r (request),
 // st (service_type), u (requester), s (the lateral status element) — every
 // caller must join those the same way. A user is always scoped to own rows
-// regardless of params; monitor sees all.
-function buildRequestFilter(q, user) {
+// regardless of params; an oversight employee is scoped to services whose
+// owner is inside their subtree (`ownerScope`, an array of user ids the caller
+// resolves via subtreeIds). Missing scope for an oversight actor fails closed.
+function buildRequestFilter(q, user, ownerScope = null) {
   const page = q.page === undefined ? 1 : Number(q.page);
   const pageSize = q.pageSize === undefined ? 20 : Number(q.pageSize);
   const bad = [];
@@ -33,10 +35,9 @@ function buildRequestFilter(q, user) {
   };
 
   if (user.role === 'user' || q.userId === 'me') add('r.user_id = ?', user.id);
-  // Spec v4: monitors are department-scoped — they see only requests whose
-  // service type belongs to their department. A monitor with no department
-  // (should not exist) matches nothing: fail closed, not open.
-  if (user.role === 'monitor') add('st.department_id = ?', user.department_id);
+  // Gate 2: an oversight employee sees only requests whose service owner is in
+  // their subtree. No scope (or an empty one) matches nothing: fail closed.
+  if (user.role === 'employee') add('st.owner_id = ANY(?)', ownerScope || []);
   if (q.status !== undefined) add('r.status = ?', q.status);
   if (q.category !== undefined) add("s->>'category' = ?", q.category);
   if (q.serviceTypeId !== undefined) add('r.service_type_id = ?', Number(q.serviceTypeId));

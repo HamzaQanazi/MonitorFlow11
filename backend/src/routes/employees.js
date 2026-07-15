@@ -5,13 +5,14 @@ const express = require('express');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const pool = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireCapability } = require('../middleware/auth');
 const { statusOf } = require('../lib/workflowEngine');
+const { subtreeIds } = require('../lib/scope');
 const { withTx, logAudit } = require('../lib/audit');
 
 const router = express.Router();
 router.use(requireAuth);
-router.use(requireRole('monitor'));
+router.use(requireCapability('manage_employees'));
 
 function publicEmployee(r) {
   return {
@@ -26,17 +27,24 @@ function publicEmployee(r) {
 }
 
 // Load an employee by id, joined to its department. Returns null for a
-// missing id, a non-employee user, OR (spec v4) an employee outside the
-// calling monitor's department — all must look nonexistent → 404.
-async function loadEmployee(id, departmentId) {
+// missing id, a non-employee user, the actor themselves, OR (Gate 2) an
+// employee outside the acting oversight actor's subtree — all look
+// nonexistent → 404.
+async function loadEmployee(id, actorId) {
   if (!Number.isInteger(id)) return null;
   const { rows } = await pool.query(
-    `SELECT u.id, u.name, u.email, u.phone, u.is_active, u.department_id,
+    `WITH RECURSIVE sub AS (
+       SELECT id FROM users WHERE id = $2
+       UNION ALL
+       SELECT u.id FROM users u JOIN sub ON u.manager_id = sub.id
+     )
+     SELECT u.id, u.name, u.email, u.phone, u.is_active, u.department_id,
             d.name AS department_name
      FROM users u
      LEFT JOIN department d ON d.id = u.department_id
-     WHERE u.id = $1 AND u.role = 'employee' AND u.department_id = $2`,
-    [id, departmentId]
+     WHERE u.id = $1 AND u.role = 'employee'
+       AND u.id <> $2 AND u.id IN (SELECT id FROM sub)`,
+    [id, actorId]
   );
   return rows[0] || null;
 }
@@ -59,9 +67,10 @@ router.get('/', async (req, res, next) => {
       params.push(value);
       where.push(sql.replaceAll('?', `$${params.length}`));
     };
-    // Spec v4: a monitor manages their own department's staff only. The
-    // departmentId param still validates but can only narrow within this.
-    add('u.department_id = ?', req.user.department_id);
+    // Gate 2: an oversight actor manages the staff inside their subtree only
+    // (excluding themselves). The departmentId param narrows within that.
+    add('u.id = ANY(?)', await subtreeIds(req.user.id));
+    add('u.id <> ?', req.user.id);
     if (q.departmentId !== undefined) add('u.department_id = ?', Number(q.departmentId));
     if (q.q) add('(u.name ILIKE ? OR u.email ILIKE ?)', `%${q.q}%`);
 
@@ -111,7 +120,7 @@ router.get('/', async (req, res, next) => {
 // POST /employees — create an employee; monitor sets the initial password.
 router.post('/', async (req, res, next) => {
   try {
-    const { name, email, password, phone, departmentId } = req.body || {};
+    const { name, email, password, phone } = req.body || {};
     const errors = {};
     if (!name || typeof name !== 'string' || !name.trim()) errors.name = 'Name is required';
     if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -120,23 +129,21 @@ router.post('/', async (req, res, next) => {
     if (!password || typeof password !== 'string' || password.length < 8) {
       errors.password = 'Password must be at least 8 characters';
     }
-    if (!Number.isInteger(departmentId)) errors.departmentId = 'A department is required';
     if (Object.keys(errors).length) return res.status(422).json({ errors });
-
-    // Spec v4: monitors create employees in their own department only.
-    if (departmentId !== req.user.department_id) {
-      return res.status(422).json({ errors: { departmentId: 'Must be your own department' } });
-    }
 
     const password_hash = await bcrypt.hash(password, 10);
     let inserted;
     try {
+      // Gate 2: a new employee becomes a direct report of the creating oversight
+      // actor (manager_id = actor) so it lands inside their subtree, and
+      // inherits the actor's department. login_identifier is the email here
+      // (seeded field techs get EMP-xxxx ids instead).
       inserted = await withTx(async (tx) => {
         const { rows } = await tx.query(
-          `INSERT INTO users (name, email, password_hash, role, phone, department_id)
-           VALUES ($1, $2, $3, 'employee', $4, $5)
+          `INSERT INTO users (name, email, password_hash, role, phone, department_id, manager_id, login_identifier)
+           VALUES ($1, $2, $3, 'employee', $4, $5, $6, $2)
            RETURNING id, name, email, phone, is_active, department_id`,
-          [name.trim(), email.toLowerCase(), password_hash, phone || null, departmentId]
+          [name.trim(), email.toLowerCase(), password_hash, phone || null, req.user.department_id, req.user.id]
         );
         await logAudit(tx, req.user.id, 'employee.created', 'user', rows[0].id, { email: rows[0].email });
         return rows[0];
@@ -145,7 +152,7 @@ router.post('/', async (req, res, next) => {
       if (err.code === '23505') return res.status(422).json({ errors: { email: 'Email is already registered' } });
       throw err;
     }
-    const created = await loadEmployee(inserted.id);
+    const created = await loadEmployee(inserted.id, req.user.id);
     res.status(201).json({ employee: publicEmployee(created) });
   } catch (err) {
     next(err);
@@ -155,7 +162,7 @@ router.post('/', async (req, res, next) => {
 // PATCH /employees/{id} — edit name / phone / department
 router.patch('/:id', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id), req.user.department_id);
+    const emp = await loadEmployee(Number(req.params.id), req.user.id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
     const { name, phone, departmentId } = req.body || {};
@@ -192,7 +199,7 @@ router.patch('/:id', async (req, res, next) => {
         ...(departmentId !== undefined ? { departmentId } : {}),
       });
     });
-    res.json({ employee: publicEmployee(await loadEmployee(emp.id, req.user.department_id)) });
+    res.json({ employee: publicEmployee(await loadEmployee(emp.id, req.user.id)) });
   } catch (err) {
     next(err);
   }
@@ -201,7 +208,7 @@ router.patch('/:id', async (req, res, next) => {
 // PATCH /employees/{id}/activate
 router.patch('/:id/activate', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id), req.user.department_id);
+    const emp = await loadEmployee(Number(req.params.id), req.user.id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
     await withTx(async (tx) => {
       await tx.query('UPDATE users SET is_active = TRUE WHERE id = $1', [emp.id]);
@@ -218,7 +225,7 @@ router.patch('/:id/activate', async (req, res, next) => {
 // data, not a hardcoded status key: reassign the open task first.
 router.patch('/:id/deactivate', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id), req.user.department_id);
+    const emp = await loadEmployee(Number(req.params.id), req.user.id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
     const open = await pool.query(
@@ -251,7 +258,7 @@ router.patch('/:id/deactivate', async (req, res, next) => {
 // returned once (no forced-change flow — documented MVP limitation).
 router.patch('/:id/reset-password', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id), req.user.department_id);
+    const emp = await loadEmployee(Number(req.params.id), req.user.id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
     const tempPassword = `Temp-${crypto.randomBytes(6).toString('base64url')}`;
     const password_hash = await bcrypt.hash(tempPassword, 10);
@@ -270,7 +277,7 @@ router.patch('/:id/reset-password', async (req, res, next) => {
 // the workflow data). Read-only monitor view of assignment progress.
 router.get('/:id/tasks', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id), req.user.department_id);
+    const emp = await loadEmployee(Number(req.params.id), req.user.id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
     const { rows } = await pool.query(

@@ -7,6 +7,7 @@ const pool = require('./db');
 const { validateFieldSchema } = require('./lib/formSchema');
 const { validateWorkflowDefinition } = require('./lib/workflowSchema');
 const { validateFormResponse } = require('./lib/validateFormResponse');
+const { CAPABILITIES } = require('./lib/capabilities');
 // Departments + services live in company-config.js — the one file edited per
 // deployment (Section 15: config only ever enters via the seed path).
 const { services } = require('./company-config');
@@ -17,28 +18,44 @@ const { services } = require('./company-config');
 // company-config.js can't break the demo fixtures below — there are none.
 const SEED_DEMO_DATA = process.env.SEED_DEMO_DATA !== 'false';
 
-// The admin account is seed-only (spec v4 Section A — monitors are now
-// admin-created); the monitor/employee/user rows are dev fixtures so every
-// developer/demo starts from identical state (Section 15).
+// The admin account is seed-only and configures the platform (it operates no
+// queue); every other account's authority comes from a LEVEL (Gate 1) and its
+// place in the reporting tree (Gate 2). All are dev fixtures so every developer
+// and demo starts from identical state (Section 15).
 const DEV_PASSWORD = 'Password123!';
-// The admin account is always seeded — it's seed-only (spec v4 Section A) and a
-// real handover needs it to create the company's monitors, who create
-// employees. Change the email/password before deploying to a client.
-const adminAccount = { name: 'Adel Admin', email: 'admin@monitorflow.dev', role: 'admin', department: null };
+
+// Two levels for the demo: an oversight lead (every capability — the old
+// monitor's powers) and a field technician (none). A real deployment defines
+// its own grades; the capability catalogue is fixed (lib/capabilities.js).
+const LEVEL_GRANTS = {
+  'Operations Lead': CAPABILITIES,
+  'Field Technician': [],
+};
+
+// Always seeded — a real handover needs the admin to create staff. Change the
+// login/password before deploying to a client.
+const adminAccount = {
+  name: 'Adel Admin', login: 'admin@monitorflow.dev', email: 'admin@monitorflow.dev',
+  role: 'admin', department: null,
+};
 // Everything below is demo/dev fixtures — seeded only when SEED_DEMO_DATA is on.
+// Order matters: a manager must be inserted before its reports (manager_id FK).
+// Oversight leads own their department's queue and manage its field techs; the
+// leads log in by email (they use the web dashboard), the techs by EMP-id.
 const demoAccounts = [
-  // Spec v4: monitors are department-scoped — one per seeded department so
-  // both services stay demoable. IT gets a second monitor so a successful
-  // deactivation can be demoed despite the last-monitor-of-department guard.
-  { name: 'Mona Monitor', email: 'monitor@monitorflow.dev', role: 'monitor', department: 'IT' },
-  { name: 'Malak Monitor', email: 'monitor2@monitorflow.dev', role: 'monitor', department: 'Facilities' },
-  { name: 'Majed Monitor', email: 'monitor3@monitorflow.dev', role: 'monitor', department: 'IT' },
-  { name: 'Ehab Technician', email: 'tech@monitorflow.dev', role: 'employee', department: 'IT', phone: '+970 59 200 1001' },
-  // Second IT employee so reassignment can be exercised and demoed.
-  { name: 'Rana Technician', email: 'tech2@monitorflow.dev', role: 'employee', department: 'IT', phone: '+970 59 200 1002' },
-  { name: 'Fadia Cleaner', email: 'cleaner@monitorflow.dev', role: 'employee', department: 'Facilities', phone: '+970 59 200 1003' },
-  // Phone makes the employee app's tap-to-call demoable on seeded tasks.
-  { name: 'Uma User', email: 'user@monitorflow.dev', role: 'user', department: null, phone: '+970 59 100 2000' },
+  { name: 'Mona Manager', login: 'monitor@monitorflow.dev', email: 'monitor@monitorflow.dev',
+    role: 'employee', department: 'IT', level: 'Operations Lead' },
+  { name: 'Malak Manager', login: 'monitor2@monitorflow.dev', email: 'monitor2@monitorflow.dev',
+    role: 'employee', department: 'Facilities', level: 'Operations Lead' },
+  { name: 'Ehab Technician', login: 'EMP-1001', email: null, role: 'employee', department: 'IT',
+    level: 'Field Technician', manager: 'monitor@monitorflow.dev', phone: '+970 59 200 1001' },
+  // Second IT tech so reassignment can be exercised and demoed.
+  { name: 'Rana Technician', login: 'EMP-1002', email: null, role: 'employee', department: 'IT',
+    level: 'Field Technician', manager: 'monitor@monitorflow.dev', phone: '+970 59 200 1002' },
+  { name: 'Fadia Cleaner', login: 'EMP-1003', email: null, role: 'employee', department: 'Facilities',
+    level: 'Field Technician', manager: 'monitor2@monitorflow.dev', phone: '+970 59 200 1003' },
+  { name: 'Uma User', login: 'user@monitorflow.dev', email: 'user@monitorflow.dev',
+    role: 'user', department: null, phone: '+970 59 100 2000' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -72,22 +89,22 @@ const demoRequests = [
     form: aForm('laptop', 'Reception desk', 'Battery drains from full to empty in under an hour.', false, { lat: 32.2239, lng: 35.2606 }) },
   { svc: 0, priority: 'medium', daysAgo: 2, path: walkTo(A_WALK, 'approved'),
     form: aForm('desktop', 'Lab 3, seat 12', 'No display output after the last power cut; fans spin up.', false, { lat: 32.2155, lng: 35.2784 }) },
-  { svc: 0, priority: 'high', daysAgo: 3, path: walkTo(A_WALK, 'assigned'), employee: 'tech@monitorflow.dev',
+  { svc: 0, priority: 'high', daysAgo: 3, path: walkTo(A_WALK, 'assigned'), employee: 'EMP-1001',
     form: aForm('network', 'Server room B', 'Switch port 14 flapping — link drops every few minutes.', true, { lat: 32.2411, lng: 35.2367 }) },
-  { svc: 0, priority: 'medium', daysAgo: 4, path: walkTo(A_WALK, 'accepted'), employee: 'tech@monitorflow.dev',
+  { svc: 0, priority: 'medium', daysAgo: 4, path: walkTo(A_WALK, 'accepted'), employee: 'EMP-1001',
     form: aForm('laptop', 'Room 108', 'Keyboard keys Q and W stopped responding.', false, { lat: 32.208, lng: 35.2461 }) },
-  { svc: 0, priority: 'high', daysAgo: 5, path: walkTo(A_WALK, 'in_progress'), employee: 'tech@monitorflow.dev',
+  { svc: 0, priority: 'high', daysAgo: 5, path: walkTo(A_WALK, 'in_progress'), employee: 'EMP-1001',
     form: aForm('desktop', 'Finance office', 'PC restarts randomly under load, twice today.', true, { lat: 32.2547, lng: 35.2628 }) },
-  { svc: 0, priority: 'low', daysAgo: 8, path: [...walkTo(A_WALK, 'in_progress'), 'awaiting_parts'], employee: 'tech@monitorflow.dev',
+  { svc: 0, priority: 'low', daysAgo: 8, path: [...walkTo(A_WALK, 'in_progress'), 'awaiting_parts'], employee: 'EMP-1001',
     form: aForm('printer', 'Room 301', 'Faded print on the left half of every page — likely drum unit.', false, { lat: 32.1965, lng: 35.2912 }) },
-  { svc: 0, priority: 'medium', daysAgo: 9, path: walkTo(A_WALK, 'completed'), employee: 'tech@monitorflow.dev',
+  { svc: 0, priority: 'medium', daysAgo: 9, path: walkTo(A_WALK, 'completed'), employee: 'EMP-1001',
     form: aForm('laptop', 'Room 122', 'Screen flickers at low brightness levels.', false, { lat: 32.22, lng: 35.274 }),
     completion: { work_performed: 'Reseated the display cable and updated the panel driver; retested at all brightness levels.', parts_used: 'None' } },
-  { svc: 0, priority: 'low', daysAgo: 14, path: walkTo(A_WALK, 'confirmed'), employee: 'tech@monitorflow.dev',
+  { svc: 0, priority: 'low', daysAgo: 14, path: walkTo(A_WALK, 'confirmed'), employee: 'EMP-1001',
     // ~300 m from Room 122 above — the IT map's cluster merge/split pair.
     form: aForm('desktop', 'Room 210', 'Very slow startup, over five minutes to desktop.', false, { lat: 32.2227, lng: 35.274 }),
     completion: { work_performed: 'Replaced failing HDD with SSD, cloned system, verified boot in 40 seconds.', parts_used: '480GB SSD' } },
-  { svc: 0, priority: 'medium', daysAgo: 21, path: walkTo(A_WALK, 'confirmed'), employee: 'tech@monitorflow.dev',
+  { svc: 0, priority: 'medium', daysAgo: 21, path: walkTo(A_WALK, 'confirmed'), employee: 'EMP-1001',
     form: aForm('network', 'Room 115', 'Wall port dead — no link light on any device.', false, { lat: 32.2655, lng: 35.2245 }),
     completion: { work_performed: 'Re-terminated the wall port and patched it through on the floor switch.', parts_used: 'RJ45 keystone' } },
   { svc: 0, priority: 'low', daysAgo: 6, path: ['submitted', 'rejected'],
@@ -100,22 +117,22 @@ const demoRequests = [
     form: bForm('2026-07-08', 'standard', 3, false, '14 Olive Street, Apt 2', { lat: 32.2121, lng: 35.2698 }) },
   { svc: 1, priority: 'medium', daysAgo: 2, path: walkTo(B_WALK, 'booked'),
     form: bForm('2026-07-06', 'deep', 5, true, '9 Cedar Lane', { lat: 32.246, lng: 35.1952 }, '4417') },
-  { svc: 1, priority: 'low', daysAgo: 3, path: walkTo(B_WALK, 'assigned'), employee: 'cleaner@monitorflow.dev',
+  { svc: 1, priority: 'low', daysAgo: 3, path: walkTo(B_WALK, 'assigned'), employee: 'EMP-1003',
     form: bForm('2026-07-05', 'standard', 2, false, '31 Harbor Road, floor 3', { lat: 32.1758, lng: 35.281 }) },
-  { svc: 1, priority: 'low', daysAgo: 5, path: walkTo(B_WALK, 'accepted'), employee: 'cleaner@monitorflow.dev',
+  { svc: 1, priority: 'low', daysAgo: 5, path: walkTo(B_WALK, 'accepted'), employee: 'EMP-1003',
     form: bForm('2026-07-04', 'standard', 4, true, '5 Almond Court', { lat: 32.2602, lng: 35.287 }) },
-  { svc: 1, priority: 'medium', daysAgo: 1, path: walkTo(B_WALK, 'en_route'), employee: 'cleaner@monitorflow.dev',
+  { svc: 1, priority: 'medium', daysAgo: 1, path: walkTo(B_WALK, 'en_route'), employee: 'EMP-1003',
     form: bForm('2026-07-03', 'deep', 6, false, '22 Palm Avenue', { lat: 32.2215, lng: 35.2315 }, '0091') },
-  { svc: 1, priority: 'high', daysAgo: 0, path: walkTo(B_WALK, 'in_service'), employee: 'cleaner@monitorflow.dev',
+  { svc: 1, priority: 'high', daysAgo: 0, path: walkTo(B_WALK, 'in_service'), employee: 'EMP-1003',
     // ~300 m from 22 Palm Avenue above — the Facilities map's cluster pair.
     form: bForm('2026-07-03', 'deep', 8, true, '2 Jasmine Boulevard, villa 7', { lat: 32.2242, lng: 35.2315 }) },
-  { svc: 1, priority: 'low', daysAgo: 7, path: walkTo(B_WALK, 'completed'), employee: 'cleaner@monitorflow.dev',
+  { svc: 1, priority: 'low', daysAgo: 7, path: walkTo(B_WALK, 'completed'), employee: 'EMP-1003',
     form: bForm('2026-06-27', 'standard', 3, false, '18 Maple Walk', { lat: 32.1888, lng: 35.239 }),
     completion: { rooms_cleaned: 3, notes: 'All rooms done; left windows ajar to air out the kitchen.' } },
-  { svc: 1, priority: 'low', daysAgo: 12, path: walkTo(B_WALK, 'confirmed'), employee: 'cleaner@monitorflow.dev',
+  { svc: 1, priority: 'low', daysAgo: 12, path: walkTo(B_WALK, 'confirmed'), employee: 'EMP-1003',
     form: bForm('2026-06-22', 'standard', 2, false, '7 Birch Close', { lat: 32.2333, lng: 35.30 }),
     completion: { rooms_cleaned: 2 } },
-  { svc: 1, priority: 'medium', daysAgo: 26, path: walkTo(B_WALK, 'confirmed'), employee: 'cleaner@monitorflow.dev',
+  { svc: 1, priority: 'medium', daysAgo: 26, path: walkTo(B_WALK, 'confirmed'), employee: 'EMP-1003',
     form: bForm('2026-06-08', 'deep', 5, true, '40 Rosewood Drive', { lat: 32.203, lng: 35.21 }, '2203'),
     completion: { rooms_cleaned: 5, notes: 'Deep clean complete; pet hair filter replaced in the vacuum.' } },
   { svc: 1, priority: 'low', daysAgo: 24, path: ['booked', 'cancelled'],
@@ -180,9 +197,30 @@ async function seed() {
     await client.query(
       `TRUNCATE audit_event, file_attachment, notification, request_comment,
                request_status_history, task, request, workflow_definition,
-               form_definition, service_type, users, department
+               form_definition, service_type, level_capability, employee_level,
+               capability, users, department
        RESTART IDENTITY CASCADE`
     );
+
+    // Capability catalogue (fixed) + demo levels and their grants (Gate 1).
+    // Seeded always: a real deployment needs levels to hang capabilities on.
+    for (const key of CAPABILITIES) {
+      await client.query('INSERT INTO capability (key) VALUES ($1)', [key]);
+    }
+    const levelIds = {};
+    for (const [name, caps] of Object.entries(LEVEL_GRANTS)) {
+      const { rows } = await client.query(
+        'INSERT INTO employee_level (name) VALUES ($1) RETURNING id',
+        [name]
+      );
+      levelIds[name] = rows[0].id;
+      for (const cap of caps) {
+        await client.query(
+          'INSERT INTO level_capability (level_id, capability_key) VALUES ($1, $2)',
+          [rows[0].id, cap]
+        );
+      }
+    }
 
     const departmentIds = {};
     for (const svc of services) {
@@ -224,39 +262,47 @@ async function seed() {
     const accountIds = {};
     for (const acc of [adminAccount, ...(SEED_DEMO_DATA ? demoAccounts : [])]) {
       const { rows } = await client.query(
-        `INSERT INTO users (name, email, password_hash, role, department_id, phone)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        [acc.name, acc.email, passwordHash, acc.role, acc.department ? departmentIds[acc.department] : null,
-         acc.phone || null]
+        `INSERT INTO users (name, email, password_hash, role, department_id, phone,
+           login_identifier, manager_id, level_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [acc.name, acc.email, passwordHash, acc.role,
+         acc.department ? departmentIds[acc.department] : null, acc.phone || null,
+         acc.login, acc.manager ? accountIds[acc.manager] : null,
+         acc.level ? levelIds[acc.level] : null]
       );
-      accountIds[acc.email] = rows[0].id;
-      console.log(`seeded ${acc.role} account ${acc.email}`);
+      accountIds[acc.login] = rows[0].id;
+      console.log(`seeded ${acc.role} account ${acc.login}`);
     }
 
     // Demo fixtures (accounts + request queue) only — real handovers stop at
     // departments + services + admin (SEED_DEMO_DATA=false).
     if (SEED_DEMO_DATA) {
     const requesterId = accountIds['user@monitorflow.dev'];
-    // Monitor actions in demo history come from the right department's monitor.
-    const monitorByDept = {
+    // Oversight actions in demo history come from the service's owner (the
+    // department's Operations Lead). This map is also the request-visibility
+    // anchor: set each service's owner_id now that the leads exist.
+    const ownerByDept = {
       IT: accountIds['monitor@monitorflow.dev'],
       Facilities: accountIds['monitor2@monitorflow.dev'],
     };
+    for (const svc of services) {
+      await client.query('UPDATE service_type SET owner_id = $1 WHERE id = $2', [
+        ownerByDept[svc.department], svc.id,
+      ]);
+    }
 
-    // Audit trail matching how these accounts would really enter the system
-    // (spec v4 Section C): admin creates monitors, each department's monitor
-    // creates its employees.
+    // Audit trail matching how these accounts really enter the system: the
+    // admin creates the leads (manager = null), each lead creates its techs.
     const adminId = accountIds['admin@monitorflow.dev'];
     for (const acc of demoAccounts) {
-      if (acc.role !== 'monitor' && acc.role !== 'employee') continue;
+      if (acc.role !== 'employee') continue;
       await client.query(
         `INSERT INTO audit_event (actor_id, action, entity_type, entity_id, detail)
-         VALUES ($1, $2, 'user', $3, $4)`,
+         VALUES ($1, 'employee.created', 'user', $2, $3)`,
         [
-          acc.role === 'monitor' ? adminId : monitorByDept[acc.department],
-          `${acc.role}.created`,
-          accountIds[acc.email],
-          JSON.stringify({ email: acc.email }),
+          acc.manager ? accountIds[acc.manager] : adminId,
+          accountIds[acc.login],
+          JSON.stringify({ login: acc.login }),
         ]
       );
     }
@@ -294,7 +340,7 @@ async function seed() {
           );
           changedBy = t.allowed_role === 'user' ? requesterId
             : t.allowed_role === 'employee' ? employeeId
-            : monitorByDept[svc.department];
+            : ownerByDept[svc.department];
         }
         await client.query(
           `INSERT INTO request_status_history (request_id, status, changed_by, changed_at)
@@ -317,7 +363,7 @@ async function seed() {
     } // ponytail: inner block kept at its original indent — gate is a wrapper, not a rewrite
 
     await client.query('COMMIT');
-    const note = SEED_DEMO_DATA ? `All seeded accounts use password: ${DEV_PASSWORD}` : 'Admin account seeded; add monitors via the app.';
+    const note = SEED_DEMO_DATA ? `All seeded accounts use password: ${DEV_PASSWORD}` : 'Admin account seeded; add staff via the app.';
     console.log(`\nDone. ${note}`);
   } catch (err) {
     await client.query('ROLLBACK');

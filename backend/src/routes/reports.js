@@ -4,12 +4,13 @@
 // filter with the frozen column set and a CSV-injection guard.
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireCapability } = require('../middleware/auth');
 const { buildRequestFilter } = require('../lib/requestQuery');
+const { subtreeIds } = require('../lib/scope');
 
 const router = express.Router();
 router.use(requireAuth);
-router.use(requireRole('monitor'));
+router.use(requireCapability('view_all'));
 
 // Shared FROM/JOINs so list, aggregate, and export all resolve status
 // label/category from the workflow data identically. `s` is the current
@@ -25,7 +26,7 @@ const FROM = `
 // filtered set (category is a category, not a status key — allowed in code).
 router.get('/', async (req, res, next) => {
   try {
-    const filter = buildRequestFilter(req.query, req.user);
+    const filter = buildRequestFilter(req.query, req.user, await subtreeIds(req.user.id));
     if (filter.error) return res.status(400).json({ error: filter.error });
     const { where, params, page, pageSize } = filter;
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -90,9 +91,9 @@ function csvCell(value) {
 // GET /reports/export.csv — same filters, frozen columns. completed_at is
 // derived from the first history row whose status is a `done` category (the
 // completion moment), not a stored column.
-router.get('/export.csv', async (req, res, next) => {
+router.get('/export.csv', requireCapability('export'), async (req, res, next) => {
   try {
-    const filter = buildRequestFilter(req.query, req.user);
+    const filter = buildRequestFilter(req.query, req.user, await subtreeIds(req.user.id));
     if (filter.error) return res.status(400).json({ error: filter.error });
     const { where, params } = filter;
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';

@@ -2,15 +2,23 @@
 // Employees Management picker) + admin (spec v4: the service-creation picker).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
-router.use(requireRole('monitor', 'admin'));
+// Read-only reference data for two pickers: the admin's service-creation form
+// (all departments) and an oversight employee's Employees Management page
+// (their own). Gate on admin kind OR the view_all capability.
+router.use((req, res, next) => {
+  if (req.user.role === 'admin' || (req.user.capabilities && req.user.capabilities.has('view_all'))) {
+    return next();
+  }
+  return res.status(403).json({ error: 'Forbidden' });
+});
 
-// GET /departments — admin sees all; a monitor sees only their own (spec v4
-// department scoping), which keeps every department picker in the monitor UI
-// correct without any client-side filtering.
+// GET /departments — admin sees all; an oversight employee sees only their own
+// department, which keeps every department picker correct without client-side
+// filtering.
 router.get('/', async (req, res, next) => {
   try {
     const { rows } =

@@ -10,6 +10,7 @@ const {
   validTransitions,
   WorkflowError,
 } = require('../src/lib/workflowEngine');
+const { CAPABILITIES } = require('../src/lib/capabilities');
 
 const statuses = [
   { key: 'submitted', label: 'Submitted', category: 'new', is_initial: true, is_final: false },
@@ -28,9 +29,13 @@ const transitions = [
   { from: 'done', to: 'closed', allowed_role: 'user', action: 'confirm', requires_note: false, requires_completion_form: false },
 ];
 
+// Two-gate model: the workflow's `monitor` actor is now an oversight employee
+// (a level granting view_all + override), and the field `employee` actor is an
+// employee holding no capabilities. `allowed_role` stays 'monitor' in the
+// transition data (the role→capability shim; Phase 4 renames it).
 const OWNER = { id: 1, role: 'user', name: 'Owner' };
-const EMPLOYEE = { id: 2, role: 'employee', name: 'Emp' };
-const MONITOR = { id: 3, role: 'monitor', name: 'Mon' };
+const EMPLOYEE = { id: 2, role: 'employee', name: 'Emp', capabilities: new Set() };
+const MONITOR = { id: 3, role: 'employee', name: 'Mon', capabilities: new Set(CAPABILITIES) };
 
 const base = { statuses, transitions, requestUserId: OWNER.id, taskEmployeeId: EMPLOYEE.id };
 

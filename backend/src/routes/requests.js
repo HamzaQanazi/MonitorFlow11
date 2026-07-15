@@ -5,18 +5,21 @@
 // workflow definition (Section 9).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { validateFormResponse } = require('../lib/validateFormResponse');
 const { categoryOf, executeTransition, WorkflowError } = require('../lib/workflowEngine');
 const { buildRequestFilter, PRIORITIES } = require('../lib/requestQuery');
+const { isOversight } = require('../lib/capabilities');
+const { subtreeIds, ownerInScope } = require('../lib/scope');
 
 const router = express.Router();
 router.use(requireAuth);
-// Spec v4: admin is configuration-and-accounts only — the whole requests
-// surface belongs to the three operational roles. Without this allowlist the
-// per-route "employee → 403, user → own" checks would let admin fall through
-// to monitor-level visibility (must-pass #20).
-router.use(requireRole('user', 'employee', 'monitor'));
+// Admin is configuration-and-accounts only — the whole requests surface
+// belongs to the operational kinds. Oversight authority now comes from the
+// employee's capabilities, not a monitor role; admins are excluded here so the
+// per-route "field-employee → 403, user → own" checks can't let them fall
+// through to oversight visibility (must-pass #20).
+router.use(requireRole('user', 'employee'));
 
 function statusOf(workflowStatuses, key) {
   const s = workflowStatuses.find((st) => st.key === key);
@@ -149,9 +152,14 @@ router.post('/', async (req, res, next) => {
 // for known params are 400.
 router.get('/', async (req, res, next) => {
   try {
-    if (req.user.role === 'employee') return res.status(403).json({ error: 'Forbidden' });
+    // Field employees use GET /tasks, not this list; only requesters (own) and
+    // oversight employees (subtree) read requests here.
+    if (req.user.role === 'employee' && !isOversight(req.user)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
 
-    const filter = buildRequestFilter(req.query, req.user);
+    const scope = isOversight(req.user) ? await subtreeIds(req.user.id) : null;
+    const filter = buildRequestFilter(req.query, req.user, scope);
     if (filter.error) return res.status(400).json({ error: filter.error });
     const { where, params, page, pageSize } = filter;
 
@@ -194,12 +202,14 @@ router.get('/', async (req, res, next) => {
 // exactly one call (Section 7).
 router.get('/:id', async (req, res, next) => {
   try {
-    if (req.user.role === 'employee') return res.status(403).json({ error: 'Forbidden' });
+    if (req.user.role === 'employee' && !isOversight(req.user)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
 
     const { rows } = await pool.query(
-      `SELECT r.*, st.name AS service_type_name, st.department_id AS service_department_id,
+      `SELECT r.*, st.name AS service_type_name, st.owner_id AS service_owner_id,
               w.statuses AS workflow_statuses,
               u.id AS requester_id, u.name AS requester_name, u.email AS requester_email,
               u.phone AS requester_phone
@@ -215,8 +225,9 @@ router.get('/:id', async (req, res, next) => {
     if (req.user.role === 'user' && r.user_id !== req.user.id) {
       return res.status(404).json({ error: 'Not found' });
     }
-    // Spec v4: monitors are department-scoped (404-over-403).
-    if (req.user.role === 'monitor' && r.service_department_id !== req.user.department_id) {
+    // Gate 2: an oversight employee sees a request only if its service owner is
+    // in their subtree (404-over-403).
+    if (isOversight(req.user) && !(await ownerInScope(req.user.id, r.service_owner_id))) {
       return res.status(404).json({ error: 'Not found' });
     }
 
@@ -354,7 +365,9 @@ router.patch('/:id/resolution', async (req, res, next) => {
 // the user-role transition into a terminated-category status.
 router.patch('/:id/cancel', async (req, res, next) => {
   try {
-    if (req.user.role === 'employee') return res.status(403).json({ error: 'Forbidden' });
+    if (req.user.role === 'employee' && !isOversight(req.user)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
     const note = (req.body || {}).note ?? null;
@@ -381,7 +394,7 @@ router.patch('/:id/cancel', async (req, res, next) => {
         user: req.user,
         to: cancelTransition.to,
         note,
-        override: req.user.role === 'monitor',
+        override: isOversight(req.user),
         beforeCommit:
           req.user.role === 'user'
             ? (tx, ctx) => {
@@ -412,7 +425,7 @@ router.patch('/:id/cancel', async (req, res, next) => {
 // terminated or triage/in_progress only (422), note always (422). Reopening
 // past a terminated status unlocks the task automatically because the task
 // lock is a function of the current category, not a flag (Section 5).
-router.patch('/:id/status', requireRole('monitor'), async (req, res, next) => {
+router.patch('/:id/status', requireCapability('override'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
@@ -437,7 +450,7 @@ router.patch('/:id/status', requireRole('monitor'), async (req, res, next) => {
 // otherwise), monitor any, employee never. Returns the request row or null
 // after having written the error response.
 async function loadCommentableRequest(req, res) {
-  if (req.user.role === 'employee') {
+  if (req.user.role === 'employee' && !isOversight(req.user)) {
     res.status(403).json({ error: 'Forbidden' });
     return null;
   }
@@ -447,7 +460,7 @@ async function loadCommentableRequest(req, res) {
     return null;
   }
   const { rows } = await pool.query(
-    `SELECT r.id, r.user_id, st.name AS service_name, st.department_id
+    `SELECT r.id, r.user_id, st.name AS service_name, st.owner_id
      FROM request r JOIN service_type st ON st.id = r.service_type_id
      WHERE r.id = $1`,
     [id]
@@ -455,8 +468,8 @@ async function loadCommentableRequest(req, res) {
   if (
     !rows.length ||
     (req.user.role === 'user' && rows[0].user_id !== req.user.id) ||
-    // Spec v4: monitors comment within their department only.
-    (req.user.role === 'monitor' && rows[0].department_id !== req.user.department_id)
+    // Gate 2: an oversight employee comments only within their subtree.
+    (isOversight(req.user) && !(await ownerInScope(req.user.id, rows[0].owner_id)))
   ) {
     res.status(404).json({ error: 'Not found' });
     return null;
@@ -485,19 +498,19 @@ router.post('/:id/comments', async (req, res, next) => {
         [request.id, req.user.id, body.trim()]
       ));
       const message = `${req.user.name} commented on request #${request.id} (${request.service_name}).`;
-      if (req.user.role === 'monitor') {
+      if (isOversight(req.user)) {
+        // Oversight → the requester.
         await client.query(
           `INSERT INTO notification (user_id, request_id, type, message)
            VALUES ($1, $2, 'comment', $3)`,
           [request.user_id, request.id, message]
         );
-      } else {
-        // Spec v4: only the monitors of the request's department are notified.
+      } else if (request.owner_id) {
+        // Requester → the service's oversight owner (the other party).
         await client.query(
           `INSERT INTO notification (user_id, request_id, type, message)
-           SELECT id, $1, 'comment', $2 FROM users
-           WHERE role = 'monitor' AND is_active AND department_id = $3`,
-          [request.id, message, request.department_id]
+           VALUES ($1, $2, 'comment', $3)`,
+          [request.owner_id, request.id, message]
         );
       }
       await client.query('COMMIT');
@@ -550,7 +563,7 @@ router.get('/:id/comments', async (req, res, next) => {
 // PATCH /requests/{id}/priority — monitor only. Not a status transition, but
 // it writes a history row with a descriptive note (Section 5) under the
 // request row lock so the timeline stays a complete, ordered audit trail.
-router.patch('/:id/priority', requireRole('monitor'), async (req, res, next) => {
+router.patch('/:id/priority', requireCapability('set_priority'), async (req, res, next) => {
   const client = await pool.connect();
   try {
     const id = Number(req.params.id);
@@ -562,13 +575,13 @@ router.patch('/:id/priority', requireRole('monitor'), async (req, res, next) => 
 
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `SELECT r.id, r.status, r.priority, st.department_id
+      `SELECT r.id, r.status, r.priority, st.owner_id
        FROM request r JOIN service_type st ON st.id = r.service_type_id
        WHERE r.id = $1 FOR UPDATE OF r`,
       [id]
     );
-    // Spec v4: cross-department requests look nonexistent to a monitor.
-    if (!rows.length || rows[0].department_id !== req.user.department_id) {
+    // Gate 2: out-of-subtree requests look nonexistent (404-over-403).
+    if (!rows.length || !(await ownerInScope(req.user.id, rows[0].owner_id, client))) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
@@ -606,7 +619,7 @@ router.patch('/:id/priority', requireRole('monitor'), async (req, res, next) => 
 //  - otherwise, if a task already exists and the request isn't finished →
 //    reassign in place: employee_id + assigned_at only, no status write,
 //    history note per Section 5.
-router.patch('/:id/assign', requireRole('monitor'), async (req, res, next) => {
+router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) => {
   const client = await pool.connect();
   try {
     const id = Number(req.params.id);
@@ -618,7 +631,7 @@ router.patch('/:id/assign', requireRole('monitor'), async (req, res, next) => {
 
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `SELECT r.id, r.status, r.service_type_id, st.department_id, st.name AS service_name,
+      `SELECT r.id, r.status, r.service_type_id, st.owner_id, st.name AS service_name,
               w.statuses, w.transitions
        FROM request r
        JOIN service_type st ON st.id = r.service_type_id
@@ -627,25 +640,27 @@ router.patch('/:id/assign', requireRole('monitor'), async (req, res, next) => {
        FOR UPDATE OF r`,
       [id]
     );
-    // Spec v4: a monitor can only assign within their own department; a
-    // cross-department request looks nonexistent (404-over-403).
-    if (!rows.length || rows[0].department_id !== req.user.department_id) {
+    // Gate 2: an oversight employee assigns only within their subtree; an
+    // out-of-subtree request looks nonexistent (404-over-403).
+    if (!rows.length || !(await ownerInScope(req.user.id, rows[0].owner_id, client))) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
     const request = rows[0];
 
-    // Department rule (Section 5): active employees of the service's
-    // department only — 422 otherwise.
+    // Assignment rule (Gate 2): the assignee must be an active employee inside
+    // the assigning oversight actor's subtree — 422 otherwise (this is what
+    // makes a cross-team assignment fail, must-pass #16).
+    const scope = await subtreeIds(req.user.id, client);
     const { rows: empRows } = await client.query(
-      `SELECT id, name, department_id, is_active FROM users WHERE id = $1 AND role = 'employee'`,
+      `SELECT id, name, is_active FROM users WHERE id = $1 AND role = 'employee'`,
       [employeeId]
     );
     const employee = empRows[0];
-    if (!employee || !employee.is_active || employee.department_id !== request.department_id) {
+    if (!employee || !employee.is_active || !scope.includes(employee.id)) {
       await client.query('ROLLBACK');
       return res.status(422).json({
-        errors: { employeeId: 'Must be an active employee of the service’s department' },
+        errors: { employeeId: 'Must be an active employee on your team' },
       });
     }
 

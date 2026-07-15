@@ -9,6 +9,8 @@ const express = require('express');
 const multer = require('multer');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { isOversight } = require('../lib/capabilities');
+const { ownerInScope } = require('../lib/scope');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -117,7 +119,7 @@ router.get('/:id', async (req, res, next) => {
       `SELECT f.original_filename, f.mime_type, f.storage_path, f.uploaded_by,
               f.request_id, f.task_id,
               r.user_id AS owner_id, pt.employee_id AS assignee_id,
-              st.department_id AS service_department_id
+              st.owner_id AS service_owner_id
        FROM file_attachment f
        LEFT JOIN task ft ON ft.id = f.task_id
        LEFT JOIN request r ON r.id = COALESCE(f.request_id, ft.request_id)
@@ -130,14 +132,19 @@ router.get('/:id', async (req, res, next) => {
     // A pending upload (no parent yet) is visible to its uploader only —
     // it isn't part of any request until POST /requests links it.
     const pending = f && f.request_id === null && f.task_id === null;
-    const allowed =
-      f &&
-      (pending
-        ? f.uploaded_by === req.user.id
-        : // Spec v4: monitors download within their department only.
-          (req.user.role === 'monitor' && f.service_department_id === req.user.department_id) ||
-          (req.user.role === 'user' && f.owner_id === req.user.id) ||
-          (req.user.role === 'employee' && f.assignee_id === req.user.id));
+    let allowed = false;
+    if (f) {
+      if (pending) {
+        allowed = f.uploaded_by === req.user.id;
+      } else if (req.user.role === 'user') {
+        allowed = f.owner_id === req.user.id;
+      } else if (isOversight(req.user)) {
+        // Gate 2: an oversight employee downloads within their subtree only.
+        allowed = await ownerInScope(req.user.id, f.service_owner_id);
+      } else if (req.user.role === 'employee') {
+        allowed = f.assignee_id === req.user.id;
+      }
+    }
     if (!allowed) return res.status(404).json({ error: 'Not found' });
 
     const safeName = f.original_filename.replace(/["\\\r\n]/g, '_');
