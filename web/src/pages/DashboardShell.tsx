@@ -3,23 +3,24 @@ import { useAuth } from '../auth/AuthContext'
 import NotificationBell from '../components/NotificationBell'
 import './DashboardShell.css'
 
-const monitorNav = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/requests', label: 'Requests' },
-  { to: '/employees', label: 'Employees' },
-  { to: '/reports', label: 'Reports' },
+// Oversight nav, each item gated by the capability its page needs (Gate 1).
+// A lead with every capability sees them all; a narrower level sees a subset.
+const oversightNav = [
+  { to: '/', label: 'Dashboard', end: true, need: 'view_all' },
+  { to: '/requests', label: 'Requests', end: false, need: 'view_all' },
+  { to: '/employees', label: 'Employees', end: false, need: 'manage_employees' },
+  { to: '/reports', label: 'Reports', end: false, need: 'view_all' },
 ]
-// Spec v4: admin manages accounts/configuration only. The Services page
-// joins this list once the JSON-import slice lands.
-const adminNav = [
-  { to: '/monitors', label: 'Monitors', end: false },
-  { to: '/audit', label: 'Audit Log', end: false },
-]
+// Admin manages accounts/configuration only. The Services page joins this list
+// once the JSON-import slice lands.
+const adminNav = [{ to: '/audit', label: 'Audit Log', end: false }]
 
 export default function DashboardShell() {
   const { user, logout } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const navItems = isAdmin ? adminNav : monitorNav
+  const navItems = isAdmin
+    ? adminNav
+    : oversightNav.filter((item) => user?.capabilities.includes(item.need))
 
   return (
     <div className="shell">

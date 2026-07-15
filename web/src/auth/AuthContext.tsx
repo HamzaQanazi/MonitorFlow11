@@ -5,10 +5,21 @@ import { ApiError, apiFetch, clearToken, getToken, setToken } from '../lib/api'
 export interface AuthUser {
   id: number
   name: string
-  email: string
-  role: 'user' | 'employee' | 'monitor' | 'admin'
+  email: string | null
+  role: 'user' | 'employee' | 'admin'
   phone: string | null
   departmentId: number | null
+  loginIdentifier: string
+  // Two-gate model: the level-granted capabilities this account holds. The web
+  // console shows an admin (kind) or an oversight employee (holds view_all);
+  // the server still enforces every capability with 403s.
+  capabilities: string[]
+}
+
+// Who may use the web console: the admin, or an oversight employee (view_all).
+// Field employees and requesters are turned away (they use the mobile apps).
+export function canUseConsole(u: Pick<AuthUser, 'role' | 'capabilities'>): boolean {
+  return u.role === 'admin' || u.capabilities.includes('view_all')
 }
 
 type AuthStatus = 'restoring' | 'signedOut' | 'signedIn'
@@ -16,7 +27,7 @@ type AuthStatus = 'restoring' | 'signedOut' | 'signedIn'
 interface AuthContextValue {
   status: AuthStatus
   user: AuthUser | null
-  login: (email: string, password: string) => Promise<void>
+  login: (identifier: string, password: string) => Promise<void>
   logout: () => void
 }
 
@@ -32,8 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     apiFetch<{ user: AuthUser }>('/auth/me')
       .then(({ user: me }) => {
         if (cancelled) return
-        // Spec v4: the web console serves monitors AND the admin.
-        if (me.role !== 'monitor' && me.role !== 'admin') {
+        if (!canUseConsole(me)) {
           clearToken()
           setStatus('signedOut')
           return
@@ -55,13 +65,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       user,
-      async login(email, password) {
+      async login(identifier, password) {
         const { token, user: signedIn } = await apiFetch<{ token: string; user: AuthUser }>(
           '/auth/login',
-          { method: 'POST', body: { email, password }, auth: false },
+          { method: 'POST', body: { identifier, password }, auth: false },
         )
-        if (signedIn.role !== 'monitor' && signedIn.role !== 'admin') {
-          throw new ApiError(403, 'This dashboard is for monitor and admin accounts', 'not_monitor')
+        if (!canUseConsole(signedIn)) {
+          throw new ApiError(403, 'This dashboard is for oversight and admin accounts', 'not_console')
         }
         setToken(token)
         setUser(signedIn)

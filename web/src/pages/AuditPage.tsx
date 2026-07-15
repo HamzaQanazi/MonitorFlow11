@@ -12,9 +12,11 @@ import './EmployeesPage.css'
 const PAGE_SIZE = 20
 
 // The known audit actions (lib/audit.js writers). The select is a closed
-// list so a typo can't silently filter to nothing.
-const ACTIONS = ['monitor', 'employee'].flatMap((who) =>
-  ['created', 'updated', 'activated', 'deactivated', 'password_reset'].map((what) => `${who}.${what}`),
+// list so a typo can't silently filter to nothing. All account writes now
+// target employees (leads and field techs); the monitor.* actions retired
+// with the monitor role.
+const ACTIONS = ['created', 'updated', 'activated', 'deactivated', 'password_reset'].map(
+  (what) => `employee.${what}`,
 )
 
 interface AuditEvent {
@@ -32,14 +34,6 @@ interface ListResponse {
   page: number
   pageSize: number
   total: number
-}
-
-// Actor filter options: every audit actor is the admin or a monitor.
-// Inactive monitors stay listed — their past writes are still in the log.
-interface MonitorOption {
-  id: number
-  name: string
-  isActive: boolean
 }
 
 function actionLabel(action: string) {
@@ -66,7 +60,6 @@ export default function AuditPage() {
 
   const [data, setData] = useState<ListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [monitors, setMonitors] = useState<MonitorOption[]>([])
 
   const setFilter = useCallback(
     (key: string, value: string) => {
@@ -106,13 +99,6 @@ export default function AuditPage() {
     load().catch((err: Error) => setError(err.message))
   }, [load])
 
-  // Names for the actor dropdown; on failure it just stays at "All actors".
-  useEffect(() => {
-    apiFetch<{ monitors: MonitorOption[] }>('/monitors?pageSize=100')
-      .then((res) => setMonitors(res.monitors))
-      .catch(() => {})
-  }, [])
-
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
 
   return (
@@ -150,12 +136,6 @@ export default function AuditPage() {
           >
             <option value="">All actors</option>
             {user && <option value={user.id}>{user.name} (you)</option>}
-            {monitors.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-                {m.isActive ? '' : ' (inactive)'}
-              </option>
-            ))}
           </select>
           <input
             type="date"
