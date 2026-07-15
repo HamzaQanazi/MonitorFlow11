@@ -1,6 +1,7 @@
 // MonitorFlow mobile — one codebase, two apps: post-login routing sends
-// `user` to the User app and `employee` to the Employee app. Monitor is
-// web-only and rejected here (the server still enforces per-route).
+// `user` to the User app and `employee` to the Employee app. Admin (and any
+// other kind) is web-only and rejected here (the server still enforces
+// per-route).
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -66,7 +67,7 @@ class _MonitorNotSupported extends StatelessWidget {
               const Icon(Icons.desktop_windows_outlined, size: 48, color: MfColors.muted),
               const SizedBox(height: 16),
               const Text(
-                'Monitor accounts use the web dashboard',
+                'This account uses the web dashboard',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),

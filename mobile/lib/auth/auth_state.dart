@@ -47,8 +47,10 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> login(String email, String password) async {
-    final json = await api.post('/auth/login', body: {'email': email, 'password': password});
+  /// `identifier` is an email (users) or an EMP-xxxx id (field employees).
+  Future<void> login(String identifier, String password) async {
+    final json =
+        await api.post('/auth/login', body: {'identifier': identifier, 'password': password});
     await _storeSession(json);
   }
 

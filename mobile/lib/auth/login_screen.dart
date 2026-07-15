@@ -125,17 +125,27 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                       TextFormField(
                         controller: _email,
-                        keyboardType: TextInputType.emailAddress,
+                        keyboardType:
+                            _registering ? TextInputType.emailAddress : TextInputType.text,
                         textInputAction: TextInputAction.next,
-                        autofillHints: const [AutofillHints.email],
+                        autofillHints: [
+                          _registering ? AutofillHints.email : AutofillHints.username,
+                        ],
                         decoration: InputDecoration(
-                          labelText: 'Email',
-                          errorText: _fieldErrors['email'],
+                          labelText: _registering ? 'Email' : 'Email or employee ID',
+                          errorText: _fieldErrors['email'] ?? _fieldErrors['identifier'],
                         ),
                         validator: (v) {
                           final value = v?.trim() ?? '';
-                          if (value.isEmpty) return 'Email is required';
-                          if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value)) {
+                          if (value.isEmpty) {
+                            return _registering
+                                ? 'Email is required'
+                                : 'Enter your email or employee ID';
+                          }
+                          // Only registration (users) must be a valid email;
+                          // sign-in also accepts an EMP-xxxx employee id.
+                          if (_registering &&
+                              !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value)) {
                             return 'Enter a valid email';
                           }
                           return null;

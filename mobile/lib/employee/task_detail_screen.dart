@@ -128,7 +128,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     final note = await _promptNote(
       title: 'Reject this task?',
       message:
-          'The request goes back to the queue for reassignment and the monitors are notified. '
+          'The request goes back to the queue for reassignment and your supervisor is notified. '
           'A note explaining why is required.',
       confirmLabel: 'Reject task',
     );
