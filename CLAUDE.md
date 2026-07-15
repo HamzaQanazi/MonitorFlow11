@@ -340,24 +340,81 @@ Structural differences the demo points at: A has an approval gate, a hold loop-b
 
 ---
 
-## 10. Development plan (8 weeks — respect the gates)
+## 10. Migration roadmap (feature-driven, dependency-ordered)
 
-**Gates:** vertical slice v1 — end of **W3** · MVP complete — end of **W6** · code freeze — **W7 Wednesday** · deployed — end of **W7** · W8 = demo prep only.
+Not a calendar. Each phase is **a capability, gated by "done when" — the smallest
+observable proof it works.** Order is by dependency: identity and scope come
+first because everything guarded reads them; bilingual + RTL come early because
+they are free now and expensive across 27 screens later. A phase is finished when
+its gate passes, not when a week ends. Ship phases in order; within a phase,
+mobile/web/backend proceed in parallel once the contract slice is frozen.
 
-| Wk | Deliverables | Student 1 | Student 2 | Must pass |
-|---|---|---|---|---|
-| 1 | Host picked; schema + migrations; auth | Flutter scaffold, auth screens, API client vs mock JSON | Express scaffold, schema, register/login/me, JWT + permission middleware skeleton | Login returns JWT; wrong password 401; inactive user 401 |
-| 2 | Seeded config; form engine (read) | Dynamic form renderer (all 8 types) | Seed script (2 services, 4 forms, 2 workflows, seed-time validation); services/forms/workflow GETs; form validation function | Seed validates; renderer draws both request forms with zero code differences |
-| 3 | **Vertical slice v1** | Create Request (real submit), My Requests, Home + Catalogue | `POST /requests` (422 per-field), `GET /requests` both modes, React scaffold + Monitor login + requests list | Phone submits → appears in Monitor. Missing required field 422; cross-user GET 404 |
-| 4 | Workflow engine + assignment | Employee Home+Tasks, Task Details (via `GET /tasks/{id}`), accept/reject | Workflow engine (locking, history, sync), assign + task creation, valid-transitions, Requests Mgmt detail + assignment UI | Invalid transition 409; wrong role 403; reject returns request to queue; both workflows drive from data |
-| 5 | Lifecycle closes | Update Task Status, Complete Task, user confirm/dispute + timeline | `/complete` validation, `/resolution`, monitor override + lock, comments, files backend | Both services E2E submit→confirmed; PATCH on cancelled task 409 |
-| 6 | **MVP complete** | Notifications UI + Profile, photo upload both apps, React Employees Mgmt + Basic Reports pages | Notification triggers, files auth, dashboard stats/chart (category-based), reports + CSV | File IDOR blocked; bad upload rejected; CSV opens, injection escaped |
-| 7 | Freeze Wed; test + deploy | Mobile fixes; renderer widget tests; release builds | API/permission test suite green; deploy | Full Section 13 checklist, each student testing the other's layer |
-| 8 | Demo-ready | Two timed rehearsals on deployed system; fresh seed; backup screenshots/video of every step; report | | No new code after Monday except demo blockers |
+**What carries over untouched** (do not rebuild): the dynamic form engine
+(`validateFormResponse.js`, `formSchema.js`, the Flutter renderer), the
+transactional write-status-plus-history discipline in `workflowEngine.js`, the
+config-per-service structure, and the file-storage layer. The migration is
+*onto* this spine, not away from it.
 
-Fallbacks: slice slips → W4 becomes slice-completion, cut `awaiting_parts`/`en_route`; W5 overrun → comments slip to W6, dispute flow to W6; W6 overrun → chart becomes number cards; deploy fails → localhost demo, decided by Friday W7.
+**Phase 0 — Contract freeze (paperwork, no engine code).**
+Reconcile the governing docs (this file superseded by `combineidea.md`), freeze
+`openapi.yaml`.
+*Done when:* `openapi.yaml` exists and both developers have signed off; no code
+contradicts it.
 
-Steps within weeks follow the dependency chain: schema → auth → permission middleware → seeded config → form engine → request submission → assignment → workflow engine → completion → resolution. Once Section 7 is frozen, mobile/web UI shells proceed in parallel against mocks.
+**Phase 1 — Identity + reporting tree.**
+Add `manager_id` (self-ref) and `login_identifier`; collapse to three account
+kinds (`admin`/`employee`/`user`); delete the `monitor` role from schema, auth,
+engine, and clients. *Blocks 2–5.*
+*Done when:* an employee logs in with `EMP-xxxx`; the recursive-CTE subtree query
+returns self + all descendants; no `role === 'monitor'` remains anywhere.
+
+**Phase 2 — Two-gate permissions.**
+`capability` / `employee_level` / `level_capability` tables; Gate 1 (level grants
+capability) + Gate 2 (target in subtree) replace `requireRole` and department
+scoping. *Blocks every guarded endpoint.*
+*Done when:* the permission suite passes with both gates — a capable actor acting
+outside their subtree is refused; a subtree member without the capability is
+refused.
+
+**Phase 3 — Bilingual + RTL.**
+`{en,ar}` JSONB columns with DB `CHECK (x ? 'en' AND x ? 'ar')`; migrate seed
+data; switch CSS/Flutter to logical properties (`margin-inline-start`,
+`EdgeInsetsDirectional`). Do this before more screens are written.
+*Done when:* the DB rejects an English-only label; every screen renders correctly
+in both directions.
+
+**Phase 4 — Transition model.**
+Retarget the engine: `allowed_role`→`required_capability`, `category`→
+`is_terminal`; collapse `/accept`,`/reject`,`/complete`,`/resolution` into the
+generic `GET`/`POST /requests/{id}/transitions` with `expected_status` (409 on
+stale); move `required_form_key`/`post_actions` into transition data.
+*Done when:* both seeded sectors run submit→close through the one generic call;
+concurrent fires — exactly one wins.
+
+**Phase 5 — Relational notifications + tree SLA/escalation.**
+Notification targets become relationships (`created_by`/`assigned_to`/
+`assignee_manager`) resolved at fire time; `sla_minutes` per status escalates
+**up the manager tree** (reuses the existing sweep worker).
+*Done when:* a breach escalates to the assignee's manager, not a hardcoded
+department monitor.
+
+**Phase 6 — PostGIS.**
+Replace `location_lat`/`location_lng` doubles with `GEOGRAPHY(Point,4326)` + GIST
+index. Self-contained; slot anywhere after Phase 1.
+*Done when:* a request round-trips its pin through the geography column and map
+views render unchanged.
+
+**Phase 7 — Config API + webhooks + optional external users (additive, last).**
+`POST /config/services` (JSON import onboards a sector); outbound signed webhooks
+on `request_created`/`status_changed`/`assigned`/`sla_breached`;
+`accepts_external_users` per service.
+*Done when:* a brand-new sector is created by one JSON POST with zero code change,
+and a subscribed webhook fires on status change.
+
+Fallbacks are per-phase, not per-week: if a phase overruns, its optional tail
+(e.g. Phase 5 escalation, Phase 7 webhooks) defers to the end without blocking
+the next foundational phase. Deploy target unchanged; localhost demo remains the
+fallback if hosting fights back.
 
 ---
 
@@ -365,7 +422,7 @@ Steps within weeks follow the dependency chain: schema → auth → permission m
 
 - **Student 1:** Flutter User app, Flutter Employee app, shared mobile components (auth screens, dynamic form renderer, notifications list, profile), **the seed/demo-data script** (forces fluency in the schemas being rendered), **two React CRUD pages** (Employees Management, Basic Reports — built on Student 2's scaffold), mobile-side testing.
 - **Student 2:** ER/schema + migrations, API implementation, auth + permission middleware, dynamic form engine (validation), workflow engine, file service, notification service, React scaffold + Monitor Login + Dashboard Overview + Requests Management, deployment.
-- **Both, explicitly scheduled:** Week-1 contract pair-session; integration days at end of W3 and W5; W7 permission-matrix audit where **each student attacks the other's surface** (S1 probes the API with curl/Postman; S2 tries to break the apps).
+- **Both, at fixed phase boundaries (not weeks):** the Phase 0 contract pair-session (freeze `openapi.yaml` together); an integration checkpoint at the end of every phase that ships an endpoint + a client; and a two-gate-audit after Phase 2 and again after Phase 4, where **each student attacks the other's surface** (S1 probes the API with curl/Postman; S2 tries to break the apps).
 
 ---
 

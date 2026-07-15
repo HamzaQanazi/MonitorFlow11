@@ -1,0 +1,574 @@
+openapi: 3.0.3
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Operiva / MonitorFlow — FROZEN API CONTRACT (skeleton, step-1 of migration)
+#
+# This file is the source of truth (combineidea.md invariant 7). Two developers
+# build against it in parallel; a unilateral change silently breaks the other
+# half. Changes require BOTH developers to agree.
+#
+# Ratified stack (2026-07-15): Node.js + Express (JavaScript), raw SQL. No
+# Prisma, no NestJS, no TypeScript codegen from this file — it is a hand-kept
+# contract, validated in review, not a generator input.
+#
+# SKELETON: the generic engine endpoints that prove the thesis are specified;
+# request/response bodies are sketched to the shape the invariants require, not
+# yet field-complete. Fill in per-endpoint as each is built. Nothing here is
+# sector-specific — that is the whole point.
+# ─────────────────────────────────────────────────────────────────────────────
+
+info:
+  title: Operiva API
+  version: 0.1.0-skeleton
+  description: >
+    Configuration-driven service-request platform. A new sector is onboarded by
+    POST /config/services — never by code. Clients are thin renderers: forms come
+    from config, action buttons come from /requests/{id}/transitions (both
+    permission gates already applied server-side).
+
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+  - name: config          # admin-only: onboard a sector as data
+  - name: services        # read config for rendering
+  - name: requests        # the generic lifecycle — one engine, every sector
+  - name: people          # employees, the reporting tree
+  - name: notifications
+  - name: files
+
+paths:
+  # ── Auth ───────────────────────────────────────────────────────────────────
+  /auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Log in with a generic login_identifier (email OR employee number)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login_identifier, password]
+              properties:
+                login_identifier: { type: string, example: "EMP-4471" }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: JWT issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  user: { $ref: '#/components/schemas/Account' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { description: Login rate limit exceeded }
+
+  /auth/register:
+    post:
+      tags: [auth]
+      security: []
+      summary: Self-register — creates a `user` account only. Employees are seeded/created by an admin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login_identifier, password, name]
+              properties:
+                login_identifier: { type: string, format: email }
+                password: { type: string, format: password }
+                name: { type: string }
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '409': { description: login_identifier already taken }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Current account, including level + capabilities (for UX only — server re-checks)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ── Configuration (admin) — a sector is data ────────────────────────────────
+  /config/services:
+    post:
+      tags: [config]
+      summary: >
+        Onboard a sector. The single call that proves the thesis: service +
+        workflow (statuses, one-way transitions) + forms, all as JSON. No code
+        change. Requires the `configure` capability.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceConfig' }
+      responses:
+        '201':
+          description: Sector created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service_key: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+    get:
+      tags: [config]
+      summary: List configured services (admin)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceSummary' }
+
+  # ── Services (read, for rendering) ───────────────────────────────────────────
+  /services:
+    get:
+      tags: [services]
+      summary: Enabled services the caller may submit to (respects accepts_external_users)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceSummary' }
+
+  /services/{serviceKey}/forms/{formKey}:
+    get:
+      tags: [services]
+      summary: A form definition — the client renders each field by its `type`
+      parameters:
+        - { name: serviceKey, in: path, required: true, schema: { type: string } }
+        - { name: formKey, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FieldDescriptor' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Requests — the generic lifecycle ────────────────────────────────────────
+  /requests:
+    post:
+      tags: [requests]
+      summary: Submit a request. Server validates `data` against the service's request form.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [service_key, data]
+              properties:
+                service_key: { type: string }
+                data: { type: object, description: "answers keyed by field id; validated server-side" }
+                location: { $ref: '#/components/schemas/Point' }
+      responses:
+        '201':
+          description: Created — lands in workflow.initial_status; creation event written
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Request' }
+        '422': { $ref: '#/components/responses/Validation' }
+    get:
+      tags: [requests]
+      summary: List requests visible to the caller (own, if `user`; subtree-scoped, if `employee`)
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: serviceKey, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Request' } }
+                  total: { type: integer }
+
+  /requests/{id}:
+    get:
+      tags: [requests]
+      summary: One request with its immutable event timeline
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RequestDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }   # 404-over-403 for out-of-scope
+
+  /requests/{id}/transitions:
+    get:
+      tags: [requests]
+      summary: >
+        Legal next actions from the current status AND permitted to this caller —
+        BOTH gates already applied. The client renders exactly these buttons and
+        nothing else.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TransitionOption' }
+    post:
+      tags: [requests]
+      summary: >
+        Fire a transition. The ONE generic call — there is no /approve, /complete,
+        /assign. Server re-checks: legal-from-status → Gate 1 (capability) →
+        Gate 2 (target in subtree) → required form validates → status + audit row
+        in one transaction → post_actions (notify, webhook).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transition_key]
+              properties:
+                transition_key: { type: string }
+                expected_status: { type: string, description: "optimistic concurrency; 409 if stale" }
+                assignee_id: { type: integer, description: "when the transition assigns; must be in caller's subtree" }
+                form: { type: object, description: "answers for required_form_key, if any" }
+                note: { type: string }
+      responses:
+        '200':
+          description: Transition fired
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Request' }
+        '403': { $ref: '#/components/responses/Forbidden' }    # Gate 1 or Gate 2 failed
+        '409': { description: "Not legal from current status, or expected_status stale" }
+        '422': { $ref: '#/components/responses/Validation' }   # required form invalid
+
+  /requests/{id}/candidates:
+    get:
+      tags: [requests]
+      summary: >
+        Assignment candidates — the caller's subtree only, annotated with workload.
+        Cross-branch assignment is unrepresentable because it never appears here.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Candidate' }
+
+  # ── People / reporting tree ─────────────────────────────────────────────────
+  /employees:
+    post:
+      tags: [people]
+      summary: Create an employee (admin). Sets login_identifier, level, and manager_id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [login_identifier, name, level_id, manager_id]
+              properties:
+                login_identifier: { type: string, example: "EMP-4471" }
+                name: { type: string }
+                level_id: { type: integer }
+                manager_id: { type: integer, nullable: true, description: "null = root of the tree" }
+                initial_password: { type: string, format: password }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ── Notifications ────────────────────────────────────────────────────────────
+  /notifications:
+    get:
+      tags: [notifications]
+      summary: Own notifications (rows, fetched on refresh — no websockets)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Notification' }
+  /notifications/{id}/read:
+    patch:
+      tags: [notifications]
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: Marked read }
+
+  # ── Files ────────────────────────────────────────────────────────────────────
+  /files:
+    post:
+      tags: [files]
+      summary: Upload (multipart; requestId XOR taskId). Allowlist jpg/png/pdf, ≤5MB, magic-byte checked.
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                requestId: { type: integer }
+      responses:
+        '201':
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { id: { type: string, format: uuid } }
+  /files/{id}:
+    get:
+      tags: [files]
+      summary: Download (authorized per scope); served Content-Disposition attachment
+      parameters: [ { name: id, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses:
+        '200': { description: File stream }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+
+  parameters:
+    id: { name: id, in: path, required: true, schema: { type: integer } }
+    page: { name: page, in: query, schema: { type: integer, default: 1 } }
+    pageSize: { name: pageSize, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+
+  responses:
+    Unauthorized: { description: Missing/invalid/expired JWT, or deactivated account }
+    Forbidden: { description: Gate 1 (capability) or Gate 2 (scope) failed }
+    NotFound: { description: Not found — also returned for out-of-scope resources (404-over-403) }
+    Validation:
+      description: Well-formed body failing validation — dynamic-form errors keyed by field id
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              errors: { type: object, additionalProperties: { type: string } }
+
+  schemas:
+    # Bilingual by construction — the DB physically rejects a label missing either key.
+    LocalizedText:
+      type: object
+      required: [en, ar]
+      properties:
+        en: { type: string }
+        ar: { type: string }
+
+    Point:
+      type: object
+      description: PostGIS GEOGRAPHY(Point,4326)
+      required: [lat, lng]
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+
+    Account:
+      type: object
+      description: >
+        Three account kinds only — admin | employee | user. There is no "monitor".
+        Oversight is a matter of level + subtree, not a role name.
+      properties:
+        id: { type: integer }
+        kind: { type: string, enum: [admin, employee, user] }
+        name: { type: string }
+        login_identifier: { type: string }
+        level: { $ref: '#/components/schemas/Level' }        # employees only
+        manager_id: { type: integer, nullable: true }        # employees only
+        capabilities:
+          type: array
+          items: { type: string }
+          description: "resolved from level_capability — for UX only; server re-checks"
+
+    Level:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { $ref: '#/components/schemas/LocalizedText' }
+
+    ServiceSummary:
+      type: object
+      properties:
+        key: { type: string }
+        name: { $ref: '#/components/schemas/LocalizedText' }
+        accepts_external_users: { type: boolean }
+
+    ServiceConfig:
+      type: object
+      description: POST this and a sector exists. The engine reads it; no code knows the sector.
+      required: [service, workflow, forms]
+      properties:
+        service:
+          type: object
+          required: [key, name, accepts_external_users]
+          properties:
+            key: { type: string }
+            name: { $ref: '#/components/schemas/LocalizedText' }
+            accepts_external_users: { type: boolean }
+        workflow:
+          type: object
+          required: [initial_status, statuses, transitions]
+          properties:
+            initial_status: { type: string }
+            statuses:
+              type: array
+              items:
+                type: object
+                required: [key, label, is_terminal]
+                properties:
+                  key: { type: string }
+                  label: { $ref: '#/components/schemas/LocalizedText' }
+                  is_terminal: { type: boolean }
+                  sla_minutes: { type: integer, nullable: true }
+            transitions:
+              type: array
+              items: { $ref: '#/components/schemas/TransitionDef' }
+        forms:
+          type: object
+          additionalProperties:
+            type: array
+            items: { $ref: '#/components/schemas/FieldDescriptor' }
+
+    TransitionDef:
+      type: object
+      description: One-way directed edge. Backward moves (reassign, reopen) are just extra rows — the engine has no concept of a loop.
+      required: [key, label, from, to]
+      properties:
+        key: { type: string }
+        label: { $ref: '#/components/schemas/LocalizedText' }
+        from: { type: string }
+        to: { type: string }
+        required_capability: { type: string, nullable: true, description: "Gate 1" }
+        required_form_key: { type: string, nullable: true, description: "validator" }
+        post_actions:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string, enum: [notify, webhook] }
+              target:
+                type: string
+                description: "a RELATIONSHIP, resolved at fire time — created_by | assigned_to | assignee_manager"
+
+    TransitionOption:
+      type: object
+      description: A transition the caller may fire right now (both gates already applied)
+      properties:
+        key: { type: string }
+        label: { $ref: '#/components/schemas/LocalizedText' }
+        requires_assignee: { type: boolean }
+        required_form_key: { type: string, nullable: true }
+
+    FieldDescriptor:
+      type: object
+      required: [id, label, type]
+      properties:
+        id: { type: string }
+        label: { $ref: '#/components/schemas/LocalizedText' }
+        type: { type: string, enum: [text, multiline, number, date, dropdown, radio, checkbox, photo, location] }
+        required: { type: boolean }
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              value: { type: string }
+              label: { $ref: '#/components/schemas/LocalizedText' }
+        min: { type: number }
+        max: { type: number }
+        visible_to_employee: { type: boolean }
+
+    Request:
+      type: object
+      properties:
+        id: { type: integer }
+        service_key: { type: string }
+        status: { type: string }
+        status_label: { $ref: '#/components/schemas/LocalizedText' }
+        priority: { type: string, enum: [low, medium, high] }
+        data: { type: object }
+        location: { $ref: '#/components/schemas/Point' }
+        assigned_to: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    RequestDetail:
+      allOf:
+        - $ref: '#/components/schemas/Request'
+        - type: object
+          properties:
+            timeline:
+              type: array
+              items: { $ref: '#/components/schemas/Event' }
+
+    Event:
+      type: object
+      description: request_event — immutable, never updated or deleted; written in the status-change transaction
+      properties:
+        id: { type: integer }
+        actor_id: { type: integer }
+        transition_key: { type: string, nullable: true }
+        to_status: { type: string }
+        note: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    Candidate:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        level: { $ref: '#/components/schemas/Level' }
+        open_workload: { type: integer, description: "outcome metric, not behaviour tracking" }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: integer }
+        kind: { type: string }
+        message: { $ref: '#/components/schemas/LocalizedText' }
+        is_read: { type: boolean }
+        request_id: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
