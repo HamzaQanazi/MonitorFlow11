@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
+import { useI18n } from '../i18n'
 import './NotificationBell.css'
 
 // Shell notification bell — the web sibling of the mobile apps' shared
@@ -25,12 +26,12 @@ interface ListResponse {
 
 const POLL_MS = 30_000
 
-function timeAgo(iso: string): string {
+function timeAgo(iso: string, t: (k: string) => string): string {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 1) return t('notif_just_now')
+  if (mins < 60) return `${mins}${t('notif_m_ago')}`
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return `${hours}${t('notif_h_ago')}`
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
@@ -40,6 +41,7 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const { t } = useI18n()
 
   const load = useCallback(() => {
     apiFetch<ListResponse>('/notifications?userId=me&pageSize=20')
@@ -98,7 +100,7 @@ export default function NotificationBell() {
       <button
         type="button"
         className="bell-button"
-        aria-label={unread > 0 ? `Notifications (${unread} unread)` : 'Notifications'}
+        aria-label={unread > 0 ? `${t('notif_title')} (${unread} ${t('notif_unread')})` : t('notif_title')}
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
@@ -115,17 +117,17 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="bell-panel" role="dialog" aria-label="Notifications">
+        <div className="bell-panel" role="dialog" aria-label={t('notif_title')}>
           <div className="bell-head">
-            <h4>Notifications</h4>
+            <h4>{t('notif_title')}</h4>
             {unread > 0 && (
               <button type="button" className="bell-readall" onClick={() => void readAll()}>
-                Mark all read
+                {t('notif_mark_all')}
               </button>
             )}
           </div>
           {items.length === 0 ? (
-            <p className="bell-empty">Nothing here — updates about requests will appear.</p>
+            <p className="bell-empty">{t('notif_empty')}</p>
           ) : (
             <ul className="bell-list">
               {items.map((n) => (
@@ -136,7 +138,7 @@ export default function NotificationBell() {
                     onClick={() => void openItem(n)}
                   >
                     <span className="bell-item-msg">{n.message}</span>
-                    <span className="bell-item-time">{timeAgo(n.createdAt)}</span>
+                    <span className="bell-item-time">{timeAgo(n.createdAt, t)}</span>
                   </button>
                 </li>
               ))}

@@ -6,9 +6,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 import 'package:monitorflow_mobile/forms/dynamic_form.dart';
 import 'package:monitorflow_mobile/forms/form_schema.dart';
+import 'package:monitorflow_mobile/i18n.dart';
 import 'package:monitorflow_mobile/theme.dart';
 
 // GET /services/1/forms/request — Equipment Repair (IT)
@@ -40,11 +42,14 @@ List<FormFieldDef> parse(String json) =>
     FormFieldDef.parseSchema(jsonDecode(json) as List<dynamic>);
 
 Widget wrap(Key key, List<FormFieldDef> fields, {LocationPicker? picker}) =>
-    MaterialApp(
-      theme: buildTheme(),
-      home: Scaffold(
-        body: SingleChildScrollView(
-          child: DynamicForm(key: key, fields: fields, locationPicker: picker),
+    ChangeNotifierProvider<I18n>(
+      create: (_) => I18n(),
+      child: MaterialApp(
+        theme: buildTheme(),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: DynamicForm(key: key, fields: fields, locationPicker: picker),
+          ),
         ),
       ),
     );
@@ -209,7 +214,9 @@ void main() {
     testWidgets('prefills every type except photo and round-trips on submit',
         (tester) async {
       final key = GlobalKey<DynamicFormState>();
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(ChangeNotifierProvider<I18n>(
+        create: (_) => I18n(),
+        child: MaterialApp(
         theme: buildTheme(),
         home: Scaffold(
           body: SingleChildScrollView(
@@ -226,7 +233,7 @@ void main() {
             ),
           ),
         ),
-      ));
+      )));
 
       expect(find.text('Room 214'), findsOneWidget);
       expect(find.text('Jams on duplex jobs.'), findsOneWidget);
@@ -296,7 +303,9 @@ void main() {
     testWidgets('prefills from initialValues (unlike photo, coords are reusable)',
         (tester) async {
       final key = GlobalKey<DynamicFormState>();
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(ChangeNotifierProvider<I18n>(
+        create: (_) => I18n(),
+        child: MaterialApp(
         theme: buildTheme(),
         home: Scaffold(
           body: SingleChildScrollView(
@@ -308,7 +317,7 @@ void main() {
             ),
           ),
         ),
-      ));
+      )));
 
       expect(find.text('31.90000, 35.90000'), findsOneWidget);
       expect(key.currentState!.submit()!['visit_location'],

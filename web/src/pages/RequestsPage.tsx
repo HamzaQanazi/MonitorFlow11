@@ -1,27 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
+import { useI18n, type Loc } from '../i18n'
 import RequestDetailPane from './RequestDetailPane'
 import RequestsMapView from './RequestsMapView'
 import './RequestsPage.css'
 
 // Categories are the closed enum from CLAUDE.md Section 9 — the only workflow
-// vocabulary application code may know. Raw status keys appear only as their
-// seeded labels, resolved by the backend.
+// vocabulary application code may know. Status labels are seeded {en,ar} data,
+// resolved by the backend and picked client-side with L().
 const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'] as const
 type Category = (typeof CATEGORIES)[number]
 
-const CATEGORY_LABEL: Record<Category, string> = {
-  new: 'New',
-  triage: 'Triage',
-  in_progress: 'In progress',
-  done: 'Done',
-  closed: 'Closed',
-  terminated: 'Terminated',
-}
-
 const PRIORITIES = ['high', 'medium', 'low'] as const
-const PRIORITY_LABEL: Record<string, string> = { high: 'High', medium: 'Medium', low: 'Low' }
 
 const PAGE_SIZE = 20
 const POLL_MS = 30_000
@@ -29,8 +20,8 @@ const POLL_MS = 30_000
 interface RequestRow {
   id: number
   serviceTypeId: number
-  serviceTypeName: string
-  status: { key: string; label: string; category: Category | null }
+  serviceTypeName: Loc
+  status: { key: string; label: Loc; category: Category | null }
   priority: string
   createdAt: string
   updatedAt: string
@@ -46,7 +37,7 @@ interface ListResponse {
 
 interface Service {
   id: number
-  name: string
+  name: Loc
   departmentId: number
 }
 
@@ -77,6 +68,7 @@ function formatAge(iso: string) {
 }
 
 export default function RequestsPage() {
+  const { t, L } = useI18n()
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const { id: idParam } = useParams()
@@ -197,8 +189,8 @@ export default function RequestsPage() {
 
   useEffect(() => {
     if (search === q) return
-    const t = setTimeout(() => setFilter('q', search), 350)
-    return () => clearTimeout(t)
+    const tm = setTimeout(() => setFilter('q', search), 350)
+    return () => clearTimeout(tm)
   }, [search, q, setFilter])
 
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
@@ -206,15 +198,15 @@ export default function RequestsPage() {
   return (
     <div className="req">
       <header className="req-head">
-        <h1>Requests</h1>
+        <h1>{t('req_title')}</h1>
         {data && (
           <p className="req-meta">
-            {data.total} request{data.total === 1 ? '' : 's'}
-            {hasFilters && ' matching'}
+            {data.total} {data.total === 1 ? t('request_word') : t('requests_word')}
+            {hasFilters && ` ${t('matching')}`}
             {updatedAt && (
               <>
                 {' '}
-                · updated {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                · {t('updated')} {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </>
             )}
           </p>
@@ -222,14 +214,14 @@ export default function RequestsPage() {
       </header>
 
       <div className="req-filters">
-        <div className="chip-row" role="group" aria-label="Filter by workflow category">
+        <div className="chip-row" role="group" aria-label={t('req_filter_category')}>
           <button
             type="button"
             className="chip"
             aria-pressed={category === ''}
             onClick={() => setFilter('category', '')}
           >
-            All
+            {t('all')}
           </button>
           {CATEGORIES.map((c) => (
             <button
@@ -240,7 +232,7 @@ export default function RequestsPage() {
               onClick={() => setFilter('category', category === c ? '' : c)}
             >
               <i className="chip-dot" aria-hidden="true" />
-              {CATEGORY_LABEL[c]}
+              {t(`cat_${c}`)}
             </button>
           ))}
         </div>
@@ -248,69 +240,69 @@ export default function RequestsPage() {
           <input
             type="search"
             className="req-search"
-            placeholder="Search requester or service…"
-            aria-label="Search by requester or service name"
+            placeholder={t('req_search_ph')}
+            aria-label={t('req_search_aria')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <select
             className="req-select"
-            aria-label="Filter by service type"
+            aria-label={t('req_filter_service')}
             value={serviceTypeId}
             onChange={(e) => setFilter('service', e.target.value)}
           >
-            <option value="">All services</option>
+            <option value="">{t('req_all_services')}</option>
             {services.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name}
+                {L(s.name)}
               </option>
             ))}
           </select>
           <select
             className="req-select"
-            aria-label="Filter by priority"
+            aria-label={t('req_filter_priority')}
             value={priority}
             onChange={(e) => setFilter('priority', e.target.value)}
           >
-            <option value="">Any priority</option>
+            <option value="">{t('req_any_priority')}</option>
             {PRIORITIES.map((p) => (
               <option key={p} value={p}>
-                {PRIORITY_LABEL[p]}
+                {t(`pri_${p}`)}
               </option>
             ))}
           </select>
           <select
             className="req-select"
-            aria-label="Filter by assigned employee"
+            aria-label={t('req_filter_employee')}
             value={employeeId}
             onChange={(e) => setFilter('employee', e.target.value)}
           >
-            <option value="">All employees</option>
+            <option value="">{t('req_all_employees')}</option>
             {employees.map((emp) => (
               <option key={emp.id} value={emp.id}>
                 {emp.name}
               </option>
             ))}
           </select>
-          <div className="view-toggle" role="group" aria-label="View as">
+          <div className="view-toggle" role="group" aria-label={t('req_view_as')}>
             <button
               type="button"
               aria-pressed={view === 'list'}
               onClick={() => setFilter('view', '')}
             >
-              List
+              {t('req_list')}
             </button>
             <button
               type="button"
               aria-pressed={view === 'map'}
               onClick={() => setFilter('view', 'map')}
             >
-              Map
+              {t('req_map')}
             </button>
           </div>
           {hasFilters && (
             <button type="button" className="req-clear" onClick={clearFilters}>
-              Clear filters
+              {t('clear_filters')}
             </button>
           )}
         </div>
@@ -329,7 +321,9 @@ export default function RequestsPage() {
         />
       ) : error ? (
         <div className="req-status">
-          <p className="req-status-msg">Couldn’t load requests: {error}</p>
+          <p className="req-status-msg">
+            {t('req_load_err')} {error}
+          </p>
           <button
             type="button"
             className="req-retry"
@@ -338,12 +332,12 @@ export default function RequestsPage() {
               load().catch((err: Error) => setError(err.message))
             }}
           >
-            Try again
+            {t('try_again')}
           </button>
         </div>
       ) : !data ? (
         <div className="req-skeleton" aria-busy="true">
-          <span className="visually-hidden">Loading requests…</span>
+          <span className="visually-hidden">{t('req_loading')}</span>
           {Array.from({ length: 8 }, (_, i) => (
             <div className="skel-row" aria-hidden="true" key={i} />
           ))}
@@ -351,19 +345,16 @@ export default function RequestsPage() {
       ) : data.requests.length === 0 ? (
         hasFilters ? (
           <div className="req-empty">
-            <h2>No matching requests</h2>
-            <p>Nothing on the board matches these filters. Loosen or clear them to see more.</p>
+            <h2>{t('req_no_match_h')}</h2>
+            <p>{t('req_no_match_p')}</p>
             <button type="button" className="req-retry" onClick={clearFilters}>
-              Clear filters
+              {t('clear_filters')}
             </button>
           </div>
         ) : (
           <div className="req-empty">
-            <h2>The board is clear</h2>
-            <p>
-              Requests appear here the moment users submit them, newest first, with their current
-              workflow status. Filters above narrow the board by category, service, or priority.
-            </p>
+            <h2>{t('req_clear_h')}</h2>
+            <p>{t('req_clear_p')}</p>
           </div>
         )
       ) : (
@@ -373,19 +364,19 @@ export default function RequestsPage() {
               <thead>
                 <tr>
                   <th scope="col" className="req-id">
-                    ID
+                    {t('col_id')}
                   </th>
-                  <th scope="col">Service</th>
-                  <th scope="col">Requester</th>
-                  <th scope="col">Status</th>
+                  <th scope="col">{t('col_service')}</th>
+                  <th scope="col">{t('col_requester')}</th>
+                  <th scope="col">{t('col_status')}</th>
                   <th scope="col" className="req-priority">
-                    Priority
+                    {t('col_priority')}
                   </th>
                   <th scope="col" className="req-when">
-                    Created
+                    {t('col_created')}
                   </th>
                   <th scope="col" className="req-age">
-                    Age
+                    {t('col_age')}
                   </th>
                 </tr>
               </thead>
@@ -407,21 +398,21 @@ export default function RequestsPage() {
                         }}
                         aria-current={r.id === selectedId ? 'true' : undefined}
                       >
-                        {r.serviceTypeName}
+                        {L(r.serviceTypeName)}
                       </button>
                     </td>
                     <td>{r.requester.name}</td>
                     <td>
                       <span className={`status-pill${r.status.category ? ` is-${r.status.category}` : ''}`}>
                         <i className="pill-dot" aria-hidden="true" />
-                        {r.status.label}
+                        {L(r.status.label)}
                       </span>
                     </td>
                     <td className={`req-priority is-${r.priority}`}>
-                      {PRIORITY_LABEL[r.priority] ?? r.priority}
+                      {t(`pri_${r.priority}`)}
                     </td>
                     <td className="req-when">{formatWhen(r.createdAt)}</td>
-                    <td className="req-age" title={`Last update ${formatWhen(r.updatedAt)}`}>
+                    <td className="req-age" title={`${t('updated')} ${formatWhen(r.updatedAt)}`}>
                       {formatAge(r.updatedAt)}
                     </td>
                   </tr>
@@ -430,16 +421,16 @@ export default function RequestsPage() {
             </table>
           </div>
           {data.total > PAGE_SIZE && (
-            <nav className="req-pager" aria-label="Pagination">
+            <nav className="req-pager" aria-label={t('pagination')}>
               <span className="req-pager-info">
-                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} of{' '}
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} {t('of')}{' '}
                 {data.total}
               </span>
               <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Previous
+                {t('previous')}
               </button>
               <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)}>
-                Next
+                {t('next')}
               </button>
             </nav>
           )}

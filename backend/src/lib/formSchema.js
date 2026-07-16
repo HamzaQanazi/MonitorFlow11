@@ -1,6 +1,8 @@
 // Seed-time validation for FORM_DEFINITION.field_schema (CLAUDE.md Section 8).
 // The API trusts stored schemas, so everything here must hold before insert.
 
+const { isBilingual } = require('./i18nLabel');
+
 const FIELD_TYPES = ['text', 'multiline', 'number', 'date', 'dropdown', 'radio', 'checkbox', 'photo', 'location'];
 const OPTION_TYPES = ['dropdown', 'radio'];
 const BOUNDED_TYPES = ['number', 'text', 'multiline'];
@@ -30,8 +32,8 @@ function validateFieldSchema(fields) {
       seenIds.add(field.id);
     }
 
-    if (!field.label || typeof field.label !== 'string') {
-      errors.push(`${at}: label must be a non-empty string`);
+    if (!isBilingual(field.label)) {
+      errors.push(`${at}: label must be a {en, ar} object with both languages`);
     }
 
     if (!FIELD_TYPES.includes(field.type)) {
@@ -51,8 +53,8 @@ function validateFieldSchema(fields) {
         errors.push(`${at}: options are required for type "${field.type}"`);
       } else {
         field.options.forEach((opt, j) => {
-          if (!opt || typeof opt.value !== 'string' || typeof opt.label !== 'string') {
-            errors.push(`${at}: options[${j}] must have string "value" and "label"`);
+          if (!opt || typeof opt.value !== 'string' || !isBilingual(opt.label)) {
+            errors.push(`${at}: options[${j}] must have string "value" and {en, ar} "label"`);
           }
         });
       }

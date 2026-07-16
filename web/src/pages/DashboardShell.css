@@ -59,8 +59,7 @@
 .shell-nav a.active::after {
   content: '';
   position: absolute;
-  left: 10px;
-  right: 10px;
+  inset-inline: 10px;
   bottom: 1px;
   height: 2px;
   border-radius: 1px;
@@ -71,7 +70,7 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 
 .shell-user {

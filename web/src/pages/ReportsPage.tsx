@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, getToken } from '../lib/api'
+import { useI18n, type Loc } from '../i18n'
 import './RequestsPage.css'
 import './ReportsPage.css'
 
@@ -10,22 +11,13 @@ import './ReportsPage.css'
 
 const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'] as const
 type Category = (typeof CATEGORIES)[number]
-const CATEGORY_LABEL: Record<Category, string> = {
-  new: 'New',
-  triage: 'Triage',
-  in_progress: 'In progress',
-  done: 'Done',
-  closed: 'Closed',
-  terminated: 'Terminated',
-}
 const PRIORITIES = ['high', 'medium', 'low'] as const
-const PRIORITY_LABEL: Record<string, string> = { high: 'High', medium: 'Medium', low: 'Low' }
 const PAGE_SIZE = 20
 
 interface ReportRow {
   id: number
-  serviceTypeName: string
-  status: { key: string; label: string; category: Category | null }
+  serviceTypeName: Loc
+  status: { key: string; label: Loc; category: Category | null }
   priority: string
   createdAt: string
   requester: { id: number; name: string }
@@ -34,6 +26,8 @@ interface Aggregates {
   total: number
   byCategory: Record<string, number>
   byPriority: Record<string, number>
+  // byService is keyed by the English service name (backend resolves it) — a
+  // documented Phase-3 gap: these keys stay English even in the Arabic view.
   byService: Record<string, number>
 }
 interface ReportResponse {
@@ -45,7 +39,7 @@ interface ReportResponse {
 }
 interface Service {
   id: number
-  name: string
+  name: Loc
 }
 
 interface EmployeeOption {
@@ -59,6 +53,7 @@ function formatDate(iso: string) {
 }
 
 export default function ReportsPage() {
+  const { t, L } = useI18n()
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
   const category = params.get('category') ?? ''
@@ -144,8 +139,8 @@ export default function ReportsPage() {
   }
   useEffect(() => {
     if (search === q) return
-    const t = setTimeout(() => setFilter('q', search), 350)
-    return () => clearTimeout(t)
+    const tm = setTimeout(() => setFilter('q', search), 350)
+    return () => clearTimeout(tm)
   }, [search, q, setFilter])
 
   // CSV export needs the Authorization header, so it can't be a plain link —
@@ -177,11 +172,11 @@ export default function ReportsPage() {
   return (
     <div className="req">
       <header className="req-head">
-        <h1>Reports</h1>
+        <h1>{t('rep_title')}</h1>
         {data && (
           <p className="req-meta">
-            {data.total} request{data.total === 1 ? '' : 's'}
-            {hasFilters && ' matching'}
+            {data.total} {data.total === 1 ? t('request_word') : t('requests_word')}
+            {hasFilters && ` ${t('matching')}`}
           </p>
         )}
         <button
@@ -190,14 +185,14 @@ export default function ReportsPage() {
           onClick={exportCsv}
           disabled={exporting || !data || data.total === 0}
         >
-          {exporting ? 'Exporting…' : 'Export CSV'}
+          {exporting ? t('rep_exporting') : t('rep_export')}
         </button>
       </header>
 
       <div className="req-filters">
-        <div className="chip-row" role="group" aria-label="Filter by workflow category">
+        <div className="chip-row" role="group" aria-label={t('req_filter_category')}>
           <button type="button" className="chip" aria-pressed={category === ''} onClick={() => setFilter('category', '')}>
-            All
+            {t('all')}
           </button>
           {CATEGORIES.map((c) => (
             <button
@@ -208,7 +203,7 @@ export default function ReportsPage() {
               onClick={() => setFilter('category', category === c ? '' : c)}
             >
               <i className="chip-dot" aria-hidden="true" />
-              {CATEGORY_LABEL[c]}
+              {t(`cat_${c}`)}
             </button>
           ))}
         </div>
@@ -216,47 +211,47 @@ export default function ReportsPage() {
           <input
             type="search"
             className="req-search"
-            placeholder="Search requester or service…"
-            aria-label="Search by requester or service name"
+            placeholder={t('req_search_ph')}
+            aria-label={t('req_search_aria')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <select className="req-select" aria-label="Filter by service type" value={serviceTypeId} onChange={(e) => setFilter('service', e.target.value)}>
-            <option value="">All services</option>
+          <select className="req-select" aria-label={t('req_filter_service')} value={serviceTypeId} onChange={(e) => setFilter('service', e.target.value)}>
+            <option value="">{t('req_all_services')}</option>
             {services.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name}
+                {L(s.name)}
               </option>
             ))}
           </select>
-          <select className="req-select" aria-label="Filter by employee" value={employeeId} onChange={(e) => setFilter('employee', e.target.value)}>
-            <option value="">All employees</option>
+          <select className="req-select" aria-label={t('rep_filter_employee')} value={employeeId} onChange={(e) => setFilter('employee', e.target.value)}>
+            <option value="">{t('req_all_employees')}</option>
             {employees.map((emp) => (
               <option key={emp.id} value={emp.id}>
                 {emp.name}
-                {emp.isActive ? '' : ' (inactive)'}
+                {emp.isActive ? '' : ` ${t('rep_inactive_suffix')}`}
               </option>
             ))}
           </select>
-          <select className="req-select" aria-label="Filter by priority" value={priority} onChange={(e) => setFilter('priority', e.target.value)}>
-            <option value="">Any priority</option>
+          <select className="req-select" aria-label={t('req_filter_priority')} value={priority} onChange={(e) => setFilter('priority', e.target.value)}>
+            <option value="">{t('req_any_priority')}</option>
             {PRIORITIES.map((p) => (
               <option key={p} value={p}>
-                {PRIORITY_LABEL[p]}
+                {t(`pri_${p}`)}
               </option>
             ))}
           </select>
           <label className="date-field">
-            <span>From</span>
+            <span>{t('rep_from')}</span>
             <input type="date" className="req-select" value={dateFrom} max={dateTo || undefined} onChange={(e) => setFilter('dateFrom', e.target.value)} />
           </label>
           <label className="date-field">
-            <span>To</span>
+            <span>{t('rep_to')}</span>
             <input type="date" className="req-select" value={dateTo} min={dateFrom || undefined} onChange={(e) => setFilter('dateTo', e.target.value)} />
           </label>
           {hasFilters && (
             <button type="button" className="req-clear" onClick={clearFilters}>
-              Clear filters
+              {t('clear_filters')}
             </button>
           )}
         </div>
@@ -264,7 +259,9 @@ export default function ReportsPage() {
 
       {error ? (
         <div className="req-status">
-          <p className="req-status-msg">Couldn’t load reports: {error}</p>
+          <p className="req-status-msg">
+            {t('rep_load_err')} {error}
+          </p>
           <button
             type="button"
             className="req-retry"
@@ -273,52 +270,52 @@ export default function ReportsPage() {
               load().catch((err: Error) => setError(err.message))
             }}
           >
-            Try again
+            {t('try_again')}
           </button>
         </div>
       ) : !data || !agg ? (
         <div className="req-skeleton" aria-busy="true">
-          <span className="visually-hidden">Loading reports…</span>
+          <span className="visually-hidden">{t('rep_loading')}</span>
           {Array.from({ length: 6 }, (_, i) => (
             <div className="skel-row" aria-hidden="true" key={i} />
           ))}
         </div>
       ) : (
         <>
-          <section className="rep-cards" aria-label="Summary">
+          <section className="rep-cards" aria-label={t('rep_summary')}>
             <div className="rep-card rep-card-total">
               <span className="rep-card-num">{agg.total}</span>
-              <span className="rep-card-label">Total requests</span>
+              <span className="rep-card-label">{t('rep_total_requests')}</span>
             </div>
             <div className="rep-card">
-              <h3>By category</h3>
+              <h3>{t('rep_by_category')}</h3>
               <ul className="rep-breakdown">
                 {CATEGORIES.filter((c) => agg.byCategory[c]).map((c) => (
                   <li key={c}>
                     <span className={`status-pill is-${c}`}>
                       <i className="pill-dot" aria-hidden="true" />
-                      {CATEGORY_LABEL[c]}
+                      {t(`cat_${c}`)}
                     </span>
                     <b>{agg.byCategory[c]}</b>
                   </li>
                 ))}
-                {Object.keys(agg.byCategory).length === 0 && <li className="rep-none">No data</li>}
+                {Object.keys(agg.byCategory).length === 0 && <li className="rep-none">{t('no_data')}</li>}
               </ul>
             </div>
             <div className="rep-card">
-              <h3>By priority</h3>
+              <h3>{t('rep_by_priority')}</h3>
               <ul className="rep-breakdown">
                 {PRIORITIES.filter((p) => agg.byPriority[p]).map((p) => (
                   <li key={p}>
-                    <span className={`req-priority is-${p}`}>{PRIORITY_LABEL[p]}</span>
+                    <span className={`req-priority is-${p}`}>{t(`pri_${p}`)}</span>
                     <b>{agg.byPriority[p]}</b>
                   </li>
                 ))}
-                {Object.keys(agg.byPriority).length === 0 && <li className="rep-none">No data</li>}
+                {Object.keys(agg.byPriority).length === 0 && <li className="rep-none">{t('no_data')}</li>}
               </ul>
             </div>
             <div className="rep-card">
-              <h3>By service</h3>
+              <h3>{t('rep_by_service')}</h3>
               <ul className="rep-breakdown">
                 {Object.entries(agg.byService).map(([name, n]) => (
                   <li key={name}>
@@ -326,18 +323,18 @@ export default function ReportsPage() {
                     <b>{n}</b>
                   </li>
                 ))}
-                {Object.keys(agg.byService).length === 0 && <li className="rep-none">No data</li>}
+                {Object.keys(agg.byService).length === 0 && <li className="rep-none">{t('no_data')}</li>}
               </ul>
             </div>
           </section>
 
           {data.requests.length === 0 ? (
             <div className="req-empty">
-              <h2>No matching requests</h2>
-              <p>Nothing matches these filters. Loosen or clear them to see more.</p>
+              <h2>{t('rep_no_match_h')}</h2>
+              <p>{t('rep_no_match_p')}</p>
               {hasFilters && (
                 <button type="button" className="req-retry" onClick={clearFilters}>
-                  Clear filters
+                  {t('clear_filters')}
                 </button>
               )}
             </div>
@@ -348,16 +345,16 @@ export default function ReportsPage() {
                   <thead>
                     <tr>
                       <th scope="col" className="req-id">
-                        ID
+                        {t('col_id')}
                       </th>
-                      <th scope="col">Service</th>
-                      <th scope="col">Requester</th>
-                      <th scope="col">Status</th>
+                      <th scope="col">{t('col_service')}</th>
+                      <th scope="col">{t('col_requester')}</th>
+                      <th scope="col">{t('col_status')}</th>
                       <th scope="col" className="req-priority">
-                        Priority
+                        {t('col_priority')}
                       </th>
                       <th scope="col" className="req-when">
-                        Created
+                        {t('col_created')}
                       </th>
                     </tr>
                   </thead>
@@ -365,15 +362,15 @@ export default function ReportsPage() {
                     {data.requests.map((r) => (
                       <tr key={r.id}>
                         <td className="req-id">#{r.id}</td>
-                        <td className="req-service">{r.serviceTypeName}</td>
+                        <td className="req-service">{L(r.serviceTypeName)}</td>
                         <td>{r.requester.name}</td>
                         <td>
                           <span className={`status-pill${r.status.category ? ` is-${r.status.category}` : ''}`}>
                             <i className="pill-dot" aria-hidden="true" />
-                            {r.status.label}
+                            {L(r.status.label)}
                           </span>
                         </td>
-                        <td className={`req-priority is-${r.priority}`}>{PRIORITY_LABEL[r.priority] ?? r.priority}</td>
+                        <td className={`req-priority is-${r.priority}`}>{t(`pri_${r.priority}`)}</td>
                         <td className="req-when">{formatDate(r.createdAt)}</td>
                       </tr>
                     ))}
@@ -381,15 +378,15 @@ export default function ReportsPage() {
                 </table>
               </div>
               {data.total > PAGE_SIZE && (
-                <nav className="req-pager" aria-label="Pagination">
+                <nav className="req-pager" aria-label={t('pagination')}>
                   <span className="req-pager-info">
-                    {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} of {data.total}
+                    {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} {t('of')} {data.total}
                   </span>
                   <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                    Previous
+                    {t('previous')}
                   </button>
                   <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)}>
-                    Next
+                    {t('next')}
                   </button>
                 </nav>
               )}

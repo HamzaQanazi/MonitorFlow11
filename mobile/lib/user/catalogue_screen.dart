@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
+import '../i18n.dart';
 import '../models/request.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
@@ -36,8 +37,9 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     return Scaffold(
-      appBar: AppBar(title: const Text('Choose a service')),
+      appBar: AppBar(title: Text(i18n.tr('cat_title'))),
       body: FutureBuilder<List<ServiceType>>(
         future: _future,
         builder: (context, snap) {
@@ -47,17 +49,17 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
           if (snap.hasError) {
             return ErrorState(
               message: snap.error is NetworkException
-                  ? 'Could not reach the server — check your connection.'
-                  : 'Could not load services.',
+                  ? i18n.tr('net_check')
+                  : i18n.tr('cat_load_fail'),
               onRetry: () => setState(() => _future = _load()),
             );
           }
           final services = snap.data!;
           if (services.isEmpty) {
-            return const EmptyState(
+            return EmptyState(
               icon: Icons.category_outlined,
-              title: 'No services available',
-              subtitle: 'Check back later.',
+              title: i18n.tr('cat_none_title'),
+              subtitle: i18n.tr('cat_none_sub'),
             );
           }
           return ListView.separated(
@@ -87,11 +89,11 @@ class _CatalogueScreenState extends State<CatalogueScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(s.name,
+                              Text(i18n.l(s.name),
                                   style: const TextStyle(
                                       fontSize: 16, fontWeight: FontWeight.w600)),
                               const SizedBox(height: 4),
-                              Text(s.departmentName,
+                              Text(i18n.l(s.departmentName),
                                   style: const TextStyle(color: MfColors.muted, fontSize: 13)),
                             ],
                           ),

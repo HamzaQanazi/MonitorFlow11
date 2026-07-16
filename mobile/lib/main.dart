@@ -9,13 +9,21 @@ import 'api/api_client.dart';
 import 'auth/auth_state.dart';
 import 'auth/login_screen.dart';
 import 'employee/employee_home.dart';
+import 'i18n.dart';
 import 'theme.dart';
 import 'user/user_home.dart';
 
 void main() {
   final auth = AuthState(ApiClient())..init();
+  final i18n = I18n()..init();
   runApp(
-    ChangeNotifierProvider.value(value: auth, child: const MonitorFlowApp()),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: auth),
+        ChangeNotifierProvider.value(value: i18n),
+      ],
+      child: const MonitorFlowApp(),
+    ),
   );
 }
 
@@ -24,10 +32,14 @@ class MonitorFlowApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The locale drives text direction for the whole app. Wrapping the
+    // navigator (via builder) flips pushed routes, dialogs and snackbars too.
+    final dir = context.watch<I18n>().dir;
     return MaterialApp(
       title: 'MonitorFlow',
       theme: buildTheme(),
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => Directionality(textDirection: dir, child: child!),
       home: const _AuthGate(),
     );
   }
@@ -57,6 +69,7 @@ class _MonitorNotSupported extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     return Scaffold(
       body: Center(
         child: Padding(
@@ -66,21 +79,21 @@ class _MonitorNotSupported extends StatelessWidget {
             children: [
               const Icon(Icons.desktop_windows_outlined, size: 48, color: MfColors.muted),
               const SizedBox(height: 16),
-              const Text(
-                'This account uses the web dashboard',
+              Text(
+                i18n.tr('gate_web_title'),
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'This app is for users and field employees only.',
+              Text(
+                i18n.tr('gate_web_body'),
                 textAlign: TextAlign.center,
-                style: TextStyle(color: MfColors.muted),
+                style: const TextStyle(color: MfColors.muted),
               ),
               const SizedBox(height: 24),
               TextButton(
                 onPressed: () => context.read<AuthState>().logout(),
-                child: const Text('Sign out'),
+                child: Text(i18n.tr('sign_out')),
               ),
             ],
           ),

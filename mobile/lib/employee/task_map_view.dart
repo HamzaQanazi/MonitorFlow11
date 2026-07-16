@@ -4,7 +4,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:provider/provider.dart';
 
+import '../i18n.dart';
 import '../models/task.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
@@ -17,6 +19,7 @@ class TaskMapView extends StatelessWidget {
   const TaskMapView({super.key, required this.tasks, required this.onOpen});
 
   void _sheet(BuildContext context, TaskSummary t) {
+    final i18n = context.read<I18n>();
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetCtx) => SafeArea(
@@ -30,7 +33,7 @@ class TaskMapView extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      t.serviceTypeName,
+                      i18n.l(t.serviceTypeName),
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -39,7 +42,8 @@ class TaskMapView extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Task #${t.id} · Request #${t.requestId} · ${t.priority} priority',
+                '${i18n.tr('eh_task')} #${t.id} · ${i18n.tr('eh_request')} #${t.requestId} · '
+                '${i18n.priorityPhrase(t.priority)}',
                 style: const TextStyle(color: MfColors.muted, fontSize: 13),
               ),
               const SizedBox(height: 16),
@@ -50,7 +54,7 @@ class TaskMapView extends StatelessWidget {
                     Navigator.pop(sheetCtx);
                     onOpen(t);
                   },
-                  child: const Text('Open task'),
+                  child: Text(i18n.tr('tm_open')),
                 ),
               ),
             ],
@@ -62,14 +66,15 @@ class TaskMapView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     final located = tasks.where((t) => t.location != null).toList();
     final missing = tasks.length - located.length;
 
     if (located.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.map_outlined,
-        title: 'Nothing to map',
-        subtitle: 'Active tasks with a location will appear here.',
+        title: i18n.tr('tm_nothing_title'),
+        subtitle: i18n.tr('tm_nothing_sub'),
       );
     }
 
@@ -120,8 +125,8 @@ class TaskMapView extends StatelessWidget {
             color: MfColors.surface,
             child: Text(
               missing == 1
-                  ? '1 task has no location'
-                  : '$missing tasks have no location',
+                  ? i18n.tr('tm_missing_one')
+                  : '$missing ${i18n.tr('tm_missing_pre')}',
               textAlign: TextAlign.center,
               style: const TextStyle(color: MfColors.muted, fontSize: 12),
             ),

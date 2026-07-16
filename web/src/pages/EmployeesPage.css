@@ -2,7 +2,7 @@
    vocabulary (chips, table, dialog, buttons). */
 
 .emp-add {
-  margin-left: auto;
+  margin-inline-start: auto;
   height: 36px;
 }
 
@@ -43,7 +43,7 @@
 }
 
 .emp-actions-col {
-  text-align: right;
+  text-align: end;
 }
 
 /* Dialog form fields (create/edit) */

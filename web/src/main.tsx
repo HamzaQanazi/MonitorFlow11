@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import './index.css'
 import { AuthProvider, useAuth } from './auth/AuthContext'
+import { I18nProvider } from './i18n'
 import RequireAuth from './components/RequireAuth'
 import LoginPage from './pages/LoginPage'
 import DashboardShell from './pages/DashboardShell'
@@ -31,6 +32,7 @@ function Guard({ need, children }: { need: 'view_all' | 'manage_employees' | 'ad
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
+      <I18nProvider>
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -52,6 +54,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
+      </I18nProvider>
     </BrowserRouter>
   </StrictMode>,
 )

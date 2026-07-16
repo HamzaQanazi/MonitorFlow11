@@ -1,16 +1,19 @@
+import '../i18n.dart';
+
 /// Request payloads from /requests endpoints. Status is always the
 /// {key, label, category} triple — code reasons via category only
-/// (CLAUDE.md Section 9); the key is never referenced.
+/// (CLAUDE.md Section 9); the key is never referenced. `label` is bilingual
+/// ({en,ar}); render it through i18n.l().
 class StatusInfo {
   final String key;
-  final String label;
+  final Loc label;
   final String category;
 
   const StatusInfo({required this.key, required this.label, required this.category});
 
   factory StatusInfo.fromJson(Map<String, dynamic> json) => StatusInfo(
         key: json['key'] as String,
-        label: json['label'] as String,
+        label: Loc.fromJson(json['label']),
         category: (json['category'] as String?) ?? 'closed',
       );
 }
@@ -18,7 +21,7 @@ class StatusInfo {
 class RequestSummary {
   final int id;
   final int serviceTypeId;
-  final String serviceTypeName;
+  final Loc serviceTypeName;
   final StatusInfo status;
   final String priority;
   final DateTime createdAt;
@@ -37,7 +40,7 @@ class RequestSummary {
   factory RequestSummary.fromJson(Map<String, dynamic> json) => RequestSummary(
         id: json['id'] as int,
         serviceTypeId: json['serviceTypeId'] as int,
-        serviceTypeName: json['serviceTypeName'] as String,
+        serviceTypeName: Loc.fromJson(json['serviceTypeName']),
         status: StatusInfo.fromJson(json['status'] as Map<String, dynamic>),
         priority: json['priority'] as String,
         createdAt: DateTime.parse(json['createdAt'] as String),
@@ -117,14 +120,14 @@ class RequestDetail {
 
 class ServiceType {
   final int id;
-  final String name;
-  final String departmentName;
+  final Loc name;
+  final Loc departmentName;
 
   const ServiceType({required this.id, required this.name, required this.departmentName});
 
   factory ServiceType.fromJson(Map<String, dynamic> json) => ServiceType(
         id: json['id'] as int,
-        name: json['name'] as String,
-        departmentName: json['departmentName'] as String,
+        name: Loc.fromJson(json['name']),
+        departmentName: Loc.fromJson(json['departmentName']),
       );
 }

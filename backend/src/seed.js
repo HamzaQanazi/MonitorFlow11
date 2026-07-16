@@ -32,6 +32,19 @@ const LEVEL_GRANTS = {
   'Field Technician': [],
 };
 
+// Phase 3: department and level display names are bilingual {en, ar} in the DB.
+// The keys above/on services stay English (stable lookup keys); these maps hold
+// the stored name. `L` mirrors company-config.js.
+const L = (en, ar) => ({ en, ar });
+const DEPARTMENT_LABELS = {
+  IT: L('IT', 'تقنية المعلومات'),
+  Facilities: L('Facilities', 'المرافق'),
+};
+const LEVEL_LABELS = {
+  'Operations Lead': L('Operations Lead', 'قائد العمليات'),
+  'Field Technician': L('Field Technician', 'فني ميداني'),
+};
+
 // Always seeded — a real handover needs the admin to create staff. Change the
 // login/password before deploying to a client.
 const adminAccount = {
@@ -211,7 +224,7 @@ async function seed() {
     for (const [name, caps] of Object.entries(LEVEL_GRANTS)) {
       const { rows } = await client.query(
         'INSERT INTO employee_level (name) VALUES ($1) RETURNING id',
-        [name]
+        [JSON.stringify(LEVEL_LABELS[name])]
       );
       levelIds[name] = rows[0].id;
       for (const cap of caps) {
@@ -227,7 +240,7 @@ async function seed() {
       if (!(svc.department in departmentIds)) {
         const { rows } = await client.query(
           'INSERT INTO department (name) VALUES ($1) RETURNING id',
-          [svc.department]
+          [JSON.stringify(DEPARTMENT_LABELS[svc.department])]
         );
         departmentIds[svc.department] = rows[0].id;
       }
@@ -238,7 +251,7 @@ async function seed() {
         `INSERT INTO service_type (name, department_id, default_priority, enabled,
            escalate_unassigned_hours, escalate_stale_hours, escalate_confirm_hours)
          VALUES ($1, $2, $3, TRUE, $4, $5, $6) RETURNING id`,
-        [svc.name, departmentIds[svc.department], svc.default_priority,
+        [JSON.stringify(svc.name), departmentIds[svc.department], svc.default_priority,
          svc.escalation.unassigned, svc.escalation.stale, svc.escalation.confirm]
       );
       const serviceTypeId = rows[0].id;
@@ -255,7 +268,7 @@ async function seed() {
          VALUES ($1, $2, $3)`,
         [serviceTypeId, JSON.stringify(svc.workflow.statuses), JSON.stringify(svc.workflow.transitions)]
       );
-      console.log(`seeded service "${svc.name}" (id ${serviceTypeId})`);
+      console.log(`seeded service "${svc.name.en}" (id ${serviceTypeId})`);
     }
 
     const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);

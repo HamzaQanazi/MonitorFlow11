@@ -1,6 +1,8 @@
 // Seed-time validation for WORKFLOW_DEFINITION (CLAUDE.md Sections 8 + 9.1).
 // Enforced before insert; the workflow engine then trusts stored definitions.
 
+const { isBilingual } = require('./i18nLabel');
+
 const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'];
 const ACTIONS = ['accept', 'reject', 'complete', 'confirm', 'dispute'];
 const ROLES = ['user', 'employee', 'monitor'];
@@ -34,8 +36,8 @@ function validateWorkflowDefinition({ statuses, transitions }) {
     } else {
       keys.add(status.key);
     }
-    if (!status.label || typeof status.label !== 'string') {
-      errors.push(`${at}: label must be a non-empty string`);
+    if (!isBilingual(status.label)) {
+      errors.push(`${at}: label must be a {en, ar} object with both languages`);
     }
     if (!CATEGORIES.includes(status.category)) {
       errors.push(`${at}: invalid category "${status.category}"`);

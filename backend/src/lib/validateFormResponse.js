@@ -3,6 +3,8 @@
 // function drives every seeded service type. Messages are generated from the
 // field label — custom validation messages are deliberately out of scope.
 
+const { pick } = require('./i18nLabel');
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -37,7 +39,7 @@ async function validateFormResponse(fields, response, { db, userId }) {
     const value = response[field.id];
 
     if (isMissing(value)) {
-      if (field.required) errors[field.id] = `${field.label} is required`;
+      if (field.required) errors[field.id] = `${pick(field.label)} is required`;
       continue;
     }
 
@@ -45,40 +47,40 @@ async function validateFormResponse(fields, response, { db, userId }) {
       case 'text':
       case 'multiline':
         if (typeof value !== 'string') {
-          errors[field.id] = `${field.label} must be text`;
+          errors[field.id] = `${pick(field.label)} must be text`;
         } else if (typeof field.min === 'number' && value.length < field.min) {
-          errors[field.id] = `${field.label} must be at least ${field.min} characters`;
+          errors[field.id] = `${pick(field.label)} must be at least ${field.min} characters`;
         } else if (typeof field.max === 'number' && value.length > field.max) {
-          errors[field.id] = `${field.label} must be at most ${field.max} characters`;
+          errors[field.id] = `${pick(field.label)} must be at most ${field.max} characters`;
         }
         break;
 
       case 'number':
         if (typeof value !== 'number' || !Number.isFinite(value)) {
-          errors[field.id] = `${field.label} must be a number`;
+          errors[field.id] = `${pick(field.label)} must be a number`;
         } else if (typeof field.min === 'number' && value < field.min) {
-          errors[field.id] = `${field.label} must be at least ${field.min}`;
+          errors[field.id] = `${pick(field.label)} must be at least ${field.min}`;
         } else if (typeof field.max === 'number' && value > field.max) {
-          errors[field.id] = `${field.label} must be at most ${field.max}`;
+          errors[field.id] = `${pick(field.label)} must be at most ${field.max}`;
         }
         break;
 
       case 'date':
         if (typeof value !== 'string' || !isValidDate(value)) {
-          errors[field.id] = `${field.label} must be a valid date (YYYY-MM-DD)`;
+          errors[field.id] = `${pick(field.label)} must be a valid date (YYYY-MM-DD)`;
         }
         break;
 
       case 'dropdown':
       case 'radio':
         if (!field.options.some((opt) => opt.value === value)) {
-          errors[field.id] = `${field.label} must be one of the listed options`;
+          errors[field.id] = `${pick(field.label)} must be one of the listed options`;
         }
         break;
 
       case 'checkbox':
         if (typeof value !== 'boolean') {
-          errors[field.id] = `${field.label} must be true or false`;
+          errors[field.id] = `${pick(field.label)} must be true or false`;
         }
         break;
 
@@ -90,14 +92,14 @@ async function validateFormResponse(fields, response, { db, userId }) {
         const lngOk = keysOk && typeof value.lng === 'number' && Number.isFinite(value.lng)
           && value.lng >= -180 && value.lng <= 180;
         if (!latOk || !lngOk) {
-          errors[field.id] = `${field.label} must be a map location`;
+          errors[field.id] = `${pick(field.label)} must be a map location`;
         }
         break;
       }
 
       case 'photo':
         if (typeof value !== 'string' || !UUID_RE.test(value)) {
-          errors[field.id] = `${field.label} must be an uploaded attachment id`;
+          errors[field.id] = `${pick(field.label)} must be an uploaded attachment id`;
         } else {
           photoChecks.push(field);
         }
@@ -105,7 +107,7 @@ async function validateFormResponse(fields, response, { db, userId }) {
 
       default:
         // Seed-time validation makes this unreachable for stored schemas.
-        errors[field.id] = `${field.label} has an unsupported field type`;
+        errors[field.id] = `${pick(field.label)} has an unsupported field type`;
     }
   }
 
@@ -115,7 +117,7 @@ async function validateFormResponse(fields, response, { db, userId }) {
       [response[field.id]]
     );
     if (!rows.length || rows[0].uploaded_by !== userId) {
-      errors[field.id] = `${field.label} must be an uploaded attachment id`;
+      errors[field.id] = `${pick(field.label)} must be an uploaded attachment id`;
     }
   }
 

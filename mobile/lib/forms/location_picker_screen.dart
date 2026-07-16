@@ -4,7 +4,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:provider/provider.dart';
 
+import '../i18n.dart';
 import '../theme.dart';
 
 const _nablus = LatLng(32.22, 35.26);
@@ -33,14 +35,15 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pick a location'),
+        title: Text(i18n.tr('lp_title')),
         actions: [
           IconButton(
             key: const ValueKey('location-picker-confirm'),
             icon: const Icon(Icons.check),
-            tooltip: 'Use this location',
+            tooltip: i18n.tr('lp_use'),
             onPressed: _picked == null
                 ? null
                 : () => Navigator.pop(context, <String, dynamic>{
@@ -86,7 +89,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
             color: MfColors.surface,
             child: Text(
               _picked == null
-                  ? 'Tap the map to drop a pin'
+                  ? i18n.tr('lp_tap')
                   : '${_picked!.latitude.toStringAsFixed(5)}, '
                       '${_picked!.longitude.toStringAsFixed(5)}',
               textAlign: TextAlign.center,

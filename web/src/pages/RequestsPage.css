@@ -156,7 +156,7 @@
 }
 
 .req-table th {
-  text-align: left;
+  text-align: start;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-strong);
   font-size: 13px;
@@ -186,7 +186,7 @@
 
 .req-when,
 .req-age {
-  text-align: right;
+  text-align: end;
   color: var(--muted);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -244,7 +244,7 @@
   font-size: 13px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  margin-right: auto;
+  margin-inline-end: auto;
 }
 
 .req-pager button {
@@ -404,7 +404,7 @@
   font-weight: 600;
   color: inherit;
   cursor: pointer;
-  text-align: left;
+  text-align: start;
 }
 
 .req-detail {
@@ -564,7 +564,7 @@
 .tl-item:not(:last-child)::before {
   content: '';
   position: absolute;
-  left: 4px;
+  inset-inline-start: 4px;
   top: 14px;
   bottom: 2px;
   width: 1px;
@@ -839,7 +839,7 @@
 }
 
 .view-toggle button + button {
-  border-left: 1px solid var(--border);
+  border-inline-start: 1px solid var(--border);
 }
 
 .view-toggle button[aria-pressed='true'] {

@@ -8,17 +8,23 @@ import 'package:provider/provider.dart';
 import 'package:monitorflow_mobile/api/api_client.dart';
 import 'package:monitorflow_mobile/auth/auth_state.dart';
 import 'package:monitorflow_mobile/auth/login_screen.dart';
+import 'package:monitorflow_mobile/i18n.dart';
 import 'package:monitorflow_mobile/theme.dart';
 
-Widget wrap() => ChangeNotifierProvider(
-      create: (_) => AuthState(ApiClient(baseUrl: 'http://localhost:1')),
+Widget wrap() => MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+            create: (_) => AuthState(ApiClient(baseUrl: 'http://localhost:1'))),
+        ChangeNotifierProvider(create: (_) => I18n()),
+      ],
       child: MaterialApp(theme: buildTheme(), home: const LoginScreen()),
     );
 
 void main() {
-  testWidgets('sign-in mode shows email + password only', (tester) async {
+  testWidgets('sign-in mode shows identifier + password only', (tester) async {
     await tester.pumpWidget(wrap());
-    expect(find.text('Email'), findsOneWidget);
+    // Two-gate login: sign-in accepts an email OR an EMP-xxxx employee id.
+    expect(find.text('Email or employee ID'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
     expect(find.text('Full name'), findsNothing);
     expect(find.text('Sign in'), findsOneWidget);
@@ -28,14 +34,19 @@ void main() {
     await tester.pumpWidget(wrap());
     await tester.tap(find.text('Sign in'));
     await tester.pump();
-    expect(find.text('Email is required'), findsOneWidget);
+    expect(find.text('Enter your email or employee ID'), findsOneWidget);
     expect(find.text('Password is required'), findsOneWidget);
   });
 
-  testWidgets('invalid email format is rejected client-side', (tester) async {
+  testWidgets('invalid email format is rejected in register mode', (tester) async {
+    // Sign-in no longer validates email shape (it may be an employee id);
+    // registration still creates users and requires a valid email.
     await tester.pumpWidget(wrap());
-    await tester.enterText(find.byType(TextFormField).first, 'not-an-email');
-    await tester.tap(find.text('Sign in'));
+    await tester.tap(find.text('New here? Create an account'));
+    await tester.pump();
+    await tester.enterText(
+        find.widgetWithText(TextFormField, 'Email'), 'not-an-email');
+    await tester.tap(find.text('Create account'));
     await tester.pump();
     expect(find.text('Enter a valid email'), findsOneWidget);
   });

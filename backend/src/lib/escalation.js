@@ -19,7 +19,7 @@ async function runEscalationSweep() {
   const unassigned = await pool.query(
     `INSERT INTO notification (user_id, request_id, type, message)
      SELECT m.id, r.id, 'escalation',
-            'Request #' || r.id || ' (' || st.name || ') has been waiting unassigned for over ' ||
+            'Request #' || r.id || ' (' || (st.name->>'en') || ') has been waiting unassigned for over ' ||
             st.escalate_unassigned_hours || ' hours.'
      FROM request r
      JOIN service_type st ON st.id = r.service_type_id
@@ -37,7 +37,7 @@ async function runEscalationSweep() {
   const stale = await pool.query(
     `INSERT INTO notification (user_id, request_id, type, message)
      SELECT m.id, r.id, 'escalation',
-            'Request #' || r.id || ' (' || st.name || ') has had no progress for over ' ||
+            'Request #' || r.id || ' (' || (st.name->>'en') || ') has had no progress for over ' ||
             st.escalate_stale_hours || ' hours.'
      FROM request r
      JOIN service_type st ON st.id = r.service_type_id
@@ -54,7 +54,7 @@ async function runEscalationSweep() {
   const confirm = await pool.query(
     `INSERT INTO notification (user_id, request_id, type, message)
      SELECT r.user_id, r.id, 'escalation',
-            'Your request #' || r.id || ' (' || st.name || ') was completed over ' ||
+            'Your request #' || r.id || ' (' || (st.name->>'en') || ') was completed over ' ||
             st.escalate_confirm_hours || ' hours ago — please confirm or dispute the result.'
      FROM request r
      JOIN service_type st ON st.id = r.service_type_id

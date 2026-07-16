@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
+import '../i18n.dart';
 import '../models/request.dart';
 import '../theme.dart';
 import '../widgets/category_chips.dart';
@@ -61,17 +62,18 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My requests')),
+      appBar: AppBar(title: Text(context.watch<I18n>().tr('my_title'))),
       body: _body(),
     );
   }
 
   Widget _body() {
+    final i18n = context.watch<I18n>();
     if (_error != null && _requests == null) {
       return ErrorState(
         message: _error is NetworkException
-            ? 'Could not reach the server — check your connection.'
-            : 'Could not load your requests.',
+            ? i18n.tr('net_check')
+            : i18n.tr('home_load_fail'),
         onRetry: _load,
       );
     }
@@ -79,11 +81,11 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
     if (_requests!.isEmpty) {
       return EmptyState(
         icon: Icons.inbox_outlined,
-        title: 'No requests yet',
-        subtitle: 'Your submitted requests and their progress will appear here.',
+        title: i18n.tr('my_none_title'),
+        subtitle: i18n.tr('my_none_sub'),
         action: OutlinedButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Browse services'),
+          child: Text(i18n.tr('my_browse')),
         ),
       );
     }
@@ -114,10 +116,10 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: EmptyState(
                 icon: Icons.filter_alt_off_outlined,
-                title: 'No requests in this category',
+                title: i18n.tr('my_none_cat'),
                 action: OutlinedButton(
                   onPressed: () => setState(() => _categoryFilter = null),
-                  child: const Text('Clear filter'),
+                  child: Text(i18n.tr('clear_filter')),
                 ),
               ),
             ),
@@ -142,6 +144,7 @@ class _RequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     return Material(
       color: MfColors.bg,
       shape: RoundedRectangleBorder(
@@ -167,7 +170,7 @@ class _RequestCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      request.serviceTypeName,
+                      i18n.l(request.serviceTypeName),
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -176,7 +179,7 @@ class _RequestCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                '#${request.id} · ${relativeTime(request.createdAt)}',
+                '#${request.id} · ${i18n.relativeTime(request.createdAt)}',
                 style: const TextStyle(color: MfColors.muted, fontSize: 13),
               ),
             ],

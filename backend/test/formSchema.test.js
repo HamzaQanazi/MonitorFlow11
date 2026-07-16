@@ -4,11 +4,20 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { validateFieldSchema } = require('../src/lib/formSchema');
 
+const L = (en, ar) => ({ en, ar });
+
 test('location field is accepted', () => {
   const errors = validateFieldSchema([
-    { id: 'visit_location', label: 'Visit location', type: 'location', required: true },
+    { id: 'visit_location', label: L('Visit location', 'موقع الزيارة'), type: 'location', required: true },
   ]);
   assert.deepEqual(errors, []);
+});
+
+test('English-only label is rejected (Phase 3 bilingual rule)', () => {
+  const errors = validateFieldSchema([
+    { id: 'x', label: 'English only', type: 'text' },
+  ]);
+  assert.ok(errors.some((e) => /label must be a \{en, ar\}/.test(e)));
 });
 
 test('location: options forbidden', () => {
@@ -36,8 +45,8 @@ test('two location fields in one form rejected', () => {
 
 test('one location field alongside other types stays valid', () => {
   const errors = validateFieldSchema([
-    { id: 'desc', label: 'Description', type: 'multiline', required: true, max: 1000 },
-    { id: 'spot', label: 'Spot', type: 'location', required: false },
+    { id: 'desc', label: L('Description', 'الوصف'), type: 'multiline', required: true, max: 1000 },
+    { id: 'spot', label: L('Spot', 'المكان'), type: 'location', required: false },
   ]);
   assert.deepEqual(errors, []);
 });

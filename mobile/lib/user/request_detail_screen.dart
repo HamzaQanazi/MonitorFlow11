@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../forms/form_schema.dart';
+import '../i18n.dart';
 import '../models/request.dart';
 import '../models/workflow.dart';
 import '../theme.dart';
@@ -94,20 +95,20 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
   }
 
   Future<void> _confirmResolution() async {
+    final i18n = context.read<I18n>();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirm resolution?'),
-        content: const Text(
-            'You confirm the work is done to your satisfaction. This closes the request.'),
+        title: Text(i18n.tr('rd_confirm_q')),
+        content: Text(i18n.tr('rd_confirm_body')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Back'),
+            child: Text(i18n.tr('back')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Confirm'),
+            child: Text(i18n.tr('confirm')),
           ),
         ],
       ),
@@ -117,11 +118,11 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
   }
 
   Future<void> _dispute() async {
+    final i18n = context.read<I18n>();
     final note = await _promptNote(
-      title: 'Report unresolved?',
-      message:
-          'The work goes back to the assigned employee. Explain what is still wrong.',
-      confirmLabel: 'Report unresolved',
+      title: i18n.tr('rd_dispute_q'),
+      message: i18n.tr('rd_dispute_body'),
+      confirmLabel: i18n.tr('rd_dispute_btn'),
     );
     if (note == null) return;
     await _act('/requests/${widget.requestId}/resolution',
@@ -129,10 +130,11 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
   }
 
   Future<void> _cancel() async {
+    final i18n = context.read<I18n>();
     final note = await _promptNote(
-      title: 'Cancel this request?',
-      message: 'This cannot be undone. A short reason is required.',
-      confirmLabel: 'Cancel request',
+      title: i18n.tr('rd_cancel_q'),
+      message: i18n.tr('rd_cancel_body'),
+      confirmLabel: i18n.tr('rd_cancel_btn'),
       destructive: true,
     );
     if (note == null) return;
@@ -145,6 +147,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
     required String confirmLabel,
     bool destructive = false,
   }) {
+    final i18n = context.read<I18n>();
     final controller = TextEditingController();
     return showDialog<String>(
       context: context,
@@ -160,7 +163,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
                 controller: controller,
                 maxLines: 3,
                 autofocus: true,
-                decoration: const InputDecoration(labelText: 'Note (required)'),
+                decoration: InputDecoration(labelText: i18n.tr('note_required')),
                 onChanged: (_) => setDialogState(() {}),
               ),
             ],
@@ -168,7 +171,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(null),
-              child: const Text('Back'),
+              child: Text(i18n.tr('back')),
             ),
             ElevatedButton(
               style: destructive
@@ -204,7 +207,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
     if (!mounted) return;
     if (service == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This service is not available right now.')),
+        SnackBar(content: Text(context.read<I18n>().tr('rd_service_unavailable'))),
       );
       return;
     }
@@ -219,6 +222,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
   }
 
   Future<void> _act(String path, Map<String, dynamic> body) async {
+    final i18n = context.read<I18n>();
     setState(() => _acting = true);
     final api = context.read<AuthState>().api;
     try {
@@ -226,8 +230,9 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
       if (!mounted) return;
       await _load(silent: true);
       if (!mounted) return;
+      final label = _detail == null ? '' : i18n.l(_detail!.summary.status.label);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Request is now "${_detail?.summary.status.label}"')),
+        SnackBar(content: Text('${i18n.tr('rd_now_pre')} "$label"')),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -238,7 +243,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
     } on NetworkException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not reach the server — try again.')),
+        SnackBar(content: Text(i18n.tr('net_retry'))),
       );
     } finally {
       if (mounted) setState(() => _acting = false);
@@ -247,18 +252,19 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     return Scaffold(
-      appBar: AppBar(title: Text('Request #${widget.requestId}')),
-      body: _body(),
+      appBar: AppBar(title: Text('${i18n.tr('rd_title')} #${widget.requestId}')),
+      body: _body(i18n),
     );
   }
 
-  Widget _body() {
+  Widget _body(I18n i18n) {
     if (_error != null && _detail == null) {
       final message = switch (_error) {
-        ApiException(status: 404) => 'This request could not be found.',
-        NetworkException() => 'Could not reach the server — check your connection.',
-        _ => 'Could not load this request.',
+        ApiException(status: 404) => i18n.tr('rd_not_found'),
+        NetworkException() => i18n.tr('net_check'),
+        _ => i18n.tr('rd_load_fail'),
       };
       return ErrorState(message: message, onRetry: _load);
     }
@@ -284,7 +290,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
             children: [
               Expanded(
                 child: Text(
-                  d.summary.serviceTypeName,
+                  i18n.l(d.summary.serviceTypeName),
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                 ),
               ),
@@ -293,12 +299,13 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            'Submitted ${DateFormat.yMMMd().add_jm().format(d.summary.createdAt.toLocal())}'
-            ' · ${d.summary.priority} priority',
+            '${i18n.tr('rd_submitted')} '
+            '${DateFormat.yMMMd().add_jm().format(d.summary.createdAt.toLocal())}'
+            ' · ${i18n.priorityPhrase(d.summary.priority)}',
             style: const TextStyle(color: MfColors.muted, fontSize: 13),
           ),
           const SizedBox(height: 24),
-          const _SectionTitle('Timeline'),
+          _SectionTitle(i18n.tr('rd_timeline')),
           const SizedBox(height: 12),
           _Timeline(entries: d.statusHistory),
           if (confirm != null || dispute != null) ...[
@@ -312,15 +319,15 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
-                    'The work is marked as completed. Is everything resolved?',
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                  Text(
+                    i18n.tr('rd_resolved_q'),
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 14),
                   if (confirm != null)
                     ElevatedButton(
                       onPressed: _acting ? null : _confirmResolution,
-                      child: const Text('Confirm resolution'),
+                      child: Text(i18n.tr('rd_confirm_btn')),
                     ),
                   if (dispute != null) ...[
                     const SizedBox(height: 10),
@@ -329,7 +336,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size.fromHeight(52),
                       ),
-                      child: const Text('Report unresolved'),
+                      child: Text(i18n.tr('rd_dispute_btn')),
                     ),
                   ],
                 ],
@@ -337,12 +344,12 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
             ),
           ],
           const SizedBox(height: 24),
-          const _SectionTitle('Your answers'),
+          _SectionTitle(i18n.tr('rd_answers')),
           const SizedBox(height: 12),
           FormResponseView(response: d.formResponse, fields: _requestFields),
           if (d.comments.isNotEmpty) ...[
             const SizedBox(height: 24),
-            const _SectionTitle('Comments'),
+            _SectionTitle(i18n.tr('rd_comments')),
             const SizedBox(height: 12),
             for (final c in d.comments) _CommentTile(comment: c),
           ],
@@ -354,7 +361,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
                 minimumSize: const Size.fromHeight(52),
               ),
               icon: const Icon(Icons.replay_outlined, size: 20),
-              label: const Text('Request again'),
+              label: Text(i18n.tr('rd_again')),
             ),
           ],
           if (cancel != null) ...[
@@ -366,7 +373,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
                 side: const BorderSide(color: MfColors.errorBorder),
                 minimumSize: const Size.fromHeight(52),
               ),
-              child: const Text('Cancel request'),
+              child: Text(i18n.tr('rd_cancel_btn')),
             ),
           ],
           const SizedBox(height: 32),
@@ -412,6 +419,7 @@ class _TimelineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     final c = categoryColors(entry.status.category);
     return IntrinsicHeight(
       child: Row(
@@ -441,7 +449,7 @@ class _TimelineRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(entry.status.label,
+                  Text(i18n.l(entry.status.label),
                       style: const TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Text(

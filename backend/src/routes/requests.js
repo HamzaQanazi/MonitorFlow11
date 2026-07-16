@@ -11,6 +11,7 @@ const { categoryOf, executeTransition, WorkflowError } = require('../lib/workflo
 const { buildRequestFilter, PRIORITIES } = require('../lib/requestQuery');
 const { isOversight } = require('../lib/capabilities');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
+const { pick } = require('../lib/i18nLabel');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -119,7 +120,7 @@ router.post('/', async (req, res, next) => {
           await client.query('ROLLBACK');
           return res
             .status(422)
-            .json({ errors: { [field.id]: `${field.label} must be an uploaded attachment id` } });
+            .json({ errors: { [field.id]: `${pick(field.label)} must be an uploaded attachment id` } });
         }
       }
       await client.query('COMMIT');
@@ -166,7 +167,7 @@ router.get('/', async (req, res, next) => {
     params.push(pageSize, (page - 1) * pageSize);
     const { rows } = await pool.query(
       `SELECT r.id, r.service_type_id, st.name AS service_type_name,
-              r.status, s->>'label' AS status_label, s->>'category' AS category,
+              r.status, s->'label' AS status_label, s->>'category' AS category,
               r.priority, r.created_at, r.updated_at,
               u.id AS requester_id, u.name AS requester_name,
               r.location_lat, r.location_lng,
@@ -497,7 +498,7 @@ router.post('/:id/comments', async (req, res, next) => {
          VALUES ($1, $2, $3) RETURNING id, created_at`,
         [request.id, req.user.id, body.trim()]
       ));
-      const message = `${req.user.name} commented on request #${request.id} (${request.service_name}).`;
+      const message = `${req.user.name} commented on request #${request.id} (${pick(request.service_name)}).`;
       if (isOversight(req.user)) {
         // Oversight → the requester.
         await client.query(
@@ -704,7 +705,7 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
               employee.id,
               ctx.request.id,
               'assigned',
-              `You have been assigned request #${ctx.request.id} (${ctx.request.service_name}).`,
+              `You have been assigned request #${ctx.request.id} (${pick(ctx.request.service_name)}).`,
             ]
           );
           return upsert.rows[0];
@@ -753,7 +754,7 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
         employee.id,
         request.id,
         'assigned',
-        `You have been assigned request #${request.id} (${request.service_name}).`,
+        `You have been assigned request #${request.id} (${pick(request.service_name)}).`,
       ]
     );
     await client.query('COMMIT');

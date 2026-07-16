@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useI18n } from '../i18n'
 import { ApiError } from '../lib/api'
 import './LoginPage.css'
 
@@ -11,6 +12,7 @@ interface FieldErrors {
 
 export default function LoginPage() {
   const { status, login } = useAuth()
+  const { t, lang, setLang } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const emailRef = useRef<HTMLInputElement>(null)
@@ -28,8 +30,8 @@ export default function LoginPage() {
     const password = passwordRef.current?.value ?? ''
 
     const errors: FieldErrors = {}
-    if (!email) errors.email = 'Enter your email address.'
-    if (!password) errors.password = 'Enter your password.'
+    if (!email) errors.email = t('login_err_email')
+    if (!password) errors.password = t('login_err_password')
     setFieldErrors(errors)
     setFormError(null)
     if (errors.email) {
@@ -49,18 +51,16 @@ export default function LoginPage() {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === 'not_console') {
-          setFormError(
-            'This dashboard is for oversight and admin accounts. Requesters and field staff sign in from the mobile apps.',
-          )
+          setFormError(t('login_err_not_console'))
         } else if (err.status === 401) {
-          setFormError('Email or password is incorrect.')
+          setFormError(t('login_err_credentials'))
         } else if (err.status === 429) {
-          setFormError('Too many attempts. Wait a few minutes, then try again.')
+          setFormError(t('login_err_rate'))
         } else {
-          setFormError('Something went wrong on our side. Try again.')
+          setFormError(t('login_err_server'))
         }
       } else {
-        setFormError('Can’t reach the server. Check your connection and try again.')
+        setFormError(t('login_err_network'))
       }
       setSubmitting(false)
     }
@@ -71,19 +71,26 @@ export default function LoginPage() {
       <section className="login-pane">
         <p className="login-wordmark">
           <span className="login-pip" aria-hidden="true" />
-          MonitorFlow
+          {t('wordmark')}
         </p>
         <div className="login-pane-foot">
-          <p className="login-tagline">Service requests and field operations, on one board.</p>
-          <p className="login-console">Monitor console</p>
+          <p className="login-tagline">{t('login_tagline')}</p>
+          <p className="login-console">{t('login_console')}</p>
         </div>
       </section>
 
       <section className="login-form-pane">
         <form className="login-form" onSubmit={handleSubmit} noValidate>
           <div className="login-head">
-            <h1>Sign in</h1>
-            <p className="login-sub">Oversee requests, assignments, and field work.</p>
+            <button
+              type="button"
+              className="login-lang"
+              onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+            >
+              {t('lang_toggle')}
+            </button>
+            <h1>{t('login_signin')}</h1>
+            <p className="login-sub">{t('login_sub')}</p>
           </div>
 
           {formError && (
@@ -93,7 +100,7 @@ export default function LoginPage() {
           )}
 
           <div className="login-field">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">{t('login_email')}</label>
             <input
               id="email"
               ref={emailRef}
@@ -112,7 +119,7 @@ export default function LoginPage() {
           </div>
 
           <div className="login-field">
-            <label htmlFor="password">Password</label>
+            <label htmlFor="password">{t('login_password')}</label>
             <div className="login-input-wrap">
               <input
                 id="password"
@@ -129,7 +136,7 @@ export default function LoginPage() {
                 className="login-reveal"
                 onClick={() => setShowPassword((v) => !v)}
                 disabled={submitting}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? t('login_hide_password') : t('login_show_password')}
                 aria-pressed={showPassword}
               >
                 {showPassword ? (
@@ -158,17 +165,14 @@ export default function LoginPage() {
             {submitting ? (
               <>
                 <span className="spinner login-submit-spinner" aria-hidden="true" />
-                Signing in…
+                {t('login_signing_in')}
               </>
             ) : (
-              'Sign in'
+              t('login_signin')
             )}
           </button>
 
-          <p className="login-note">
-            Monitor accounts are provisioned by an administrator — there’s no self-registration
-            here.
-          </p>
+          <p className="login-note">{t('login_note')}</p>
         </form>
       </section>
     </main>

@@ -93,7 +93,7 @@ router.get('/', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT t.id, t.request_id, t.assigned_at,
               r.service_type_id, st.name AS service_type_name,
-              r.status, s->>'label' AS status_label, s->>'category' AS category,
+              r.status, s->'label' AS status_label, s->>'category' AS category,
               r.priority, r.created_at AS request_created_at,
               r.location_lat, r.location_lng, fd.field_schema,
               COUNT(*) OVER()::int AS total

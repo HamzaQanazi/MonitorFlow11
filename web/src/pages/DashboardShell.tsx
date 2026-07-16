@@ -1,22 +1,25 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useI18n } from '../i18n'
 import NotificationBell from '../components/NotificationBell'
 import './DashboardShell.css'
 
 // Oversight nav, each item gated by the capability its page needs (Gate 1).
 // A lead with every capability sees them all; a narrower level sees a subset.
+// `labelKey` resolves through t() so the nav flips language with the console.
 const oversightNav = [
-  { to: '/', label: 'Dashboard', end: true, need: 'view_all' },
-  { to: '/requests', label: 'Requests', end: false, need: 'view_all' },
-  { to: '/employees', label: 'Employees', end: false, need: 'manage_employees' },
-  { to: '/reports', label: 'Reports', end: false, need: 'view_all' },
+  { to: '/', labelKey: 'nav_dashboard', end: true, need: 'view_all' },
+  { to: '/requests', labelKey: 'nav_requests', end: false, need: 'view_all' },
+  { to: '/employees', labelKey: 'nav_employees', end: false, need: 'manage_employees' },
+  { to: '/reports', labelKey: 'nav_reports', end: false, need: 'view_all' },
 ]
 // Admin manages accounts/configuration only. The Services page joins this list
 // once the JSON-import slice lands.
-const adminNav = [{ to: '/audit', label: 'Audit Log', end: false }]
+const adminNav = [{ to: '/audit', labelKey: 'nav_audit', end: false }]
 
 export default function DashboardShell() {
   const { user, logout } = useAuth()
+  const { t, lang, setLang } = useI18n()
   const isAdmin = user?.role === 'admin'
   const navItems = isAdmin
     ? adminNav
@@ -27,21 +30,28 @@ export default function DashboardShell() {
       <header className="shell-bar">
         <p className="shell-wordmark">
           <span className="shell-pip" aria-hidden="true" />
-          MonitorFlow
+          {t('wordmark')}
         </p>
         <nav className="shell-nav" aria-label="Primary">
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end}>
-              {item.label}
+              {t(item.labelKey)}
             </NavLink>
           ))}
         </nav>
         <div className="shell-session">
           {/* No notification triggers target the admin — an always-empty bell is noise. */}
           {!isAdmin && <NotificationBell />}
+          <button
+            className="shell-signout"
+            type="button"
+            onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+          >
+            {t('lang_toggle')}
+          </button>
           <span className="shell-user">{user?.name}</span>
           <button className="shell-signout" type="button" onClick={logout}>
-            Sign out
+            {t('sign_out')}
           </button>
         </div>
       </header>

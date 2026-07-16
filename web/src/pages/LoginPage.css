@@ -69,6 +69,21 @@
   gap: 6px;
 }
 
+.login-lang {
+  justify-self: end;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.login-lang:hover {
+  color: var(--ink);
+}
+
 .login-head h1 {
   font-size: 28px;
   font-weight: 650;
@@ -114,7 +129,7 @@
 }
 
 .login-field .login-input-wrap input {
-  padding-right: 46px;
+  padding-inline-end: 46px;
 }
 
 /* Edge/IE inject a native reveal control; ours replaces it */
@@ -125,7 +140,7 @@
 .login-reveal {
   position: absolute;
   top: 50%;
-  right: 5px;
+  inset-inline-end: 5px;
   transform: translateY(-50%);
   width: 34px;
   height: 34px;

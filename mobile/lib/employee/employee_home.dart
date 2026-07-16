@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
+import '../i18n.dart';
 import '../models/task.dart';
 import '../shared/notifications_screen.dart';
 import '../shared/profile_screen.dart';
@@ -81,7 +82,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       if (retry == null || retry.isEmpty) {
         if (ctx.mounted) {
           ScaffoldMessenger.of(ctx).showSnackBar(
-            const SnackBar(content: Text('This task is no longer assigned to you.')),
+            SnackBar(content: Text(ctx.read<I18n>().tr('eh_task_gone'))),
           );
         }
         return;
@@ -100,12 +101,13 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     final auth = context.watch<AuthState>();
     final firstName = (auth.user?.name ?? '').split(' ').first;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('My tasks — $firstName'),
+        title: Text('${i18n.tr('eh_title')} — $firstName'),
         actions: [
           NotificationBell(
             onTap: () => Navigator.of(context).push(
@@ -117,37 +119,37 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.person_outline),
-            tooltip: 'Profile',
+            tooltip: i18n.tr('profile'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ProfileScreen()),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.logout),
-            tooltip: 'Sign out',
+            tooltip: i18n.tr('sign_out'),
             onPressed: () => context.read<AuthState>().logout(),
           ),
         ],
       ),
-      body: _body(),
+      body: _body(i18n),
     );
   }
 
-  Widget _body() {
+  Widget _body(I18n i18n) {
     if (_error != null && _tasks == null) {
       return ErrorState(
         message: _error is NetworkException
-            ? 'Could not reach the server — check your connection.'
-            : 'Could not load your tasks.',
+            ? i18n.tr('net_check')
+            : i18n.tr('eh_load_fail'),
         onRetry: _load,
       );
     }
     if (_tasks == null) return const LoadingState();
     if (_tasks!.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.task_alt_outlined,
-        title: 'No tasks assigned',
-        subtitle: 'New assignments will appear here.',
+        title: i18n.tr('eh_none_title'),
+        subtitle: i18n.tr('eh_none_sub'),
       );
     }
 
@@ -177,9 +179,9 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     final toggle = Center(
       child: SegmentedButton<bool>(
         showSelectedIcon: false,
-        segments: const [
-          ButtonSegment(value: false, icon: Icon(Icons.list, size: 18), label: Text('List')),
-          ButtonSegment(value: true, icon: Icon(Icons.map_outlined, size: 18), label: Text('Map')),
+        segments: [
+          ButtonSegment(value: false, icon: const Icon(Icons.list, size: 18), label: Text(i18n.tr('eh_list'))),
+          ButtonSegment(value: true, icon: const Icon(Icons.map_outlined, size: 18), label: Text(i18n.tr('eh_map'))),
         ],
         selected: {_mapMode},
         onSelectionChanged: (s) => setState(() => _mapMode = s.first),
@@ -244,19 +246,19 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: EmptyState(
                 icon: Icons.filter_alt_off_outlined,
-                title: 'No tasks in this category',
+                title: i18n.tr('eh_none_cat'),
                 action: OutlinedButton(
                   onPressed: () => setState(() => _categoryFilter = null),
-                  child: const Text('Clear filter'),
+                  child: Text(i18n.tr('clear_filter')),
                 ),
               ),
             ),
           if (needsResponse.isNotEmpty) ...[
-            const _SectionHeader('Needs response'),
+            _SectionHeader(i18n.tr('eh_needs_response')),
             for (final t in needsResponse) _cardFor(t, attention: true),
           ],
           if (active.isNotEmpty) ...[
-            const _SectionHeader('In progress'),
+            _SectionHeader(i18n.tr('eh_in_progress')),
             for (final t in active) _cardFor(t),
           ],
           if (history.isNotEmpty) ...[
@@ -267,7 +269,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
                 _showHistory ? Icons.expand_less : Icons.expand_more,
                 size: 18,
               ),
-              label: Text('History (${history.length})'),
+              label: Text('${i18n.tr('eh_history')} (${history.length})'),
             ),
             if (_showHistory) for (final t in history) _cardFor(t),
           ],
@@ -322,6 +324,7 @@ class _TaskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     return Material(
       color: MfColors.bg,
       shape: RoundedRectangleBorder(
@@ -345,7 +348,7 @@ class _TaskCard extends StatelessWidget {
                 children: [
                   if (attention) ...[
                     Semantics(
-                      label: 'Needs response',
+                      label: i18n.tr('eh_needs_response'),
                       child: Container(
                         width: 8,
                         height: 8,
@@ -359,7 +362,7 @@ class _TaskCard extends StatelessWidget {
                   ],
                   Expanded(
                     child: Text(
-                      task.serviceTypeName,
+                      i18n.l(task.serviceTypeName),
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -377,8 +380,8 @@ class _TaskCard extends StatelessWidget {
                     child: Text(
                       // The request # is the shared key with the Monitor
                       // board — what a dispatcher can actually look up.
-                      'Task #${task.id} · Request #${task.requestId} · '
-                      '${task.priority} priority · ${relativeTime(task.assignedAt)}',
+                      '${i18n.tr('eh_task')} #${task.id} · ${i18n.tr('eh_request')} #${task.requestId} · '
+                      '${i18n.priorityPhrase(task.priority)} · ${i18n.relativeTime(task.assignedAt)}',
                       style: const TextStyle(color: MfColors.muted, fontSize: 13),
                       overflow: TextOverflow.ellipsis,
                     ),

@@ -6,8 +6,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
+import '../i18n.dart';
 import '../theme.dart';
 import 'form_schema.dart';
 
@@ -56,6 +58,9 @@ class DynamicFormState extends State<DynamicForm> {
   final Map<String, String> _photoNames = {}; // field id → picked filename
   final Set<String> _photoBusy = {};
   final _picker = ImagePicker();
+  // Set each build (via context.watch) so the form re-renders on a locale
+  // toggle and the field-drawing helpers can pick labels.
+  late I18n _i18n;
 
   @override
   void initState() {
@@ -125,6 +130,7 @@ class DynamicFormState extends State<DynamicForm> {
 
   @override
   Widget build(BuildContext context) {
+    _i18n = context.watch<I18n>();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -152,9 +158,15 @@ class DynamicFormState extends State<DynamicForm> {
     };
   }
 
+  // Localised field label, with the required marker appended.
+  String _label(FormFieldDef field) {
+    final text = _i18n.l(field.label);
+    return field.required ? '$text *' : text;
+  }
+
   InputDecoration _decoration(FormFieldDef field, String? error, {String? counter}) =>
       InputDecoration(
-        labelText: field.required ? '${field.label} *' : field.label,
+        labelText: _label(field),
         errorText: error,
         counterText: counter,
       );
@@ -220,7 +232,7 @@ class DynamicFormState extends State<DynamicForm> {
       decoration: _decoration(field, error),
       items: [
         for (final opt in field.options)
-          DropdownMenuItem(value: opt.value, child: Text(opt.label)),
+          DropdownMenuItem(value: opt.value, child: Text(_i18n.l(opt.label))),
       ],
       onChanged: (v) => _setValue(field.id, v),
     );
@@ -239,7 +251,7 @@ class DynamicFormState extends State<DynamicForm> {
             for (final opt in field.options)
               RadioListTile<String>(
                 key: ValueKey('field-${field.id}-${opt.value}'),
-                title: Text(opt.label),
+                title: Text(_i18n.l(opt.label)),
                 value: opt.value,
                 contentPadding: EdgeInsets.zero,
                 dense: true,
@@ -258,7 +270,7 @@ class DynamicFormState extends State<DynamicForm> {
       showLabel: false,
       child: CheckboxListTile(
         key: ValueKey('field-${field.id}'),
-        title: Text(field.required ? '${field.label} *' : field.label),
+        title: Text(_label(field)),
         value: (_values[field.id] as bool?) ?? false,
         onChanged: (v) => _setValue(field.id, v ?? false),
         controlAffinity: ListTileControlAffinity.leading,
@@ -285,14 +297,14 @@ class DynamicFormState extends State<DynamicForm> {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: MfColors.border),
           ),
-          child: const Row(
+          child: Row(
             children: [
-              Icon(Icons.photo_camera_outlined, color: MfColors.muted),
-              SizedBox(width: 12),
+              const Icon(Icons.photo_camera_outlined, color: MfColors.muted),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Photo upload is not available here yet',
-                  style: TextStyle(color: MfColors.muted),
+                  _i18n.tr('df_photo_unavailable'),
+                  style: const TextStyle(color: MfColors.muted),
                 ),
               ),
             ],
@@ -324,10 +336,10 @@ class DynamicFormState extends State<DynamicForm> {
             Expanded(
               child: Text(
                 busy
-                    ? 'Uploading…'
+                    ? _i18n.tr('df_uploading')
                     : uploaded
-                        ? (_photoNames[field.id] ?? 'Photo attached')
-                        : 'No photo attached',
+                        ? (_photoNames[field.id] ?? _i18n.tr('df_photo_attached'))
+                        : _i18n.tr('df_no_photo'),
                 style: TextStyle(
                   color: uploaded ? MfColors.ink : MfColors.muted,
                   fontSize: 14,
@@ -350,12 +362,12 @@ class DynamicFormState extends State<DynamicForm> {
                     _errors.remove(field.id);
                   });
                 },
-                child: const Text('Remove'),
+                child: Text(_i18n.tr('df_remove')),
               )
             else
               TextButton(
                 onPressed: () => _pickAndUpload(field),
-                child: const Text('Add photo'),
+                child: Text(_i18n.tr('df_add_photo')),
               ),
           ],
         ),
@@ -389,8 +401,9 @@ class DynamicFormState extends State<DynamicForm> {
       setState(() => _errors[field.id] = e.fieldErrors['file'] ?? e.message);
     } catch (_) {
       if (!mounted) return;
+      // English (label.en) to match the server's authoritative form errors.
       setState(() =>
-          _errors[field.id] = '${field.label} could not be uploaded — try again');
+          _errors[field.id] = '${field.label.en} could not be uploaded — try again');
     } finally {
       if (mounted) setState(() => _photoBusy.remove(field.id));
     }
@@ -411,14 +424,14 @@ class DynamicFormState extends State<DynamicForm> {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: MfColors.border),
           ),
-          child: const Row(
+          child: Row(
             children: [
-              Icon(Icons.location_off_outlined, color: MfColors.muted),
-              SizedBox(width: 12),
+              const Icon(Icons.location_off_outlined, color: MfColors.muted),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Map picker is not available here yet',
-                  style: TextStyle(color: MfColors.muted),
+                  _i18n.tr('df_map_unavailable'),
+                  style: const TextStyle(color: MfColors.muted),
                 ),
               ),
             ],
@@ -456,7 +469,7 @@ class DynamicFormState extends State<DynamicForm> {
                 value != null
                     ? '${(value['lat'] as num).toStringAsFixed(5)}, '
                         '${(value['lng'] as num).toStringAsFixed(5)}'
-                    : 'No location set',
+                    : _i18n.tr('df_no_location'),
                 style: TextStyle(
                   color: value != null ? MfColors.ink : MfColors.muted,
                   fontSize: 14,
@@ -473,14 +486,14 @@ class DynamicFormState extends State<DynamicForm> {
                     _errors.remove(field.id);
                   });
                 },
-                child: const Text('Remove'),
+                child: Text(_i18n.tr('df_remove')),
               ),
-              TextButton(onPressed: pick, child: const Text('Change')),
+              TextButton(onPressed: pick, child: Text(_i18n.tr('df_change'))),
             ] else
               TextButton(
                 key: ValueKey('field-${field.id}-set'),
                 onPressed: pick,
-                child: const Text('Set location'),
+                child: Text(_i18n.tr('df_set_location')),
               ),
           ],
         ),
@@ -500,14 +513,14 @@ class DynamicFormState extends State<DynamicForm> {
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: MfColors.border),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.block_outlined, color: MfColors.muted),
-            SizedBox(width: 12),
+            const Icon(Icons.block_outlined, color: MfColors.muted),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'This field type is not supported in this app version',
-                style: TextStyle(color: MfColors.muted),
+                _i18n.tr('df_unsupported'),
+                style: const TextStyle(color: MfColors.muted),
               ),
             ),
           ],
@@ -534,12 +547,14 @@ class _GroupShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
+    final label = i18n.l(field.label);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (showLabel) ...[
           Text(
-            field.required ? '${field.label} *' : field.label,
+            field.required ? '$label *' : label,
             style: const TextStyle(
                 fontSize: 14, fontWeight: FontWeight.w600, color: MfColors.ink),
           ),
@@ -548,7 +563,7 @@ class _GroupShell extends StatelessWidget {
         child,
         if (error != null)
           Padding(
-            padding: const EdgeInsets.only(top: 6, left: 2),
+            padding: const EdgeInsetsDirectional.only(top: 6, start: 2),
             child: Text(error!, style: const TextStyle(color: MfColors.error, fontSize: 12)),
           ),
       ],

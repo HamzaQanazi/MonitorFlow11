@@ -9,13 +9,14 @@ import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../forms/dynamic_form.dart';
 import '../forms/form_schema.dart';
+import '../i18n.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
 
 class CompleteTaskScreen extends StatefulWidget {
   final int taskId;
   final int serviceTypeId;
-  final String serviceTypeName;
+  final Loc serviceTypeName;
 
   const CompleteTaskScreen({
     super.key,
@@ -47,6 +48,7 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
   }
 
   Future<void> _submit() async {
+    final i18n = context.read<I18n>();
     setState(() => _bannerError = null);
     final response = _formKey.currentState!.submit();
     if (response == null) return;
@@ -54,17 +56,16 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Complete this task?'),
-        content: const Text(
-            'The requester will be notified and asked to confirm the resolution.'),
+        title: Text(i18n.tr('ct_complete_q')),
+        content: Text(i18n.tr('ct_complete_body')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Back'),
+            child: Text(i18n.tr('back')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Complete task'),
+            child: Text(i18n.tr('td_complete_btn')),
           ),
         ],
       ),
@@ -79,7 +80,7 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task completed')),
+        SnackBar(content: Text(i18n.tr('ct_done'))),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -92,8 +93,7 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
       });
     } on NetworkException {
       if (!mounted) return;
-      setState(() =>
-          _bannerError = 'Could not reach the server — check your connection and try again.');
+      setState(() => _bannerError = i18n.tr('net_check_retry'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -101,8 +101,10 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     return Scaffold(
-      appBar: AppBar(title: Text('Complete — ${widget.serviceTypeName}')),
+      appBar: AppBar(
+          title: Text('${i18n.tr('ct_complete_pre')} — ${i18n.l(widget.serviceTypeName)}')),
       body: FutureBuilder<List<FormFieldDef>>(
         future: _future,
         builder: (context, snap) {
@@ -112,8 +114,8 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
           if (snap.hasError) {
             return ErrorState(
               message: snap.error is NetworkException
-                  ? 'Could not reach the server — check your connection.'
-                  : 'Could not load the completion form.',
+                  ? i18n.tr('net_check')
+                  : i18n.tr('ct_form_fail'),
               onRetry: () => setState(() => _future = _load()),
             );
           }
@@ -122,9 +124,9 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Fill in the completion report — fields marked * are required.',
-                  style: TextStyle(color: MfColors.muted, fontSize: 13),
+                Text(
+                  i18n.tr('ct_hint'),
+                  style: const TextStyle(color: MfColors.muted, fontSize: 13),
                 ),
                 const SizedBox(height: 20),
                 if (_bannerError != null) ...[
@@ -165,7 +167,7 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
                           child: CircularProgressIndicator(
                               strokeWidth: 2.5, color: MfColors.muted),
                         )
-                      : const Text('Complete task'),
+                      : Text(i18n.tr('td_complete_btn')),
                 ),
                 const SizedBox(height: 24),
               ],

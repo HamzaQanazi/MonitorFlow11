@@ -1,27 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
+import { useI18n, type Loc } from '../i18n'
 import './DashboardPage.css'
 
 // Categories are the closed enum from CLAUDE.md Section 9 — the only workflow
-// vocabulary application code may know. No status key appears here.
+// vocabulary application code may know. No status key appears here. Labels come
+// from t('cat_<category>') so they flip language with the console.
 const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'] as const
 type Category = (typeof CATEGORIES)[number]
-
-const CATEGORY_LABEL: Record<Category, string> = {
-  new: 'New',
-  triage: 'Triage',
-  in_progress: 'In progress',
-  done: 'Done',
-  closed: 'Closed',
-  terminated: 'Terminated',
-}
-
-const PRIORITY_LABEL: Record<string, string> = { high: 'High', medium: 'Medium', low: 'Low' }
 
 interface Stats {
   total: number
   byCategory: { category: Category; count: number }[]
-  byService: { serviceTypeId: number; name: string; count: number }[]
+  // Service names arrive bilingual ({en,ar}) — the dashboard picks with L().
+  byService: { serviceTypeId: number; name: Loc; count: number }[]
   byPriority: { priority: string; count: number }[]
 }
 
@@ -39,6 +31,7 @@ function formatDay(iso: string) {
 }
 
 export default function DashboardPage() {
+  const { t, L } = useI18n()
   const [stats, setStats] = useState<Stats | null>(null)
   const [chart, setChart] = useState<Chart | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -79,8 +72,10 @@ export default function DashboardPage() {
   if (error && !stats) {
     return (
       <div className="dash-status">
-        <h1>Overview</h1>
-        <p className="dash-status-msg">Couldn’t load the dashboard: {error}</p>
+        <h1>{t('dash_overview')}</h1>
+        <p className="dash-status-msg">
+          {t('dash_load_err')} {error}
+        </p>
         <button
           type="button"
           className="dash-retry"
@@ -89,7 +84,7 @@ export default function DashboardPage() {
             load().catch((err: Error) => setError(err.message))
           }}
         >
-          Try again
+          {t('try_again')}
         </button>
       </div>
     )
@@ -98,7 +93,7 @@ export default function DashboardPage() {
   if (!stats || !chart) {
     return (
       <div className="dash" aria-busy="true">
-        <span className="visually-hidden">Loading dashboard…</span>
+        <span className="visually-hidden">{t('dash_loading')}</span>
         <div className="dash-skeleton" aria-hidden="true">
           <div className="skel skel-title" />
           <div className="skel-strip">
@@ -131,16 +126,21 @@ export default function DashboardPage() {
   return (
     <div className="dash">
       <header className="dash-head">
-        <h1>Overview</h1>
+        <h1>{t('dash_overview')}</h1>
         <p className="dash-meta">
-          {stats.total} request{stats.total === 1 ? '' : 's'} on the board
-          {updatedAt && <> · updated {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>}
+          {stats.total} {stats.total === 1 ? t('request_word') : t('requests_word')} {t('dash_on_board')}
+          {updatedAt && (
+            <>
+              {' '}
+              · {t('updated')} {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </>
+          )}
         </p>
       </header>
 
       <section className="dash-queue" aria-labelledby="queue-heading">
         <h2 id="queue-heading" className="visually-hidden">
-          Requests by workflow category
+          {t('dash_by_category')}
         </h2>
         <ol className="cat-strip">
           {stats.byCategory.map((c) => (
@@ -148,7 +148,7 @@ export default function DashboardPage() {
               <span className="cat-count">{c.count}</span>
               <span className="cat-name">
                 <i className="cat-dot" aria-hidden="true" />
-                {CATEGORY_LABEL[c.category]}
+                {t(`cat_${c.category}`)}
               </span>
             </li>
           ))}
@@ -162,7 +162,7 @@ export default function DashboardPage() {
                   key={c.category}
                   className={`cat-seg is-${c.category}`}
                   style={{ flexGrow: c.count }}
-                  title={`${CATEGORY_LABEL[c.category]}: ${c.count}`}
+                  title={`${t(`cat_${c.category}`)}: ${c.count}`}
                 />
               ))}
           </div>
@@ -171,20 +171,22 @@ export default function DashboardPage() {
 
       {stats.total === 0 ? (
         <div className="dash-empty">
-          <h2>The board is clear</h2>
-          <p>
-            New requests appear here the moment users submit them, grouped by where they stand in
-            their workflow. Activity charts and per-service breakdowns fill in as work arrives.
-          </p>
+          <h2>{t('dash_clear_h')}</h2>
+          <p>{t('dash_clear_p')}</p>
         </div>
       ) : (
         <div className="dash-grid">
           <section className="dash-panel" aria-labelledby="activity-heading">
             <div className="panel-head">
-              <h2 id="activity-heading">Requests created</h2>
+              <h2 id="activity-heading">{t('dash_requests_created')}</h2>
               <span className="panel-meta">
-                last 30 days · {chartTotal} total
-                {peak && max > 0 && <> · peak {max} on {formatDay(peak.date)}</>}
+                {t('dash_last_30')} · {chartTotal} {t('dash_total')}
+                {peak && max > 0 && (
+                  <>
+                    {' '}
+                    · {t('dash_peak')} {max} {t('dash_on')} {formatDay(peak.date)}
+                  </>
+                )}
               </span>
             </div>
             <div
@@ -192,7 +194,7 @@ export default function DashboardPage() {
               ref={chartRef}
               onMouseLeave={() => setTip(null)}
               role="img"
-              aria-label={`Bar chart of requests created per day over the last 30 days: ${chartTotal} total${peak && max > 0 ? `, peaking at ${max} on ${formatDay(peak.date)}` : ''}.`}
+              aria-label={`${t('dash_requests_created')} — ${t('dash_last_30')}: ${chartTotal} ${t('dash_total')}${peak && max > 0 ? `, ${t('dash_peak')} ${max} ${t('dash_on')} ${formatDay(peak.date)}` : ''}.`}
             >
               {chart.days.map((d) => (
                 <div className="chart-col" key={d.date} onMouseEnter={(e) => showTip(e, d)}>
@@ -214,11 +216,11 @@ export default function DashboardPage() {
               <span>{formatDay(last.date)}</span>
             </div>
             <table className="visually-hidden">
-              <caption>Requests created per day, last 30 days</caption>
+              <caption>{t('dash_requests_created')}</caption>
               <thead>
                 <tr>
-                  <th scope="col">Date</th>
-                  <th scope="col">Requests</th>
+                  <th scope="col">{t('col_when')}</th>
+                  <th scope="col">{t('req_title')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -235,11 +237,11 @@ export default function DashboardPage() {
           <div className="dash-side">
             <section className="dash-panel" aria-labelledby="service-heading">
               <div className="panel-head">
-                <h2 id="service-heading">By service</h2>
+                <h2 id="service-heading">{t('dash_by_service')}</h2>
               </div>
               {stats.byService.map((s) => (
                 <div className="break-row" key={s.serviceTypeId}>
-                  <span className="break-label">{s.name}</span>
+                  <span className="break-label">{L(s.name)}</span>
                   <span className="break-count">{s.count}</span>
                   <div className="break-bar" aria-hidden="true">
                     <div style={{ width: `${stats.total ? (s.count / stats.total) * 100 : 0}%` }} />
@@ -250,11 +252,11 @@ export default function DashboardPage() {
 
             <section className="dash-panel" aria-labelledby="priority-heading">
               <div className="panel-head">
-                <h2 id="priority-heading">By priority</h2>
+                <h2 id="priority-heading">{t('dash_by_priority')}</h2>
               </div>
               {stats.byPriority.map((p) => (
                 <div className="break-row" key={p.priority}>
-                  <span className="break-label">{PRIORITY_LABEL[p.priority] ?? p.priority}</span>
+                  <span className="break-label">{t(`pri_${p.priority}`)}</span>
                   <span className="break-count">{p.count}</span>
                   <div className="break-bar" aria-hidden="true">
                     <div style={{ width: `${stats.total ? (p.count / stats.total) * 100 : 0}%` }} />

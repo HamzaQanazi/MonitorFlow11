@@ -8,6 +8,7 @@ import { MapContainer, Marker, TileLayer, Tooltip, useMap } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import 'leaflet/dist/leaflet.css'
 import { apiFetch } from '../lib/api'
+import { useI18n, type Loc } from '../i18n'
 
 const POLL_MS = 30_000
 const MAP_PAGE_SIZE = 100 // API max — the documented map data-volume limit
@@ -15,8 +16,8 @@ const NABLUS: [number, number] = [32.22, 35.26]
 
 interface MapRow {
   id: number
-  serviceTypeName: string
-  status: { key: string; label: string; category: string | null }
+  serviceTypeName: Loc
+  status: { key: string; label: Loc; category: string | null }
   location: { lat: number; lng: number } | null
   assignedEmployee: { id: number; name: string } | null
 }
@@ -65,6 +66,8 @@ function FitToMarkers({ points, fitKey }: { points: [number, number][]; fitKey: 
 }
 
 export default function RequestsMapView({ category, serviceTypeId, priority, q, employeeId, openDetail }: Props) {
+  // The module already binds Leaflet to `L`; alias the i18n picker as `loc`.
+  const { t, L: loc } = useI18n()
   const [rows, setRows] = useState<MapRow[] | null>(null)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
@@ -102,11 +105,13 @@ export default function RequestsMapView({ category, serviceTypeId, priority, q, 
   if (rows === null) {
     return error ? (
       <div className="req-status">
-        <p className="req-status-msg">Couldn’t load the map: {error}</p>
+        <p className="req-status-msg">
+          {t('map_load_err')} {error}
+        </p>
       </div>
     ) : (
       <div className="req-skeleton" aria-busy="true">
-        <span className="visually-hidden">Loading map…</span>
+        <span className="visually-hidden">{t('map_loading')}</span>
         <div className="skel-row" aria-hidden="true" />
       </div>
     )
@@ -121,13 +126,13 @@ export default function RequestsMapView({ category, serviceTypeId, priority, q, 
     <div className="req-mapwrap">
       {total > MAP_PAGE_SIZE && (
         <p className="req-map-banner" role="status">
-          Showing the first {MAP_PAGE_SIZE} of {total} requests — narrow the filters to see the rest.
+          {t('map_banner_pre')} {MAP_PAGE_SIZE} {t('of')} {total} {t('map_banner_mid')}
         </p>
       )}
       {located.length === 0 ? (
         <div className="req-empty">
-          <h2>Nothing to map</h2>
-          <p>No requests matching these filters carry a location.</p>
+          <h2>{t('map_nothing_h')}</h2>
+          <p>{t('map_nothing_p')}</p>
         </div>
       ) : (
         <div className="req-map">
@@ -146,7 +151,7 @@ export default function RequestsMapView({ category, serviceTypeId, priority, q, 
                   eventHandlers={{ click: () => openDetail(r.id) }}
                 >
                   <Tooltip direction="top" offset={[0, -16]}>
-                    #{r.id} · {r.serviceTypeName} · {r.status.label}
+                    #{r.id} · {loc(r.serviceTypeName)} · {loc(r.status.label)}
                     {r.assignedEmployee ? ` · ${r.assignedEmployee.name}` : ''}
                   </Tooltip>
                 </Marker>
@@ -157,7 +162,8 @@ export default function RequestsMapView({ category, serviceTypeId, priority, q, 
       )}
       {missing > 0 && (
         <p className="req-map-footnote">
-          {missing} request{missing === 1 ? '' : 's'} without a location {missing === 1 ? 'is' : 'are'} not shown.
+          {missing} {missing === 1 ? t('request_word') : t('requests_word')}{' '}
+          {missing === 1 ? t('map_missing_none') : t('map_missing_some')}
         </p>
       )}
     </div>

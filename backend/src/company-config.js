@@ -10,14 +10,20 @@
 // file IS the authoring surface, and the seed script validates every field
 // schema and workflow here before writing anything (Section 8 seed-time rules).
 //
+// Phase 3: every user-facing label is bilingual — `L(en, ar)` builds the
+// {en, ar} object the DB and clients expect. Machine keys (status keys, field
+// ids, option values) stay plain ASCII.
+//
 // Immutability (Section 2): once a service has any request, its form/workflow
 // is frozen — to change a live service, add a new one and disable the old.
 //
 // To add a service: copy one of the blocks below, change the department name,
 // the form fields (Section 8 field types), and the workflow (Section 9), then
 // add it to the `services` array at the bottom. Departments are created
-// automatically from the `department` name on each service.
+// automatically from the `department` key on each service.
 // ===========================================================================
+
+const L = (en, ar) => ({ en, ar });
 
 const status = (key, label, category, flags = {}) => ({
   key,
@@ -43,44 +49,44 @@ const transition = (from, to, allowed_role, extra = {}) => ({
 const equipmentRepairRequestForm = [
   {
     id: 'equipment_type',
-    label: 'Equipment type',
+    label: L('Equipment type', 'نوع الجهاز'),
     type: 'dropdown',
     required: true,
     options: [
-      { value: 'laptop', label: 'Laptop' },
-      { value: 'desktop', label: 'Desktop PC' },
-      { value: 'printer', label: 'Printer' },
-      { value: 'network', label: 'Network equipment' },
-      { value: 'other', label: 'Other' },
+      { value: 'laptop', label: L('Laptop', 'حاسوب محمول') },
+      { value: 'desktop', label: L('Desktop PC', 'حاسوب مكتبي') },
+      { value: 'printer', label: L('Printer', 'طابعة') },
+      { value: 'network', label: L('Network equipment', 'معدات الشبكة') },
+      { value: 'other', label: L('Other', 'أخرى') },
     ],
   },
-  { id: 'location', label: 'Room / location', type: 'text', required: true, max: 100 },
-  { id: 'problem_description', label: 'Problem description', type: 'multiline', required: true, max: 1000 },
-  { id: 'photo', label: 'Photo of the problem', type: 'photo', required: false },
-  { id: 'urgent', label: 'Urgent?', type: 'checkbox', required: false },
+  { id: 'location', label: L('Room / location', 'الغرفة / الموقع'), type: 'text', required: true, max: 100 },
+  { id: 'problem_description', label: L('Problem description', 'وصف المشكلة'), type: 'multiline', required: true, max: 1000 },
+  { id: 'photo', label: L('Photo of the problem', 'صورة المشكلة'), type: 'photo', required: false },
+  { id: 'urgent', label: L('Urgent?', 'عاجل؟'), type: 'checkbox', required: false },
   // v5 map amendment. Optional here (required on Service B) — config variance
   // the demo points at. Id avoids the existing 'location' text field above.
-  { id: 'site_location', label: 'Location on map', type: 'location', required: false },
+  { id: 'site_location', label: L('Location on map', 'الموقع على الخريطة'), type: 'location', required: false },
 ];
 
 const equipmentRepairCompletionForm = [
-  { id: 'work_performed', label: 'Work performed', type: 'multiline', required: true, max: 1000 },
-  { id: 'parts_used', label: 'Parts used', type: 'text', required: false, max: 200 },
-  { id: 'after_photo', label: 'Photo after repair', type: 'photo', required: false },
+  { id: 'work_performed', label: L('Work performed', 'العمل المنجز'), type: 'multiline', required: true, max: 1000 },
+  { id: 'parts_used', label: L('Parts used', 'القطع المستخدمة'), type: 'text', required: false, max: 200 },
+  { id: 'after_photo', label: L('Photo after repair', 'صورة بعد الإصلاح'), type: 'photo', required: false },
 ];
 
 const equipmentRepairWorkflow = {
   statuses: [
-    status('submitted', 'Submitted', 'new', { initial: true }),
-    status('approved', 'Approved', 'triage'),
-    status('assigned', 'Assigned', 'triage'),
-    status('accepted', 'Accepted', 'in_progress'),
-    status('in_progress', 'In Progress', 'in_progress'),
-    status('awaiting_parts', 'Awaiting Parts', 'in_progress'),
-    status('completed', 'Completed', 'done'),
-    status('confirmed', 'Resolved', 'closed', { final: true }),
-    status('rejected', 'Rejected', 'terminated', { final: true }),
-    status('cancelled', 'Cancelled', 'terminated', { final: true }),
+    status('submitted', L('Submitted', 'مُقدَّم'), 'new', { initial: true }),
+    status('approved', L('Approved', 'مُعتمَد'), 'triage'),
+    status('assigned', L('Assigned', 'مُسنَد'), 'triage'),
+    status('accepted', L('Accepted', 'مقبول'), 'in_progress'),
+    status('in_progress', L('In Progress', 'قيد التنفيذ'), 'in_progress'),
+    status('awaiting_parts', L('Awaiting Parts', 'بانتظار القطع'), 'in_progress'),
+    status('completed', L('Completed', 'مكتمل'), 'done'),
+    status('confirmed', L('Resolved', 'تم الحل'), 'closed', { final: true }),
+    status('rejected', L('Rejected', 'مرفوض'), 'terminated', { final: true }),
+    status('cancelled', L('Cancelled', 'ملغى'), 'terminated', { final: true }),
   ],
   transitions: [
     transition('submitted', 'approved', 'monitor'),
@@ -107,41 +113,41 @@ const equipmentRepairWorkflow = {
 // ---------------------------------------------------------------------------
 
 const homeCleaningRequestForm = [
-  { id: 'preferred_date', label: 'Preferred date', type: 'date', required: true },
+  { id: 'preferred_date', label: L('Preferred date', 'التاريخ المفضل'), type: 'date', required: true },
   {
     id: 'package',
-    label: 'Cleaning package',
+    label: L('Cleaning package', 'باقة التنظيف'),
     type: 'radio',
     required: true,
     options: [
-      { value: 'standard', label: 'Standard cleaning' },
-      { value: 'deep', label: 'Deep cleaning' },
+      { value: 'standard', label: L('Standard cleaning', 'تنظيف عادي') },
+      { value: 'deep', label: L('Deep cleaning', 'تنظيف عميق') },
     ],
   },
-  { id: 'num_rooms', label: 'Number of rooms', type: 'number', required: true, min: 1, max: 20 },
-  { id: 'has_pets', label: 'Pets at home?', type: 'checkbox', required: false },
-  { id: 'address', label: 'Address', type: 'text', required: true, max: 200, visible_to_employee: true },
+  { id: 'num_rooms', label: L('Number of rooms', 'عدد الغرف'), type: 'number', required: true, min: 1, max: 20 },
+  { id: 'has_pets', label: L('Pets at home?', 'حيوانات أليفة في المنزل؟'), type: 'checkbox', required: false },
+  { id: 'address', label: L('Address', 'العنوان'), type: 'text', required: true, max: 200, visible_to_employee: true },
   // visible_to_employee: false demonstrates field-level filtering on GET /tasks/{id}
-  { id: 'gate_code', label: 'Gate code', type: 'text', required: false, max: 20, visible_to_employee: false },
+  { id: 'gate_code', label: L('Gate code', 'رمز البوابة'), type: 'text', required: false, max: 20, visible_to_employee: false },
   // v5 map amendment: required — the cleaner needs the exact visit spot.
-  { id: 'visit_location', label: 'Visit location', type: 'location', required: true, visible_to_employee: true },
+  { id: 'visit_location', label: L('Visit location', 'موقع الزيارة'), type: 'location', required: true, visible_to_employee: true },
 ];
 
 const homeCleaningCompletionForm = [
-  { id: 'rooms_cleaned', label: 'Rooms cleaned', type: 'number', required: true, min: 1, max: 20 },
-  { id: 'notes', label: 'Notes for the customer', type: 'multiline', required: false, max: 1000 },
+  { id: 'rooms_cleaned', label: L('Rooms cleaned', 'الغرف المُنظَّفة'), type: 'number', required: true, min: 1, max: 20 },
+  { id: 'notes', label: L('Notes for the customer', 'ملاحظات للعميل'), type: 'multiline', required: false, max: 1000 },
 ];
 
 const homeCleaningWorkflow = {
   statuses: [
-    status('booked', 'Booked', 'new', { initial: true }),
-    status('assigned', 'Assigned', 'triage'),
-    status('accepted', 'Scheduled', 'in_progress'),
-    status('en_route', 'On the Way', 'in_progress'),
-    status('in_service', 'Service in Progress', 'in_progress'),
-    status('completed', 'Completed', 'done'),
-    status('confirmed', 'Closed', 'closed', { final: true }),
-    status('cancelled', 'Cancelled', 'terminated', { final: true }),
+    status('booked', L('Booked', 'محجوز'), 'new', { initial: true }),
+    status('assigned', L('Assigned', 'مُسنَد'), 'triage'),
+    status('accepted', L('Scheduled', 'مجدول'), 'in_progress'),
+    status('en_route', L('On the Way', 'في الطريق'), 'in_progress'),
+    status('in_service', L('Service in Progress', 'الخدمة قيد التنفيذ'), 'in_progress'),
+    status('completed', L('Completed', 'مكتمل'), 'done'),
+    status('confirmed', L('Closed', 'مغلق'), 'closed', { final: true }),
+    status('cancelled', L('Cancelled', 'ملغى'), 'terminated', { final: true }),
   ],
   transitions: [
     transition('booked', 'assigned', 'monitor'),
@@ -160,14 +166,14 @@ const homeCleaningWorkflow = {
 
 // ---------------------------------------------------------------------------
 // The company's departments + services. Add/remove blocks here per deployment.
-// `department` is created automatically the first time it appears. Escalation
-// thresholds (hours; spec v4 E1) — null on any of the three turns that rule
-// off for the service.
+// `department` is a stable key used for grouping and for the bilingual display
+// name in DEPARTMENT_LABELS (seed.js). Escalation thresholds (hours; spec v4
+// E1) — null on any of the three turns that rule off for the service.
 // ---------------------------------------------------------------------------
 
 const services = [
   {
-    name: 'Equipment Repair',
+    name: L('Equipment Repair', 'إصلاح المعدات'),
     department: 'IT',
     default_priority: 'medium',
     escalation: { unassigned: 4, stale: 20, confirm: 24 },
@@ -176,7 +182,7 @@ const services = [
     workflow: equipmentRepairWorkflow,
   },
   {
-    name: 'Home Cleaning Visit',
+    name: L('Home Cleaning Visit', 'زيارة تنظيف منزلي'),
     department: 'Facilities',
     default_priority: 'low',
     escalation: { unassigned: 4, stale: 20, confirm: 24 },

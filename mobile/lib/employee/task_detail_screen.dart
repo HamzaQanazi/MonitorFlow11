@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../forms/form_schema.dart';
+import '../i18n.dart';
 import '../models/task.dart';
 import '../theme.dart';
 import '../widgets/form_response_view.dart';
@@ -97,25 +98,27 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
         .then((v) => v, onError: (_) => false);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No phone app available on this device')),
+        SnackBar(content: Text(context.read<I18n>().tr('td_no_phone'))),
       );
     }
   }
 
   Future<void> _accept(TaskTransition t) async {
+    final i18n = context.read<I18n>();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Accept this task?'),
-        content: Text('The task moves to "${t.toLabel}" and the requester is notified.'),
+        title: Text(i18n.tr('td_accept_q')),
+        content: Text('${i18n.tr('td_accept_body_pre')} "${i18n.l(t.toLabel)}" '
+            '${i18n.tr('td_accept_body_post')}'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Back'),
+            child: Text(i18n.tr('back')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Accept task'),
+            child: Text(i18n.tr('td_accept_btn')),
           ),
         ],
       ),
@@ -125,12 +128,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
   }
 
   Future<void> _reject(TaskTransition t) async {
+    final i18n = context.read<I18n>();
     final note = await _promptNote(
-      title: 'Reject this task?',
-      message:
-          'The request goes back to the queue for reassignment and your supervisor is notified. '
-          'A note explaining why is required.',
-      confirmLabel: 'Reject task',
+      title: i18n.tr('td_reject_q'),
+      message: i18n.tr('td_reject_body'),
+      confirmLabel: i18n.tr('td_reject_btn'),
     );
     if (note == null) return;
     await _act('/tasks/${widget.taskId}/reject', {'note': note});
@@ -138,11 +140,13 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
 
   /// Update Task Status — a generic workflow move (no dedicated action).
   Future<void> _updateStatus(TaskTransition t) async {
+    final i18n = context.read<I18n>();
+    final moveTitle = '${i18n.tr('td_move_pre')} "${i18n.l(t.toLabel)}"?';
     if (t.requiresNote) {
       final note = await _promptNote(
-        title: 'Move to "${t.toLabel}"?',
-        message: 'A note explaining the change is required.',
-        confirmLabel: 'Update status',
+        title: moveTitle,
+        message: i18n.tr('td_move_note'),
+        confirmLabel: i18n.tr('td_update_btn'),
       );
       if (note == null) return;
       await _act('/tasks/${widget.taskId}/status', {'to': t.to, 'note': note});
@@ -151,16 +155,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Move to "${t.toLabel}"?'),
-        content: const Text('The requester is notified of the change.'),
+        title: Text(moveTitle),
+        content: Text(i18n.tr('td_move_notify')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Back'),
+            child: Text(i18n.tr('back')),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Update status'),
+            child: Text(i18n.tr('td_update_btn')),
           ),
         ],
       ),
@@ -187,6 +191,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     required String message,
     required String confirmLabel,
   }) {
+    final i18n = context.read<I18n>();
     final controller = TextEditingController();
     return showDialog<String>(
       context: context,
@@ -202,7 +207,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
                 controller: controller,
                 maxLines: 3,
                 autofocus: true,
-                decoration: const InputDecoration(labelText: 'Note (required)'),
+                decoration: InputDecoration(labelText: i18n.tr('note_required')),
                 onChanged: (_) => setDialogState(() {}),
               ),
             ],
@@ -210,7 +215,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(null),
-              child: const Text('Back'),
+              child: Text(i18n.tr('back')),
             ),
             ElevatedButton(
               onPressed: controller.text.trim().isEmpty
@@ -225,6 +230,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
   }
 
   Future<void> _act(String path, Map<String, dynamic> body) async {
+    final i18n = context.read<I18n>();
     setState(() => _acting = true);
     final api = context.read<AuthState>().api;
     try {
@@ -232,8 +238,9 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
       if (!mounted) return;
       await _load(silent: true);
       if (!mounted) return;
+      final label = _detail == null ? '' : i18n.l(_detail!.summary.status.label);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Task is now "${_detail?.summary.status.label}"')),
+        SnackBar(content: Text('${i18n.tr('td_now_pre')} "$label"')),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -243,7 +250,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     } on NetworkException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not reach the server — try again.')),
+        SnackBar(content: Text(i18n.tr('net_retry'))),
       );
     } finally {
       if (mounted) setState(() => _acting = false);
@@ -252,26 +259,27 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     // The request # is the shared key with the Monitor board.
     final requestId = _detail?.summary.requestId;
     return Scaffold(
       appBar: AppBar(
         title: Text(
           requestId == null
-              ? 'Task #${widget.taskId}'
-              : 'Task #${widget.taskId} · Request #$requestId',
+              ? '${i18n.tr('td_title')} #${widget.taskId}'
+              : '${i18n.tr('td_title')} #${widget.taskId} · ${i18n.tr('eh_request')} #$requestId',
         ),
       ),
-      body: _body(),
+      body: _body(i18n),
     );
   }
 
-  Widget _body() {
+  Widget _body(I18n i18n) {
     if (_error != null && _detail == null) {
       final message = switch (_error) {
-        ApiException(status: 404) => 'This task could not be found.',
-        NetworkException() => 'Could not reach the server — check your connection.',
-        _ => 'Could not load this task.',
+        ApiException(status: 404) => i18n.tr('td_not_found'),
+        NetworkException() => i18n.tr('net_check'),
+        _ => i18n.tr('td_load_fail'),
       };
       return ErrorState(message: message, onRetry: _load);
     }
@@ -292,7 +300,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
             children: [
               Expanded(
                 child: Text(
-                  d.summary.serviceTypeName,
+                  i18n.l(d.summary.serviceTypeName),
                   style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
                 ),
               ),
@@ -301,12 +309,12 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            '${d.summary.priority} priority · assigned '
+            '${i18n.priorityPhrase(d.summary.priority)} · ${i18n.tr('td_assigned')} '
             '${DateFormat.yMMMd().add_jm().format(d.summary.assignedAt.toLocal())}',
             style: const TextStyle(color: MfColors.muted, fontSize: 13),
           ),
           const SizedBox(height: 24),
-          const _SectionTitle('Requester'),
+          _SectionTitle(i18n.tr('td_requester')),
           const SizedBox(height: 10),
           Container(
             padding: const EdgeInsets.all(14),
@@ -335,14 +343,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
             ),
           ),
           const SizedBox(height: 24),
-          const _SectionTitle('Request details'),
+          _SectionTitle(i18n.tr('td_request_details')),
           const SizedBox(height: 10),
           FormResponseView(response: d.requestFormResponse, fields: _requestFields),
           const SizedBox(height: 28),
           if (accept != null) ...[
             ElevatedButton(
               onPressed: _acting ? null : () => _accept(accept),
-              child: const Text('Accept task'),
+              child: Text(i18n.tr('td_accept_btn')),
             ),
             const SizedBox(height: 12),
           ],
@@ -351,7 +359,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
             if (t.action == 'complete') ...[
               ElevatedButton(
                 onPressed: _acting ? null : _complete,
-                child: const Text('Complete task'),
+                child: Text(i18n.tr('td_complete_btn')),
               ),
               const SizedBox(height: 12),
             ],
@@ -362,7 +370,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(52),
                 ),
-                child: Text('Move to "${t.toLabel}"'),
+                child: Text('${i18n.tr('td_move_pre')} "${i18n.l(t.toLabel)}"'),
               ),
               const SizedBox(height: 12),
             ],
@@ -374,15 +382,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
                 side: const BorderSide(color: MfColors.errorBorder),
                 minimumSize: const Size.fromHeight(52),
               ),
-              child: const Text('Reject task'),
+              child: Text(i18n.tr('td_reject_btn')),
             ),
           if (_transitions != null && _transitions!.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
               child: Text(
-                'No actions available — this task is closed or on hold.',
+                i18n.tr('td_no_actions'),
                 textAlign: TextAlign.center,
-                style: TextStyle(color: MfColors.muted, fontSize: 13),
+                style: const TextStyle(color: MfColors.muted, fontSize: 13),
               ),
             ),
           const SizedBox(height: 32),

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
+import { useI18n, type Loc } from '../i18n'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 
@@ -17,7 +18,7 @@ interface Employee {
   phone: string | null
   isActive: boolean
   departmentId: number
-  departmentName: string
+  departmentName: Loc
 }
 interface ListResponse {
   employees: Employee[]
@@ -27,7 +28,7 @@ interface ListResponse {
 }
 interface Department {
   id: number
-  name: string
+  name: Loc
 }
 type FieldErrors = Record<string, string>
 
@@ -40,6 +41,7 @@ function fieldErrorsOf(err: unknown): FieldErrors {
 }
 
 export default function EmployeesPage() {
+  const { t, L } = useI18n()
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
   const departmentId = params.get('department') ?? ''
@@ -111,8 +113,8 @@ export default function EmployeesPage() {
   }
   useEffect(() => {
     if (search === q) return
-    const t = setTimeout(() => setFilter('q', search), 350)
-    return () => clearTimeout(t)
+    const tm = setTimeout(() => setFilter('q', search), 350)
+    return () => clearTimeout(tm)
   }, [search, q, setFilter])
 
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
@@ -125,15 +127,15 @@ export default function EmployeesPage() {
   return (
     <div className="req">
       <header className="req-head">
-        <h1>Employees</h1>
+        <h1>{t('emp_title')}</h1>
         {data && (
           <p className="req-meta">
-            {data.total} employee{data.total === 1 ? '' : 's'}
-            {hasFilters && ' matching'}
+            {data.total} {data.total === 1 ? t('employee_word') : t('employees_word')}
+            {hasFilters && ` ${t('matching')}`}
           </p>
         )}
         <button type="button" className="req-retry emp-add" onClick={() => setDialog({ kind: 'create' })}>
-          Add employee
+          {t('emp_add')}
         </button>
       </header>
 
@@ -142,27 +144,27 @@ export default function EmployeesPage() {
           <input
             type="search"
             className="req-search"
-            placeholder="Search name or email…"
-            aria-label="Search by name or email"
+            placeholder={t('emp_search_ph')}
+            aria-label={t('emp_search_aria')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <select
             className="req-select"
-            aria-label="Filter by department"
+            aria-label={t('emp_filter_dept')}
             value={departmentId}
             onChange={(e) => setFilter('department', e.target.value)}
           >
-            <option value="">All departments</option>
+            <option value="">{t('emp_all_depts')}</option>
             {departments.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name}
+                {L(d.name)}
               </option>
             ))}
           </select>
           {hasFilters && (
             <button type="button" className="req-clear" onClick={clearFilters}>
-              Clear filters
+              {t('clear_filters')}
             </button>
           )}
         </div>
@@ -170,7 +172,9 @@ export default function EmployeesPage() {
 
       {error ? (
         <div className="req-status">
-          <p className="req-status-msg">Couldn’t load employees: {error}</p>
+          <p className="req-status-msg">
+            {t('emp_load_err')} {error}
+          </p>
           <button
             type="button"
             className="req-retry"
@@ -179,27 +183,23 @@ export default function EmployeesPage() {
               load().catch((err: Error) => setError(err.message))
             }}
           >
-            Try again
+            {t('try_again')}
           </button>
         </div>
       ) : !data ? (
         <div className="req-skeleton" aria-busy="true">
-          <span className="visually-hidden">Loading employees…</span>
+          <span className="visually-hidden">{t('emp_loading')}</span>
           {Array.from({ length: 6 }, (_, i) => (
             <div className="skel-row" aria-hidden="true" key={i} />
           ))}
         </div>
       ) : data.employees.length === 0 ? (
         <div className="req-empty">
-          <h2>{hasFilters ? 'No matching employees' : 'No employees yet'}</h2>
-          <p>
-            {hasFilters
-              ? 'Loosen or clear the filters to see more.'
-              : 'Add your first employee to start assigning requests to them.'}
-          </p>
+          <h2>{hasFilters ? t('emp_no_match_h') : t('emp_none_h')}</h2>
+          <p>{hasFilters ? t('emp_loosen_p') : t('emp_add_first_p')}</p>
           {hasFilters && (
             <button type="button" className="req-retry" onClick={clearFilters}>
-              Clear filters
+              {t('clear_filters')}
             </button>
           )}
         </div>
@@ -209,12 +209,12 @@ export default function EmployeesPage() {
             <table className="req-table">
               <thead>
                 <tr>
-                  <th scope="col">Name</th>
-                  <th scope="col">Email</th>
-                  <th scope="col">Department</th>
-                  <th scope="col">Status</th>
+                  <th scope="col">{t('col_name')}</th>
+                  <th scope="col">{t('col_email')}</th>
+                  <th scope="col">{t('col_department')}</th>
+                  <th scope="col">{t('col_status')}</th>
                   <th scope="col" className="emp-actions-col">
-                    Actions
+                    {t('col_actions')}
                   </th>
                 </tr>
               </thead>
@@ -231,15 +231,15 @@ export default function EmployeesPage() {
                       </button>
                     </td>
                     <td className="emp-email">{e.email}</td>
-                    <td>{e.departmentName}</td>
+                    <td>{L(e.departmentName)}</td>
                     <td>
                       <span className={`emp-badge${e.isActive ? ' is-active' : ' is-inactive'}`}>
-                        {e.isActive ? 'Active' : 'Inactive'}
+                        {e.isActive ? t('emp_active') : t('emp_inactive')}
                       </span>
                     </td>
                     <td className="emp-actions">
                       <button type="button" className="action-btn" onClick={() => setDialog({ kind: 'edit', employee: e })}>
-                        Edit
+                        {t('emp_edit')}
                       </button>
                       {e.isActive ? (
                         <button
@@ -247,7 +247,7 @@ export default function EmployeesPage() {
                           className="action-btn is-danger"
                           onClick={() => setDialog({ kind: 'deactivate', employee: e })}
                         >
-                          Deactivate
+                          {t('emp_deactivate')}
                         </button>
                       ) : (
                         <button
@@ -259,11 +259,11 @@ export default function EmployeesPage() {
                               .catch((err: Error) => setError(err.message))
                           }
                         >
-                          Activate
+                          {t('emp_activate')}
                         </button>
                       )}
                       <button type="button" className="action-btn" onClick={() => setDialog({ kind: 'reset', employee: e })}>
-                        Reset password
+                        {t('emp_reset_password')}
                       </button>
                     </td>
                   </tr>
@@ -272,15 +272,15 @@ export default function EmployeesPage() {
             </table>
           </div>
           {data.total > PAGE_SIZE && (
-            <nav className="req-pager" aria-label="Pagination">
+            <nav className="req-pager" aria-label={t('pagination')}>
               <span className="req-pager-info">
-                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} of {data.total}
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} {t('of')} {data.total}
               </span>
               <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Previous
+                {t('previous')}
               </button>
               <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)}>
-                Next
+                {t('next')}
               </button>
             </nav>
           )}
@@ -319,6 +319,7 @@ function EmployeeForm({
   onClose: () => void
   onDone: () => void
 }) {
+  const { t, L } = useI18n()
   const isEdit = !!employee
   const [name, setName] = useState(employee?.name ?? '')
   const [email, setEmail] = useState(employee?.email ?? '')
@@ -363,37 +364,37 @@ function EmployeeForm({
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <form className="dialog" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h4>{isEdit ? 'Edit employee' : 'Add employee'}</h4>
+        <h4>{isEdit ? t('emp_edit_h') : t('emp_add')}</h4>
         <label className="field">
-          <span>Name</span>
+          <span>{t('emp_name')}</span>
           <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           {errors.name && <em className="field-err">{errors.name}</em>}
         </label>
         {!isEdit && (
           <>
             <label className="field">
-              <span>Email</span>
+              <span>{t('emp_email')}</span>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
               {errors.email && <em className="field-err">{errors.email}</em>}
             </label>
             <label className="field">
-              <span>Initial password</span>
+              <span>{t('emp_initial_password')}</span>
               <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} />
               {errors.password && <em className="field-err">{errors.password}</em>}
             </label>
           </>
         )}
         <label className="field">
-          <span>Phone (optional)</span>
+          <span>{t('emp_phone_optional')}</span>
           <input value={phone ?? ''} onChange={(e) => setPhone(e.target.value)} />
           {errors.phone && <em className="field-err">{errors.phone}</em>}
         </label>
         <label className="field">
-          <span>Department</span>
+          <span>{t('emp_department')}</span>
           <select className="req-select" value={depId} onChange={(e) => setDepId(e.target.value)}>
             {departments.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name}
+                {L(d.name)}
               </option>
             ))}
           </select>
@@ -402,10 +403,10 @@ function EmployeeForm({
         {errors._ && <p className="assign-error">{errors._}</p>}
         <div className="dialog-actions">
           <button type="button" className="detail-close-text" onClick={onClose}>
-            Cancel
+            {t('cancel')}
           </button>
           <button type="submit" className="req-retry" disabled={busy}>
-            {isEdit ? 'Save changes' : 'Create employee'}
+            {isEdit ? t('emp_save_changes') : t('emp_create')}
           </button>
         </div>
       </form>
@@ -414,6 +415,7 @@ function EmployeeForm({
 }
 
 function DeactivateDialog({ employee, onClose, onDone }: { employee: Employee; onClose: () => void; onDone: () => void }) {
+  const { t } = useI18n()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -433,7 +435,7 @@ function DeactivateDialog({ employee, onClose, onDone }: { employee: Employee; o
       // 409 = the employee still holds open tasks; reassign them first.
       setError(
         err instanceof ApiError && err.status === 409
-          ? 'This employee still has open tasks. Reassign them before deactivating.'
+          ? t('emp_deactivate_open_tasks')
           : (err as Error).message,
       )
       setBusy(false)
@@ -443,18 +445,17 @@ function DeactivateDialog({ employee, onClose, onDone }: { employee: Employee; o
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div className="dialog" onClick={(e) => e.stopPropagation()}>
-        <h4>Deactivate {employee.name}?</h4>
-        <p className="req-status-msg">
-          They will be unable to log in and cannot be assigned new tasks. You can reactivate them
-          later.
-        </p>
+        <h4>
+          {t('emp_deactivate_q_pre')} {employee.name}?
+        </h4>
+        <p className="req-status-msg">{t('emp_deactivate_warn')}</p>
         {error && <p className="assign-error">{error}</p>}
         <div className="dialog-actions">
           <button type="button" className="detail-close-text" onClick={onClose}>
-            Cancel
+            {t('cancel')}
           </button>
           <button type="button" className="req-retry is-danger" onClick={confirm} disabled={busy}>
-            Deactivate
+            {t('emp_deactivate')}
           </button>
         </div>
       </div>
@@ -463,6 +464,7 @@ function DeactivateDialog({ employee, onClose, onDone }: { employee: Employee; o
 }
 
 function ResetPasswordDialog({ employee, onClose }: { employee: Employee; onClose: () => void }) {
+  const { t } = useI18n()
   const [temp, setTemp] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -491,33 +493,29 @@ function ResetPasswordDialog({ employee, onClose }: { employee: Employee; onClos
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div className="dialog" onClick={(e) => e.stopPropagation()}>
-        <h4>Reset password for {employee.name}?</h4>
+        <h4>
+          {t('emp_reset_q_pre')} {employee.name}?
+        </h4>
         {temp ? (
           <>
-            <p className="req-status-msg">
-              Share this temporary password now — it is shown only once and cannot be retrieved
-              again.
-            </p>
+            <p className="req-status-msg">{t('emp_temp_share')}</p>
             <code className="temp-pass">{temp}</code>
             <div className="dialog-actions">
               <button type="button" className="req-retry" onClick={onClose}>
-                Done
+                {t('done')}
               </button>
             </div>
           </>
         ) : (
           <>
-            <p className="req-status-msg">
-              A new temporary password will be generated and shown once. The current password stops
-              working immediately.
-            </p>
+            <p className="req-status-msg">{t('emp_temp_will')}</p>
             {error && <p className="assign-error">{error}</p>}
             <div className="dialog-actions">
               <button type="button" className="detail-close-text" onClick={onClose}>
-                Cancel
+                {t('cancel')}
               </button>
               <button type="button" className="req-retry" onClick={confirm} disabled={busy}>
-                Reset password
+                {t('emp_reset_password')}
               </button>
             </div>
           </>
@@ -533,13 +531,14 @@ function ResetPasswordDialog({ employee, onClose }: { employee: Employee; onClos
 interface EmployeeTask {
   id: number
   requestId: number
-  serviceTypeName: string
-  status: { key: string; label: string; category: string | null }
+  serviceTypeName: Loc
+  status: { key: string; label: Loc; category: string | null }
   priority: string
   assignedAt: string
 }
 
 function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onClose: () => void }) {
+  const { t, L } = useI18n()
   const [tasks, setTasks] = useState<EmployeeTask[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -556,8 +555,8 @@ function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onCl
   }, [employee.id])
 
   const counts = new Map<string, number>()
-  for (const t of tasks ?? []) {
-    const cat = t.status.category ?? 'unknown'
+  for (const tk of tasks ?? []) {
+    const cat = tk.status.category ?? 'unknown'
     counts.set(cat, (counts.get(cat) ?? 0) + 1)
   }
 
@@ -567,30 +566,32 @@ function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onCl
         className="dialog emp-summary"
         role="dialog"
         aria-modal="true"
-        aria-label={`Summary for ${employee.name}`}
+        aria-label={employee.name}
         onClick={(e) => e.stopPropagation()}
       >
         <h4>{employee.name}</h4>
         <p className="emp-summary-meta">
-          {employee.email} · {employee.departmentName} ·{' '}
+          {employee.email} · {L(employee.departmentName)} ·{' '}
           <span className={`emp-badge${employee.isActive ? ' is-active' : ' is-inactive'}`}>
-            {employee.isActive ? 'Active' : 'Inactive'}
+            {employee.isActive ? t('emp_active') : t('emp_inactive')}
           </span>
         </p>
 
         {error ? (
-          <p className="req-status-msg">Couldn’t load tasks: {error}</p>
+          <p className="req-status-msg">
+            {t('emp_tasks_load_err')} {error}
+          </p>
         ) : !tasks ? (
-          <p className="detail-empty">Loading tasks…</p>
+          <p className="detail-empty">{t('emp_loading_tasks')}</p>
         ) : tasks.length === 0 ? (
-          <p className="detail-empty">No tasks have been assigned to this employee yet.</p>
+          <p className="detail-empty">{t('emp_no_tasks')}</p>
         ) : (
           <>
             <p className="emp-summary-counts">
-              {tasks.length} task{tasks.length === 1 ? '' : 's'}
+              {tasks.length} {tasks.length === 1 ? t('task_word') : t('tasks_word')}
               {[...counts.entries()].map(([cat, n]) => (
                 <span key={cat} className={`status-pill is-${cat}`}>
-                  {n} {cat.replace('_', ' ')}
+                  {n} {cat === 'unknown' ? cat : t(`cat_${cat}`)}
                 </span>
               ))}
             </p>
@@ -598,25 +599,25 @@ function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onCl
               <table className="req-table">
                 <thead>
                   <tr>
-                    <th scope="col">Request</th>
-                    <th scope="col">Service</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Priority</th>
-                    <th scope="col">Assigned</th>
+                    <th scope="col">{t('col_request')}</th>
+                    <th scope="col">{t('col_service')}</th>
+                    <th scope="col">{t('col_status')}</th>
+                    <th scope="col">{t('col_priority')}</th>
+                    <th scope="col">{t('col_assigned')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {tasks.map((t) => (
-                    <tr key={t.id}>
-                      <td>#{t.requestId}</td>
-                      <td className="req-service">{t.serviceTypeName}</td>
+                  {tasks.map((tk) => (
+                    <tr key={tk.id}>
+                      <td>#{tk.requestId}</td>
+                      <td className="req-service">{L(tk.serviceTypeName)}</td>
                       <td>
-                        <span className={`status-pill${t.status.category ? ` is-${t.status.category}` : ''}`}>
-                          {t.status.label}
+                        <span className={`status-pill${tk.status.category ? ` is-${tk.status.category}` : ''}`}>
+                          {L(tk.status.label)}
                         </span>
                       </td>
-                      <td>{t.priority}</td>
-                      <td>{new Date(t.assignedAt).toLocaleDateString()}</td>
+                      <td>{t(`pri_${tk.priority}`)}</td>
+                      <td>{new Date(tk.assignedAt).toLocaleDateString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -627,7 +628,7 @@ function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onCl
 
         <div className="dialog-actions">
           <button type="button" className="req-retry" onClick={onClose}>
-            Close
+            {t('close')}
           </button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 // Typed parsing of FORM_DEFINITION.field_schema (CLAUDE.md Section 8).
 // Unknown field types parse to FieldType.unsupported — rendered as a
 // disabled placeholder, never a crash.
+import '../i18n.dart';
 
 enum FieldType {
   text,
@@ -30,16 +31,16 @@ enum FieldType {
 
 class FieldOption {
   final String value;
-  final String label;
+  final Loc label;
   const FieldOption({required this.value, required this.label});
 
   factory FieldOption.fromJson(Map<String, dynamic> json) =>
-      FieldOption(value: '${json['value']}', label: '${json['label']}');
+      FieldOption(value: '${json['value']}', label: Loc.fromJson(json['label']));
 }
 
 class FormFieldDef {
   final String id;
-  final String label;
+  final Loc label;
   final FieldType type;
   final bool required;
   final List<FieldOption> options;
@@ -58,7 +59,7 @@ class FormFieldDef {
 
   factory FormFieldDef.fromJson(Map<String, dynamic> json) => FormFieldDef(
         id: json['id'] as String,
-        label: json['label'] as String,
+        label: Loc.fromJson(json['label']),
         type: FieldType.parse(json['type'] as String?),
         required: json['required'] == true,
         options: (json['options'] as List<dynamic>? ?? const [])
@@ -76,48 +77,52 @@ class FormFieldDef {
   /// same checks, same label-generated messages. The server's 422 stays
   /// authoritative; this is UX only.
   String? validate(Object? value) {
+    // Client-side messages stay English to mirror the server's authoritative
+    // 422 (validateFormResponse resolves label.en) — bilingual form errors
+    // are deferred with the rest of the runtime-composed text.
+    final name = label.en;
     // Unsupported first: its value is always empty (nothing renders an
     // input), and "is required" would be a lie the user can't act on.
     if (type == FieldType.unsupported) {
-      return required ? '$label is not supported in this app version' : null;
+      return required ? '$name is not supported in this app version' : null;
     }
 
     final missing = value == null || value == '';
-    if (missing) return required ? '$label is required' : null;
+    if (missing) return required ? '$name is required' : null;
 
     switch (type) {
       case FieldType.text:
       case FieldType.multiline:
         final s = value as String;
         if (min != null && s.length < min!) {
-          return '$label must be at least $min characters';
+          return '$name must be at least $min characters';
         }
         if (max != null && s.length > max!) {
-          return '$label must be at most $max characters';
+          return '$name must be at most $max characters';
         }
         return null;
       case FieldType.number:
-        if (value is! num) return '$label must be a number';
-        if (min != null && value < min!) return '$label must be at least $min';
-        if (max != null && value > max!) return '$label must be at most $max';
+        if (value is! num) return '$name must be a number';
+        if (min != null && value < min!) return '$name must be at least $min';
+        if (max != null && value > max!) return '$name must be at most $max';
         return null;
       case FieldType.date:
         if (value is! String || !_isValidDate(value)) {
-          return '$label must be a valid date (YYYY-MM-DD)';
+          return '$name must be a valid date (YYYY-MM-DD)';
         }
         return null;
       case FieldType.dropdown:
       case FieldType.radio:
         if (!options.any((o) => o.value == value)) {
-          return '$label must be one of the listed options';
+          return '$name must be one of the listed options';
         }
         return null;
       case FieldType.checkbox:
-        return value is bool ? null : '$label must be true or false';
+        return value is bool ? null : '$name must be true or false';
       case FieldType.photo:
         return value is String && value.isNotEmpty
             ? null
-            : '$label must be an uploaded attachment id';
+            : '$name must be an uploaded attachment id';
       case FieldType.location:
         if (value is Map) {
           final lat = value['lat'];
@@ -128,7 +133,7 @@ class FormFieldDef {
             return null;
           }
         }
-        return '$label must be a map location';
+        return '$name must be a map location';
       case FieldType.unsupported:
         return null; // handled above — unreachable
     }

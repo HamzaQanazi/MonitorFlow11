@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { apiFetch, ApiError, getToken } from '../lib/api'
+import { useI18n, type Loc } from '../i18n'
 
 // Files need the Authorization header, so downloads can't be plain links —
 // same authed-blob pattern as the Reports CSV export.
@@ -24,14 +25,14 @@ async function downloadAttachment(id: string, filename: string) {
 
 interface Status {
   key: string
-  label: string
+  label: Loc
   category: string | null
 }
 
 interface Detail {
   id: number
   serviceTypeId: number
-  serviceTypeName: string
+  serviceTypeName: Loc
   status: Status
   priority: string
   formResponse: Record<string, unknown>
@@ -52,9 +53,9 @@ interface Detail {
 
 interface Field {
   id: string
-  label: string
+  label: Loc
   type: string
-  options?: { value: string; label: string }[]
+  options?: { value: string; label: Loc }[]
 }
 
 interface Employee {
@@ -66,7 +67,7 @@ interface Employee {
 
 interface WorkflowStatus {
   key: string
-  label: string
+  label: Loc
   category: string
 }
 
@@ -92,8 +93,6 @@ interface PendingAction {
   run: (note: string) => Promise<unknown>
 }
 
-const PRIORITY_LABEL: Record<string, string> = { high: 'High', medium: 'Medium', low: 'Low' }
-
 function formatDateTime(iso: string) {
   const d = new Date(iso)
   const opts: Intl.DateTimeFormatOptions = {
@@ -110,31 +109,38 @@ function formatSize(bytes: number) {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
-function fieldValue(f: Field, v: unknown): ReactNode {
+// Picker (loc) and chrome (t) are threaded in so option labels and value words
+// resolve to the active language.
+function fieldValue(
+  f: Field,
+  v: unknown,
+  t: (k: string) => string,
+  loc: (value: Loc | string | null | undefined) => string,
+): ReactNode {
   if (v === undefined || v === null || v === '') return '—'
   switch (f.type) {
     case 'checkbox':
-      return v ? 'Yes' : 'No'
+      return v ? t('detail_yes') : t('detail_no')
     case 'dropdown':
     case 'radio':
-      return f.options?.find((o) => o.value === v)?.label ?? String(v)
+      return loc(f.options?.find((o) => o.value === v)?.label) || String(v)
     case 'photo':
-      return 'Photo attached'
+      return t('detail_photo_attached')
     case 'date':
       return formatDateTime(`${String(v)}T00:00:00`).split(',')[0]
     case 'location': {
       // v5 map amendment: coords + a link out — no embedded map in the pane.
-      const loc = v as { lat: number; lng: number }
-      if (typeof loc?.lat !== 'number' || typeof loc?.lng !== 'number') return String(v)
+      const l = v as { lat: number; lng: number }
+      if (typeof l?.lat !== 'number' || typeof l?.lng !== 'number') return String(v)
       return (
         <>
-          {loc.lat.toFixed(5)}, {loc.lng.toFixed(5)}{' '}
+          {l.lat.toFixed(5)}, {l.lng.toFixed(5)}{' '}
           <a
-            href={`https://www.openstreetmap.org/?mlat=${loc.lat}&mlon=${loc.lng}#map=16/${loc.lat}/${loc.lng}`}
+            href={`https://www.openstreetmap.org/?mlat=${l.lat}&mlon=${l.lng}#map=16/${l.lat}/${l.lng}`}
             target="_blank"
             rel="noreferrer"
           >
-            Open in OpenStreetMap ↗
+            {t('detail_open_osm')}
           </a>
         </>
       )
@@ -155,6 +161,7 @@ export default function RequestDetailPane({
   onClose: () => void
   onChanged: () => void
 }) {
+  const { t, L } = useI18n()
   const [detail, setDetail] = useState<Detail | null>(null)
   const [fields, setFields] = useState<Field[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -236,9 +243,9 @@ export default function RequestDetailPane({
       onChanged()
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) {
-        setAssignError('That employee can’t take this request (wrong department or inactive).')
+        setAssignError(t('detail_assign_fail'))
       } else {
-        setAssignError(err instanceof Error ? err.message : 'Assignment failed')
+        setAssignError(err instanceof Error ? err.message : t('detail_assign_fail_generic'))
       }
     } finally {
       setAssignBusy(false)
@@ -254,7 +261,7 @@ export default function RequestDetailPane({
   async function confirmPending() {
     if (!pending) return
     if (!note.trim()) {
-      setPendingError('A note is required for this action.')
+      setPendingError(t('detail_note_required'))
       return
     }
     setPendingBusy(true)
@@ -265,7 +272,7 @@ export default function RequestDetailPane({
       await load()
       onChanged()
     } catch (err) {
-      setPendingError(err instanceof Error ? err.message : 'Action failed')
+      setPendingError(err instanceof Error ? err.message : t('detail_action_fail'))
     } finally {
       setPendingBusy(false)
     }
@@ -278,7 +285,7 @@ export default function RequestDetailPane({
       await load()
       onChanged()
     } catch {
-      setPriorityError('Couldn’t change the priority — try again.')
+      setPriorityError(t('detail_priority_fail'))
     }
   }
 
@@ -292,7 +299,7 @@ export default function RequestDetailPane({
       setComment('')
       await load()
     } catch (err) {
-      setCommentError(err instanceof Error ? err.message : 'Couldn’t post the comment.')
+      setCommentError(err instanceof Error ? err.message : t('detail_comment_fail'))
     } finally {
       setCommentBusy(false)
     }
@@ -300,15 +307,17 @@ export default function RequestDetailPane({
 
   if (error) {
     return (
-      <aside className="req-detail" aria-label="Request detail">
+      <aside className="req-detail" aria-label={t('detail_aria')}>
         <div className="detail-status">
-          <p className="req-status-msg">Couldn’t load this request: {error}</p>
+          <p className="req-status-msg">
+            {t('detail_load_fail')} {error}
+          </p>
           <div className="detail-status-actions">
             <button type="button" className="req-retry" onClick={() => load().catch((err: Error) => setError(err.message))}>
-              Try again
+              {t('try_again')}
             </button>
             <button type="button" className="detail-close-text" onClick={onClose}>
-              Back to list
+              {t('detail_back_to_list')}
             </button>
           </div>
         </div>
@@ -318,8 +327,8 @@ export default function RequestDetailPane({
 
   if (!detail) {
     return (
-      <aside className="req-detail" aria-busy="true" aria-label="Request detail">
-        <span className="visually-hidden">Loading request…</span>
+      <aside className="req-detail" aria-busy="true" aria-label={t('detail_aria')}>
+        <span className="visually-hidden">{t('detail_loading')}</span>
         <div className="detail-skel" aria-hidden="true">
           <div className="skel-row" style={{ width: '60%' }} />
           <div className="skel-row" />
@@ -343,17 +352,20 @@ export default function RequestDetailPane({
   // transition) is excluded: entering it without an employee would strand
   // the request, and the Assignment section owns that move.
   const categoryOf = (key: string) => workflow?.statuses.find((s) => s.key === key)?.category
-  const labelOf = (key: string) => workflow?.statuses.find((s) => s.key === key)?.label ?? key
-  const assignTarget = workflow?.transitions.find((t) => t.action === 'accept')?.from
+  const labelOf = (key: string) => {
+    const s = workflow?.statuses.find((st) => st.key === key)
+    return s ? L(s.label) : key
+  }
+  const assignTarget = workflow?.transitions.find((tr) => tr.action === 'accept')?.from
   const monitorMoves = workflow
     ? workflow.transitions.filter(
-        (t) => t.from === detail.status.key && t.allowed_role === 'monitor' && t.to !== assignTarget
+        (tr) => tr.from === detail.status.key && tr.allowed_role === 'monitor' && tr.to !== assignTarget
       )
     : []
   // Standalone cancel only when no workflow button already terminates from
   // here (the /cancel endpoint covers states with no monitor transitions).
   const showCancel =
-    assignable && !monitorMoves.some((t) => categoryOf(t.to) === 'terminated')
+    assignable && !monitorMoves.some((tr) => categoryOf(tr.to) === 'terminated')
   const reopenTargets =
     category === 'terminated' && workflow
       ? workflow.statuses.filter(
@@ -365,33 +377,35 @@ export default function RequestDetailPane({
   const hasActions = monitorMoves.length > 0 || showCancel || reopenTargets.length > 0
 
   return (
-    <aside className="req-detail" aria-label={`Request #${detail.id} detail`}>
+    <aside className="req-detail" aria-label={`${t('detail_aria')} #${detail.id}`}>
       <header className="detail-head">
         <div>
           <h2>
-            <span className="detail-id">#{detail.id}</span> {detail.serviceTypeName}
+            <span className="detail-id">#{detail.id}</span> {L(detail.serviceTypeName)}
           </h2>
           <p className="detail-sub">
             <span className={`status-pill${category ? ` is-${category}` : ''}`}>
               <i className="pill-dot" aria-hidden="true" />
-              {detail.status.label}
+              {L(detail.status.label)}
             </span>
             <select
               className={`priority-select is-${detail.priority}`}
-              aria-label="Priority"
+              aria-label={t('detail_priority_aria')}
               value={detail.priority}
               onChange={(e) => changePriority(e.target.value)}
             >
-              {Object.entries(PRIORITY_LABEL).map(([value, label]) => (
+              {['high', 'medium', 'low'].map((value) => (
                 <option key={value} value={value}>
-                  {label} priority
+                  {t(`pri_${value}`)} {t('detail_priority_suffix')}
                 </option>
               ))}
             </select>
-            <span className="detail-when">opened {formatDateTime(detail.createdAt)}</span>
+            <span className="detail-when">
+              {t('detail_opened')} {formatDateTime(detail.createdAt)}
+            </span>
           </p>
         </div>
-        <button type="button" className="detail-close" onClick={onClose} aria-label="Close detail">
+        <button type="button" className="detail-close" onClick={onClose} aria-label={t('detail_close_aria')}>
           ×
         </button>
       </header>
@@ -408,26 +422,26 @@ export default function RequestDetailPane({
 
       {hasActions && (
         <section className="detail-section" aria-labelledby={`act-h-${detail.id}`}>
-          <h3 id={`act-h-${detail.id}`}>Actions</h3>
+          <h3 id={`act-h-${detail.id}`}>{t('detail_actions')}</h3>
           <div className="detail-actions">
-            {monitorMoves.map((t) => {
-              const danger = categoryOf(t.to) === 'terminated'
+            {monitorMoves.map((tr) => {
+              const danger = categoryOf(tr.to) === 'terminated'
               return (
                 <button
-                  key={t.to}
+                  key={tr.to}
                   type="button"
                   className={`action-btn${danger ? ' is-danger' : ''}`}
                   onClick={() =>
                     openAction({
-                      title: `Move request #${detail.id} to “${labelOf(t.to)}”?`,
-                      confirmLabel: `Mark as ${labelOf(t.to)}`,
+                      title: `${t('detail_move_pre')} #${detail.id} ${t('detail_to')} “${labelOf(tr.to)}”?`,
+                      confirmLabel: `${t('detail_mark_as')} ${labelOf(tr.to)}`,
                       danger,
                       run: (n) =>
-                        apiFetch(`/requests/${id}/status`, { method: 'PATCH', body: { to: t.to, note: n } }),
+                        apiFetch(`/requests/${id}/status`, { method: 'PATCH', body: { to: tr.to, note: n } }),
                     })
                   }
                 >
-                  Mark as {labelOf(t.to)}
+                  {t('detail_mark_as')} {labelOf(tr.to)}
                 </button>
               )
             })}
@@ -437,14 +451,14 @@ export default function RequestDetailPane({
                 className="action-btn is-danger"
                 onClick={() =>
                   openAction({
-                    title: `Cancel request #${detail.id}?`,
-                    confirmLabel: 'Cancel request',
+                    title: `${t('detail_cancel_request')} #${detail.id}?`,
+                    confirmLabel: t('detail_cancel_request'),
                     danger: true,
                     run: (n) => apiFetch(`/requests/${id}/cancel`, { method: 'PATCH', body: { note: n } }),
                   })
                 }
               >
-                Cancel request
+                {t('detail_cancel_request')}
               </button>
             )}
           </div>
@@ -452,14 +466,14 @@ export default function RequestDetailPane({
             <div className="assign-row">
               <select
                 className="req-select"
-                aria-label="Reopen to status"
+                aria-label={t('detail_reopen_to_aria')}
                 value={reopenPick}
                 onChange={(e) => setReopenPick(e.target.value)}
               >
-                <option value="">Reopen to…</option>
+                <option value="">{t('detail_reopen_to')}</option>
                 {reopenTargets.map((s) => (
                   <option key={s.key} value={s.key}>
-                    {s.label}
+                    {L(s.label)}
                   </option>
                 ))}
               </select>
@@ -469,15 +483,15 @@ export default function RequestDetailPane({
                 disabled={!reopenPick}
                 onClick={() =>
                   openAction({
-                    title: `Reopen request #${detail.id} as “${labelOf(reopenPick)}”?`,
-                    confirmLabel: 'Reopen request',
+                    title: `${t('detail_reopen_pre')} #${detail.id} ${t('detail_as')} “${labelOf(reopenPick)}”?`,
+                    confirmLabel: t('detail_reopen'),
                     danger: false,
                     run: (n) =>
                       apiFetch(`/requests/${id}/status`, { method: 'PATCH', body: { to: reopenPick, note: n } }),
                   })
                 }
               >
-                Reopen
+                {t('detail_reopen')}
               </button>
             </div>
           )}
@@ -485,35 +499,36 @@ export default function RequestDetailPane({
       )}
 
       <section className="detail-section" aria-labelledby={`assign-h-${detail.id}`}>
-        <h3 id={`assign-h-${detail.id}`}>Assignment</h3>
+        <h3 id={`assign-h-${detail.id}`}>{t('detail_assignment')}</h3>
         {detail.task ? (
           <p className="detail-assignee">
-            Assigned to <strong>{detail.task.employeeName}</strong> since{' '}
+            {t('detail_assigned_to')} <strong>{detail.task.employeeName}</strong> {t('detail_since')}{' '}
             {formatDateTime(detail.task.assignedAt)}
           </p>
         ) : (
-          <p className="detail-assignee is-none">Not assigned yet</p>
+          <p className="detail-assignee is-none">{t('detail_not_assigned')}</p>
         )}
         {assignable && (
           <div className="assign-row">
             <select
-              aria-label={detail.task ? 'Reassign to' : 'Assign to'}
+              aria-label={detail.task ? t('detail_reassign_to') : t('detail_assign_to')}
               className="req-select"
               value={pick}
               onChange={(e) => setPick(e.target.value)}
               disabled={assignBusy || pickable.length === 0}
             >
               <option value="">
-                {pickable.length === 0 ? 'No other employees in this department' : 'Choose an employee…'}
+                {pickable.length === 0 ? t('detail_no_other_emps') : t('detail_choose_employee')}
               </option>
               {pickable.map((e, i) => (
                 <option key={e.id} value={e.id}>
-                  {e.name} · {e.openTaskCount} open{i === 0 ? ' · Suggested' : ''}
+                  {e.name} · {e.openTaskCount} {t('detail_open')}
+                  {i === 0 ? ` · ${t('detail_suggested')}` : ''}
                 </option>
               ))}
             </select>
             <button type="button" className="req-retry" onClick={assign} disabled={!pick || assignBusy}>
-              {assignBusy ? 'Assigning…' : detail.task ? 'Reassign' : 'Assign'}
+              {assignBusy ? t('detail_assigning') : detail.task ? t('detail_reassign') : t('detail_assign')}
             </button>
           </div>
         )}
@@ -525,10 +540,10 @@ export default function RequestDetailPane({
       </section>
 
       <section className="detail-section" aria-labelledby={`form-h-${detail.id}`}>
-        <h3 id={`form-h-${detail.id}`}>Request details</h3>
+        <h3 id={`form-h-${detail.id}`}>{t('detail_request_details')}</h3>
         <dl className="detail-form">
           {(fields.length
-            ? fields.map((f) => ({ key: f.id, label: f.label, value: fieldValue(f, detail.formResponse[f.id]) }))
+            ? fields.map((f) => ({ key: f.id, label: L(f.label), value: fieldValue(f, detail.formResponse[f.id], t, L) }))
             : Object.entries(detail.formResponse).map(([k, v]) => ({ key: k, label: k, value: String(v) }))
           ).map((row) => (
             <div className="detail-form-row" key={row.key}>
@@ -540,14 +555,14 @@ export default function RequestDetailPane({
       </section>
 
       <section className="detail-section" aria-labelledby={`tl-h-${detail.id}`}>
-        <h3 id={`tl-h-${detail.id}`}>Timeline</h3>
+        <h3 id={`tl-h-${detail.id}`}>{t('detail_timeline')}</h3>
         <ol className="timeline">
           {detail.statusHistory.map((h, i) => (
             <li key={i} className={`tl-item${h.status.category ? ` is-${h.status.category}` : ''}`}>
               <i className="tl-dot" aria-hidden="true" />
               <div className="tl-body">
                 <p className="tl-line">
-                  <strong>{h.status.label}</strong>
+                  <strong>{L(h.status.label)}</strong>
                   <span className="tl-meta">
                     {h.changedBy.name} · {formatDateTime(h.changedAt)}
                   </span>
@@ -560,9 +575,9 @@ export default function RequestDetailPane({
       </section>
 
       <section className="detail-section" aria-labelledby={`cm-h-${detail.id}`}>
-        <h3 id={`cm-h-${detail.id}`}>Comments</h3>
+        <h3 id={`cm-h-${detail.id}`}>{t('detail_comments')}</h3>
         {detail.comments.length === 0 ? (
-          <p className="detail-empty">No comments yet.</p>
+          <p className="detail-empty">{t('detail_no_comments')}</p>
         ) : (
           <ul className="comment-list">
             {detail.comments.map((c) => (
@@ -578,8 +593,8 @@ export default function RequestDetailPane({
         )}
         <div className="comment-form">
           <textarea
-            aria-label="Write a comment"
-            placeholder="Write a comment for the requester…"
+            aria-label={t('detail_write_comment_aria')}
+            placeholder={t('detail_write_comment_ph')}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             disabled={commentBusy}
@@ -595,21 +610,21 @@ export default function RequestDetailPane({
             onClick={postComment}
             disabled={commentBusy || !comment.trim()}
           >
-            {commentBusy ? 'Posting…' : 'Post comment'}
+            {commentBusy ? t('detail_posting') : t('detail_post_comment')}
           </button>
         </div>
       </section>
 
       <section className="detail-section" aria-labelledby={`att-h-${detail.id}`}>
-        <h3 id={`att-h-${detail.id}`}>Attachments</h3>
+        <h3 id={`att-h-${detail.id}`}>{t('detail_attachments')}</h3>
         {detail.attachments.length === 0 ? (
-          <p className="detail-empty">No attachments.</p>
+          <p className="detail-empty">{t('detail_no_attachments')}</p>
         ) : (
           <ul className="attach-list">
             {detail.attachments.map((a) => (
               <li key={a.id}>
                 <span className="attach-badge">
-                  {a.source === 'task' ? `Task ${a.taskId} · After` : 'Before'}
+                  {a.source === 'task' ? `${t('detail_task')} ${a.taskId} · ${t('detail_after')}` : t('detail_before')}
                 </span>{' '}
                 <button
                   type="button"
@@ -637,8 +652,8 @@ export default function RequestDetailPane({
             <h4>{pending.title}</h4>
             <textarea
               autoFocus
-              aria-label="Note (required)"
-              placeholder="Add a note explaining this action (required)"
+              aria-label={t('detail_note_aria')}
+              placeholder={t('detail_note_ph')}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               disabled={pendingBusy}
@@ -655,7 +670,7 @@ export default function RequestDetailPane({
                 onClick={() => setPending(null)}
                 disabled={pendingBusy}
               >
-                Keep as is
+                {t('detail_keep_as_is')}
               </button>
               <button
                 type="button"
@@ -663,7 +678,7 @@ export default function RequestDetailPane({
                 onClick={confirmPending}
                 disabled={pendingBusy}
               >
-                {pendingBusy ? 'Working…' : pending.confirmLabel}
+                {pendingBusy ? t('detail_working') : pending.confirmLabel}
               </button>
             </div>
           </div>

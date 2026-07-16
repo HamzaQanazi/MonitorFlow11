@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
+import { useI18n } from '../i18n'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 
@@ -36,9 +37,13 @@ interface ListResponse {
   total: number
 }
 
-function actionLabel(action: string) {
-  const [who, what] = action.split('.')
-  return `${who[0].toUpperCase()}${who.slice(1)} ${what.replaceAll('_', ' ')}`
+// Action labels are a closed set (all employee.*), translated via t(); an
+// unknown action falls back to its raw key.
+function actionLabel(action: string, t: (k: string) => string) {
+  const what = action.split('.')[1]
+  const key = `audit_act_${what}`
+  const label = t(key)
+  return label === key ? action : label
 }
 
 function detailText(detail: AuditEvent['detail']) {
@@ -50,6 +55,7 @@ function detailText(detail: AuditEvent['detail']) {
 
 export default function AuditPage() {
   const { user } = useAuth()
+  const { t } = useI18n()
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
   const action = params.get('action') ?? ''
@@ -104,11 +110,11 @@ export default function AuditPage() {
   return (
     <div className="req">
       <header className="req-head">
-        <h1>Audit Log</h1>
+        <h1>{t('audit_title')}</h1>
         {data && (
           <p className="req-meta">
-            {data.total} event{data.total === 1 ? '' : 's'}
-            {hasFilters && ' matching'}
+            {data.total} {data.total === 1 ? t('event_word') : t('events_word')}
+            {hasFilters && ` ${t('matching')}`}
           </p>
         )}
       </header>
@@ -117,43 +123,47 @@ export default function AuditPage() {
         <div className="control-row">
           <select
             className="req-select"
-            aria-label="Filter by action"
+            aria-label={t('audit_filter_action')}
             value={action}
             onChange={(e) => setFilter('action', e.target.value)}
           >
-            <option value="">All actions</option>
+            <option value="">{t('audit_all_actions')}</option>
             {ACTIONS.map((a) => (
               <option key={a} value={a}>
-                {actionLabel(a)}
+                {actionLabel(a, t)}
               </option>
             ))}
           </select>
           <select
             className="req-select"
-            aria-label="Filter by actor"
+            aria-label={t('audit_filter_actor')}
             value={actorId}
             onChange={(e) => setFilter('actorId', e.target.value)}
           >
-            <option value="">All actors</option>
-            {user && <option value={user.id}>{user.name} (you)</option>}
+            <option value="">{t('audit_all_actors')}</option>
+            {user && (
+              <option value={user.id}>
+                {user.name} ({t('audit_you')})
+              </option>
+            )}
           </select>
           <input
             type="date"
             className="req-select"
-            aria-label="From date"
+            aria-label={t('rep_from_date_aria')}
             value={dateFrom}
             onChange={(e) => setFilter('dateFrom', e.target.value)}
           />
           <input
             type="date"
             className="req-select"
-            aria-label="To date"
+            aria-label={t('rep_to_date_aria')}
             value={dateTo}
             onChange={(e) => setFilter('dateTo', e.target.value)}
           />
           {hasFilters && (
             <button type="button" className="req-clear" onClick={clearFilters}>
-              Clear filters
+              {t('clear_filters')}
             </button>
           )}
         </div>
@@ -161,7 +171,9 @@ export default function AuditPage() {
 
       {error ? (
         <div className="req-status">
-          <p className="req-status-msg">Couldn’t load the audit log: {error}</p>
+          <p className="req-status-msg">
+            {t('audit_load_err')} {error}
+          </p>
           <button
             type="button"
             className="req-retry"
@@ -170,27 +182,23 @@ export default function AuditPage() {
               load().catch((err: Error) => setError(err.message))
             }}
           >
-            Try again
+            {t('try_again')}
           </button>
         </div>
       ) : !data ? (
         <div className="req-skeleton" aria-busy="true">
-          <span className="visually-hidden">Loading audit events…</span>
+          <span className="visually-hidden">{t('audit_loading')}</span>
           {Array.from({ length: 6 }, (_, i) => (
             <div className="skel-row" aria-hidden="true" key={i} />
           ))}
         </div>
       ) : data.events.length === 0 ? (
         <div className="req-empty">
-          <h2>{hasFilters ? 'No matching events' : 'No audit events yet'}</h2>
-          <p>
-            {hasFilters
-              ? 'Loosen or clear the filters to see more.'
-              : 'Account and configuration changes will appear here as they happen.'}
-          </p>
+          <h2>{hasFilters ? t('audit_no_match_h') : t('audit_none_h')}</h2>
+          <p>{hasFilters ? t('emp_loosen_p') : t('audit_none_p')}</p>
           {hasFilters && (
             <button type="button" className="req-retry" onClick={clearFilters}>
-              Clear filters
+              {t('clear_filters')}
             </button>
           )}
         </div>
@@ -200,11 +208,11 @@ export default function AuditPage() {
             <table className="req-table">
               <thead>
                 <tr>
-                  <th scope="col">When</th>
-                  <th scope="col">Actor</th>
-                  <th scope="col">Action</th>
-                  <th scope="col">Target</th>
-                  <th scope="col">Details</th>
+                  <th scope="col">{t('col_when')}</th>
+                  <th scope="col">{t('col_actor')}</th>
+                  <th scope="col">{t('col_action')}</th>
+                  <th scope="col">{t('col_target')}</th>
+                  <th scope="col">{t('col_details')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -212,7 +220,7 @@ export default function AuditPage() {
                   <tr key={e.id}>
                     <td>{new Date(e.createdAt).toLocaleString()}</td>
                     <td className="req-service">{e.actor.name}</td>
-                    <td>{actionLabel(e.action)}</td>
+                    <td>{actionLabel(e.action, t)}</td>
                     <td>{e.entityName ?? `${e.entityType} #${e.entityId}`}</td>
                     <td className="emp-email">{detailText(e.detail)}</td>
                   </tr>
@@ -221,15 +229,15 @@ export default function AuditPage() {
             </table>
           </div>
           {data.total > PAGE_SIZE && (
-            <nav className="req-pager" aria-label="Pagination">
+            <nav className="req-pager" aria-label={t('pagination')}>
               <span className="req-pager-info">
-                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} of {data.total}
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, data.total)} {t('of')} {data.total}
               </span>
               <button type="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Previous
+                {t('previous')}
               </button>
               <button type="button" disabled={page >= pages} onClick={() => setPage(page + 1)}>
-                Next
+                {t('next')}
               </button>
             </nav>
           )}

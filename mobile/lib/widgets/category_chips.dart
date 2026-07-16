@@ -3,7 +3,9 @@
 // counts from the unfiltered data. Categories only, never status keys
 // (CLAUDE.md Section 9).
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../i18n.dart';
 import '../theme.dart';
 
 class CategoryChips extends StatelessWidget {
@@ -21,6 +23,7 @@ class CategoryChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     final cats =
         kCategoryColors.keys.where((c) => (counts[c] ?? 0) > 0).toList();
     return SingleChildScrollView(
@@ -28,7 +31,7 @@ class CategoryChips extends StatelessWidget {
       child: Row(
         children: [
           for (final cat in cats) ...[
-            _chip(cat, counts[cat]!),
+            _chip(i18n, cat, counts[cat]!),
             const SizedBox(width: 8),
           ],
         ],
@@ -36,7 +39,7 @@ class CategoryChips extends StatelessWidget {
     );
   }
 
-  Widget _chip(String cat, int count) {
+  Widget _chip(I18n i18n, String cat, int count) {
     final c = categoryColors(cat);
     final isSelected = selected == cat;
     return Material(
@@ -60,7 +63,7 @@ class CategoryChips extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                '${cat.replaceAll('_', ' ')} · $count',
+                '${i18n.tr('cat_$cat')} · $count',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,

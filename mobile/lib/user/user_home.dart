@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
+import '../i18n.dart';
 import '../models/request.dart';
 import '../shared/notifications_screen.dart';
 import '../shared/profile_screen.dart';
@@ -76,6 +77,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     final auth = context.watch<AuthState>();
     final firstName = (auth.user?.name ?? '').split(' ').first;
 
@@ -98,14 +100,14 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.person_outline),
-            tooltip: 'Profile',
+            tooltip: i18n.tr('profile'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ProfileScreen()),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.logout),
-            tooltip: 'Sign out',
+            tooltip: i18n.tr('sign_out'),
             onPressed: () => context.read<AuthState>().logout(),
           ),
         ],
@@ -118,47 +120,47 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
           padding: const EdgeInsets.all(20),
           children: [
             Text(
-              'Hi $firstName',
+              '${i18n.tr('home_hi')} $firstName',
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
-            const Text(
-              'What do you need help with today?',
-              style: TextStyle(color: MfColors.muted),
+            Text(
+              i18n.tr('home_prompt'),
+              style: const TextStyle(color: MfColors.muted),
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: _openCatalogue,
               icon: const Icon(Icons.add),
-              label: const Text('New request'),
+              label: Text(i18n.tr('home_new_request')),
             ),
             const SizedBox(height: 28),
             Row(
               children: [
-                const Expanded(
-                  child: Text('Recent requests',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                Expanded(
+                  child: Text(i18n.tr('home_recent'),
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                 ),
-                TextButton(onPressed: _openMyRequests, child: const Text('View all')),
+                TextButton(onPressed: _openMyRequests, child: Text(i18n.tr('home_view_all'))),
               ],
             ),
             const SizedBox(height: 4),
-            ..._recentSection(),
+            ..._recentSection(i18n),
           ],
         ),
       ),
     );
   }
 
-  List<Widget> _recentSection() {
+  List<Widget> _recentSection(I18n i18n) {
     if (_error != null && _recent == null) {
       return [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 24),
           child: ErrorState(
             message: _error is NetworkException
-                ? 'Could not reach the server — check your connection.'
-                : 'Could not load your requests.',
+                ? i18n.tr('net_check')
+                : i18n.tr('home_load_fail'),
             onRetry: _load,
           ),
         ),
@@ -173,13 +175,13 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
       ];
     }
     if (_recent!.isEmpty) {
-      return const [
+      return [
         Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: EmptyState(
             icon: Icons.inbox_outlined,
-            title: 'Nothing here yet',
-            subtitle: 'Submit your first request to see its progress here.',
+            title: i18n.tr('home_none_title'),
+            subtitle: i18n.tr('home_none_sub'),
           ),
         ),
       ];
@@ -212,7 +214,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(r.serviceTypeName,
+                          child: Text(i18n.l(r.serviceTypeName),
                               style: const TextStyle(fontWeight: FontWeight.w600)),
                         ),
                         StatusPill(status: r.status),
@@ -220,7 +222,7 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '#${r.id} · ${relativeTime(r.createdAt)}',
+                      '#${r.id} · ${i18n.relativeTime(r.createdAt)}',
                       style: const TextStyle(color: MfColors.muted, fontSize: 13),
                     ),
                   ],

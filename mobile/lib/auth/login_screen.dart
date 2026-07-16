@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
+import '../i18n.dart';
 import '../theme.dart';
 import 'auth_state.dart';
 
@@ -75,8 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       });
     } on NetworkException {
-      setState(() =>
-          _bannerError = 'Could not reach the server — check your connection and try again.');
+      setState(() => _bannerError = context.read<I18n>().tr('net_check_retry'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -84,6 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -100,11 +101,19 @@ class _LoginScreenState extends State<LoginScreen> {
                       const _Wordmark(),
                       const SizedBox(height: 8),
                       Text(
-                        _registering ? 'Create your account' : 'Sign in to continue',
+                        _registering ? i18n.tr('login_create') : i18n.tr('login_signin_sub'),
                         textAlign: TextAlign.center,
                         style: const TextStyle(fontSize: 16, color: MfColors.muted),
                       ),
-                      const SizedBox(height: 28),
+                      // Language toggle — available before sign-in so the whole
+                      // flow can be seen in either direction.
+                      Align(
+                        child: TextButton(
+                          onPressed: () => i18n.toggle(),
+                          child: Text(i18n.tr('lang_toggle')),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       if (_bannerError != null) ...[
                         _ErrorBanner(message: _bannerError!),
                         const SizedBox(height: 16),
@@ -115,11 +124,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           textInputAction: TextInputAction.next,
                           autofillHints: const [AutofillHints.name],
                           decoration: InputDecoration(
-                            labelText: 'Full name',
+                            labelText: i18n.tr('login_full_name'),
                             errorText: _fieldErrors['name'],
                           ),
-                          validator: (v) =>
-                              (v == null || v.trim().isEmpty) ? 'Name is required' : null,
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? i18n.tr('login_err_name')
+                              : null,
                         ),
                         const SizedBox(height: 14),
                       ],
@@ -132,21 +142,22 @@ class _LoginScreenState extends State<LoginScreen> {
                           _registering ? AutofillHints.email : AutofillHints.username,
                         ],
                         decoration: InputDecoration(
-                          labelText: _registering ? 'Email' : 'Email or employee ID',
+                          labelText:
+                              _registering ? i18n.tr('login_email') : i18n.tr('login_email_or_id'),
                           errorText: _fieldErrors['email'] ?? _fieldErrors['identifier'],
                         ),
                         validator: (v) {
                           final value = v?.trim() ?? '';
                           if (value.isEmpty) {
                             return _registering
-                                ? 'Email is required'
-                                : 'Enter your email or employee ID';
+                                ? i18n.tr('login_err_email')
+                                : i18n.tr('login_err_id');
                           }
                           // Only registration (users) must be a valid email;
                           // sign-in also accepts an EMP-xxxx employee id.
                           if (_registering &&
                               !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value)) {
-                            return 'Enter a valid email';
+                            return i18n.tr('login_err_email_valid');
                           }
                           return null;
                         },
@@ -160,21 +171,23 @@ class _LoginScreenState extends State<LoginScreen> {
                         autofillHints: const [AutofillHints.password],
                         onFieldSubmitted: _registering ? null : (_) => _submit(),
                         decoration: InputDecoration(
-                          labelText: 'Password',
+                          labelText: i18n.tr('login_password'),
                           errorText: _fieldErrors['password'],
                           suffixIcon: IconButton(
                             icon: Icon(
                               _showPassword ? Icons.visibility_off : Icons.visibility,
                               color: MfColors.muted,
                             ),
-                            tooltip: _showPassword ? 'Hide password' : 'Show password',
+                            tooltip: _showPassword
+                                ? i18n.tr('login_hide_password')
+                                : i18n.tr('login_show_password'),
                             onPressed: () => setState(() => _showPassword = !_showPassword),
                           ),
                         ),
                         validator: (v) {
-                          if (v == null || v.isEmpty) return 'Password is required';
+                          if (v == null || v.isEmpty) return i18n.tr('login_err_password');
                           if (_registering && v.length < 8) {
-                            return 'Password must be at least 8 characters';
+                            return i18n.tr('login_err_password_len');
                           }
                           return null;
                         },
@@ -188,7 +201,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           autofillHints: const [AutofillHints.telephoneNumber],
                           onFieldSubmitted: (_) => _submit(),
                           decoration: InputDecoration(
-                            labelText: 'Phone (optional)',
+                            labelText: i18n.tr('login_phone_optional'),
                             errorText: _fieldErrors['phone'],
                           ),
                         ),
@@ -203,15 +216,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                 child: CircularProgressIndicator(
                                     strokeWidth: 2.5, color: MfColors.muted),
                               )
-                            : Text(_registering ? 'Create account' : 'Sign in'),
+                            : Text(_registering
+                                ? i18n.tr('login_create_btn')
+                                : i18n.tr('login_signin_btn')),
                       ),
                       const SizedBox(height: 16),
                       TextButton(
                         onPressed: _submitting ? null : _switchMode,
                         child: Text(
                           _registering
-                              ? 'Already have an account? Sign in'
-                              : 'New here? Create an account',
+                              ? i18n.tr('login_have_account')
+                              : i18n.tr('login_new_here'),
                         ),
                       ),
                     ],

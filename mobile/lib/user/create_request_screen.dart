@@ -9,6 +9,7 @@ import '../auth/auth_state.dart';
 import '../forms/dynamic_form.dart';
 import '../forms/form_schema.dart';
 import '../forms/location_picker_screen.dart';
+import '../i18n.dart';
 import '../models/request.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
@@ -57,9 +58,10 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
       });
       if (!mounted) return;
       final id = (json['request'] as Map<String, dynamic>)['id'];
+      final i18n = context.read<I18n>();
       Navigator.of(context).pop(true); // signal My Requests / Home to refresh
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Request #$id submitted')),
+        SnackBar(content: Text('${i18n.tr('create_submitted_pre')} #$id ${i18n.tr('create_submitted_post')}')),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -72,8 +74,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
       });
     } on NetworkException {
       if (!mounted) return;
-      setState(() =>
-          _bannerError = 'Could not reach the server — check your connection and try again.');
+      setState(() => _bannerError = context.read<I18n>().tr('net_check_retry'));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -81,8 +82,9 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     return Scaffold(
-      appBar: AppBar(title: Text(widget.service.name)),
+      appBar: AppBar(title: Text(i18n.l(widget.service.name))),
       body: FutureBuilder<List<FormFieldDef>>(
         future: _future,
         builder: (context, snap) {
@@ -92,8 +94,8 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
           if (snap.hasError) {
             return ErrorState(
               message: snap.error is NetworkException
-                  ? 'Could not reach the server — check your connection.'
-                  : 'Could not load this form.',
+                  ? i18n.tr('net_check')
+                  : i18n.tr('create_form_fail'),
               onRetry: () => setState(() => _future = _load()),
             );
           }
@@ -103,7 +105,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Tell us what you need — fields marked * are required.',
+                  i18n.tr('create_hint'),
                   style: const TextStyle(color: MfColors.muted, fontSize: 13),
                 ),
                 const SizedBox(height: 20),
@@ -154,7 +156,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                           child: CircularProgressIndicator(
                               strokeWidth: 2.5, color: MfColors.muted),
                         )
-                      : const Text('Submit request'),
+                      : Text(i18n.tr('create_submit')),
                 ),
                 const SizedBox(height: 24),
               ],

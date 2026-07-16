@@ -9,6 +9,7 @@
 // history + notifications in the same transaction → commit.
 const pool = require('../db');
 const { ownerInScope } = require('./scope');
+const { pick } = require('./i18nLabel');
 
 // An oversight employee (level grants view_all) is the two-gate stand-in for
 // the old `monitor` role: it owns nothing, sees everything, and acts as the
@@ -208,7 +209,7 @@ async function executeTransition({
         request.user_id,
         request.id,
         ownerType,
-        `Your request #${request.id} (${request.service_name}) is now “${newStatus.label}”.`,
+        `Your request #${request.id} (${pick(request.service_name)}) is now “${pick(newStatus.label)}”.`,
       ]
     );
     if (transition.action === 'reject' && request.owner_id) {
@@ -220,7 +221,7 @@ async function executeTransition({
         [
           request.owner_id,
           request.id,
-          `${user.name} rejected the task for request #${request.id} (${request.service_name}): ${note}`,
+          `${user.name} rejected the task for request #${request.id} (${pick(request.service_name)}): ${note}`,
         ]
       );
     }

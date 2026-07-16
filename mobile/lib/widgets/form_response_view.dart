@@ -4,9 +4,11 @@
 // become a friendly marker. Falls back to prettified ids when the schema
 // isn't available (fetch failed) — never blocks the page on it.
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../forms/form_schema.dart';
+import '../i18n.dart';
 import '../theme.dart';
 
 class FormResponseView extends StatelessWidget {
@@ -17,7 +19,7 @@ class FormResponseView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rows = _rows();
+    final rows = _rows(context.watch<I18n>());
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -49,7 +51,7 @@ class FormResponseView extends StatelessWidget {
 
   static const _valueStyle = TextStyle(fontSize: 13);
 
-  List<(String, Widget)> _rows() {
+  List<(String, Widget)> _rows(I18n i18n) {
     final rows = <(String, Widget)>[];
     final remaining = Map<String, dynamic>.of(response);
 
@@ -59,9 +61,9 @@ class FormResponseView extends StatelessWidget {
       final value = remaining.remove(f.id);
       // Location rows are tappable → the device's maps app (v5 amendment).
       if (f.type == FieldType.location && value is Map) {
-        rows.add((f.label, _LocationValue(value: value)));
+        rows.add((i18n.l(f.label), _LocationValue(value: value)));
       } else {
-        rows.add((f.label, Text(_display(f, value), style: _valueStyle)));
+        rows.add((i18n.l(f.label), Text(_display(i18n, f, value), style: _valueStyle)));
       }
     }
     for (final entry in remaining.entries) {
@@ -73,18 +75,18 @@ class FormResponseView extends StatelessWidget {
     return rows;
   }
 
-  String _display(FormFieldDef field, Object? value) {
+  String _display(I18n i18n, FormFieldDef field, Object? value) {
     switch (field.type) {
       case FieldType.checkbox:
-        return value == true ? 'Yes' : 'No';
+        return value == true ? i18n.tr('fr_yes') : i18n.tr('fr_no');
       case FieldType.dropdown:
       case FieldType.radio:
         for (final o in field.options) {
-          if (o.value == value) return o.label;
+          if (o.value == value) return i18n.l(o.label);
         }
         return '$value';
       case FieldType.photo:
-        return 'Photo attached';
+        return i18n.tr('fr_photo');
       default:
         return '$value';
     }

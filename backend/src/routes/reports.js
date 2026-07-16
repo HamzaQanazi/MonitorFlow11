@@ -34,7 +34,7 @@ router.get('/', async (req, res, next) => {
     const listParams = [...params, pageSize, (page - 1) * pageSize];
     const list = await pool.query(
       `SELECT r.id, r.service_type_id, st.name AS service_type_name,
-              r.status, s->>'label' AS status_label, s->>'category' AS category,
+              r.status, s->'label' AS status_label, s->>'category' AS category,
               r.priority, r.created_at, r.updated_at,
               u.id AS requester_id, u.name AS requester_name,
               COUNT(*) OVER()::int AS total
@@ -45,7 +45,7 @@ router.get('/', async (req, res, next) => {
     );
 
     const agg = await pool.query(
-      `SELECT s->>'category' AS category, r.priority, st.name AS service_type_name
+      `SELECT s->>'category' AS category, r.priority, st.name->>'en' AS service_type_name
        ${FROM} ${whereSql}`,
       params
     );
@@ -101,8 +101,8 @@ router.get('/export.csv', requireCapability('export'), async (req, res, next) =>
     // ponytail: exports the full filtered set unpaginated — fine at MVP scale;
     // add a cap/streaming if the request table ever grows large.
     const { rows } = await pool.query(
-      `SELECT r.id, st.name AS service_type_name,
-              s->>'label' AS status_label, s->>'category' AS category,
+      `SELECT r.id, st.name->>'en' AS service_type_name,
+              s->'label'->>'en' AS status_label, s->>'category' AS category,
               r.priority, u.name AS requester_name,
               emp.name AS employee_name, r.created_at,
               comp.completed_at

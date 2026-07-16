@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 
 import '../api/api_client.dart';
 import '../auth/auth_state.dart';
+import '../i18n.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
 
@@ -96,7 +97,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     } on Exception {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not mark all read — try again.')),
+        SnackBar(content: Text(context.read<I18n>().tr('notif_mark_all_fail'))),
       );
     }
   }
@@ -118,13 +119,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     final hasUnread = _items?.any((n) => !n.isRead) ?? false;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: Text(i18n.tr('notif_title')),
         actions: [
           if (hasUnread)
-            TextButton(onPressed: _readAll, child: const Text('Mark all read')),
+            TextButton(onPressed: _readAll, child: Text(i18n.tr('notif_mark_all'))),
         ],
       ),
       body: _body(),
@@ -132,20 +134,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Widget _body() {
+    final i18n = context.watch<I18n>();
     if (_error != null && _items == null) {
       return ErrorState(
         message: _error is NetworkException
-            ? 'Could not reach the server — check your connection.'
-            : 'Could not load notifications.',
+            ? i18n.tr('net_check')
+            : i18n.tr('notif_load_fail'),
         onRetry: _load,
       );
     }
     if (_items == null) return const LoadingState();
     if (_items!.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.notifications_none_outlined,
-        title: 'No notifications',
-        subtitle: 'Updates about your requests and tasks appear here.',
+        title: i18n.tr('notif_none_title'),
+        subtitle: i18n.tr('notif_none_sub'),
       );
     }
     return RefreshIndicator(
@@ -244,7 +247,7 @@ class _NotificationBellState extends State<NotificationBell> {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      tooltip: 'Notifications',
+      tooltip: context.watch<I18n>().tr('notif_title'),
       onPressed: () async {
         widget.onTap();
         // refresh the badge when the user comes back

@@ -3,20 +3,13 @@
 // the one category color-and-shape language used everywhere, always with
 // its label text (DESIGN.md: Status-Owns-Color).
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
+import '../i18n.dart';
 import '../models/request.dart';
 import '../theme.dart';
 
-/// "2h ago"-style timestamps for list rows; absolute past a week.
-String relativeTime(DateTime when) {
-  final diff = DateTime.now().difference(when);
-  if (diff.inMinutes < 1) return 'just now';
-  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-  if (diff.inHours < 24) return '${diff.inHours}h ago';
-  if (diff.inDays < 7) return '${diff.inDays}d ago';
-  return DateFormat.MMMd().format(when.toLocal());
-}
+// relativeTime lives on I18n now (it needs the locale for its suffixes).
 
 class StatusPill extends StatelessWidget {
   final StatusInfo status;
@@ -25,6 +18,7 @@ class StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final i18n = context.watch<I18n>();
     final c = categoryColors(status.category);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -42,7 +36,7 @@ class StatusPill extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            status.label,
+            i18n.l(status.label),
             style: TextStyle(color: c.ink, fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ],
@@ -78,7 +72,9 @@ class ErrorState extends StatelessWidget {
             Text(message, textAlign: TextAlign.center,
                 style: const TextStyle(color: MfColors.muted)),
             const SizedBox(height: 16),
-            OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
+            OutlinedButton(
+                onPressed: onRetry,
+                child: Text(context.watch<I18n>().tr('try_again'))),
           ],
         ),
       ),

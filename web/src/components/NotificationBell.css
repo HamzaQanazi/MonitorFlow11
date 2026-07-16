@@ -30,7 +30,7 @@
 .bell-badge {
   position: absolute;
   top: 1px;
-  right: 0;
+  inset-inline-end: 0;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
@@ -46,7 +46,7 @@
 .bell-panel {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
+  inset-inline-end: 0;
   z-index: var(--z-dropdown);
   width: min(360px, calc(100vw - 32px));
   background: var(--bg);
@@ -105,7 +105,7 @@
   padding: 9px 14px;
   border: none;
   background: none;
-  text-align: left;
+  text-align: start;
   font: inherit;
   cursor: pointer;
 }
@@ -126,6 +126,11 @@
 
 .bell-item.is-unread {
   box-shadow: inset 3px 0 0 var(--amber-500);
+}
+
+/* box-shadow has no logical form; mirror the unread accent edge in RTL. */
+[dir='rtl'] .bell-item.is-unread {
+  box-shadow: inset -3px 0 0 var(--amber-500);
 }
 
 .bell-item-time {
