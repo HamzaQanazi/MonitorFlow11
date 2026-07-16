@@ -96,7 +96,8 @@ router.get('/', async (req, res, next) => {
                   AND tx->'notify' ? 'assignee_manager'
               ) AS needs_response,
               r.priority, r.created_at AS request_created_at,
-              r.location_lat, r.location_lng, fd.field_schema,
+              ST_Y(r.location::geometry) AS location_lat, ST_X(r.location::geometry) AS location_lng,
+              fd.field_schema,
               COUNT(*) OVER()::int AS total
        FROM task t
        JOIN request r ON r.id = t.request_id

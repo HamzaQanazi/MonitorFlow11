@@ -41,6 +41,10 @@ openapi: 3.0.3
 #     status nudges the requester. Service-level escalate_* columns dropped.
 #   • notification `message` is bilingual {en, ar}. Webhook post_actions
 #     remain Phase 7.
+#
+# PHASE 6 SHIPPED (2026-07-16) — PostGIS: request.location is
+# GEOGRAPHY(Point,4326) + GIST (migration 009); the wire shape is unchanged —
+# location still reads/writes as {lat, lng}.
 # ─────────────────────────────────────────────────────────────────────────────
 
 info:

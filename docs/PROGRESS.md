@@ -28,7 +28,7 @@ Backend `node --test` at 38/38; Flutter `flutter test` at 26/26; web builds/lint
 - **Mobile:** Flutter, single codebase, role-routed after login (user/employee; monitor+admin rejected to web).
 - **Web:** React + Vite + TypeScript. Design tokens in `web/src/styles/tokens.css` (OKLCH). Dev proxy `/api` → `:3000` (backend has no CORS by design).
 - **Backend:** Node.js + Express, REST under `/api/v1`, JWT HS256 24h, bcrypt (cost 10), login rate limit, deactivated accounts rejected at JWT validation.
-- **Database:** PostgreSQL. JSONB for form/workflow definitions; `SELECT … FOR UPDATE` row locking on every status-mutating operation.
+- **Database:** PostgreSQL + PostGIS (Phase 6). JSONB for form/workflow definitions; `SELECT … FOR UPDATE` row locking on every status-mutating operation; the request pin is a `GEOGRAPHY(Point,4326)` column with a GIST index (reads alias `ST_Y`/`ST_X` back to `lat`/`lng`, so the API shape and both map clients are unchanged).
 - **Files:** local disk under gitignored `backend/uploads/`, UUID names, DB stores metadata only.
 
 ---

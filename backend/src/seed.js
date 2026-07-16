@@ -334,8 +334,11 @@ async function seed() {
       const locField = svc.requestForm.find((f) => f.type === 'location');
       const coords = (locField && demo.form[locField.id]) || null;
       const { rows } = await client.query(
-        `INSERT INTO request (user_id, service_type_id, form_response, status, priority, created_at, updated_at, location_lat, location_lng)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        `INSERT INTO request (user_id, service_type_id, form_response, status, priority, created_at, updated_at, location)
+         VALUES ($1, $2, $3, $4, $5, $6, $7,
+                 CASE WHEN $8::float8 IS NULL THEN NULL
+                      ELSE ST_SetSRID(ST_MakePoint($9::float8, $8::float8), 4326)::geography END)
+         RETURNING id`,
         [requesterId, svc.id, JSON.stringify(demo.form), currentStatus, demo.priority,
          created, times[times.length - 1], coords ? coords.lat : null, coords ? coords.lng : null]
       );

@@ -88,8 +88,12 @@ router.post('/', async (req, res, next) => {
     try {
       await client.query('BEGIN');
       ({ rows: [created] } = await client.query(
-        `INSERT INTO request (user_id, service_type_id, form_response, status, priority, location_lat, location_lng)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        // Phase 6: the pin is a PostGIS geography point (lng first — PostGIS
+        // is x,y). NULLIF keeps a null location when the form has no pin.
+        `INSERT INTO request (user_id, service_type_id, form_response, status, priority, location)
+         VALUES ($1, $2, $3, $4, $5,
+                 CASE WHEN $6::float8 IS NULL THEN NULL
+                      ELSE ST_SetSRID(ST_MakePoint($7::float8, $6::float8), 4326)::geography END)
          RETURNING id, service_type_id, status, priority, created_at, updated_at`,
         [
           req.user.id,
@@ -171,7 +175,7 @@ router.get('/', async (req, res, next) => {
               r.status, s->'label' AS status_label, (s->>'is_terminal')::bool AS is_terminal,
               r.priority, r.created_at, r.updated_at,
               u.id AS requester_id, u.name AS requester_name,
-              r.location_lat, r.location_lng,
+              ST_Y(r.location::geometry) AS location_lat, ST_X(r.location::geometry) AS location_lng,
               tk.employee_id AS assigned_employee_id, emp.name AS assigned_employee_name,
               COUNT(*) OVER()::int AS total
        FROM request r
