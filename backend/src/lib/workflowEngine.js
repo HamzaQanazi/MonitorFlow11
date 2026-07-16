@@ -159,7 +159,7 @@ function resolveOverride({ statuses, currentStatus, user, to, note }) {
     required_capability: 'override',
     required_form_key: null,
     requires_note: true,
-    notify_oversight: false,
+    notify: ['created_by'],
   };
 }
 
@@ -254,37 +254,73 @@ async function executeTransition({
       [request.id, transition.to, user.id, note || null]
     );
 
-    // Notification triggers (Section 7 table). A transition that carries a
-    // required form is the "completed" event (only completion transitions do);
-    // everything else is the owner's generic status_changed.
     const newStatus = statusOf(request.statuses, transition.to);
-    const ownerType = transition.required_form_key ? 'completed' : 'status_changed';
-    await client.query(
-      'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
-      [
-        request.user_id,
-        request.id,
-        ownerType,
-        `Your request #${request.id} (${pick(request.service_name)}) is now “${pick(newStatus.label)}”.`,
-      ]
-    );
-    if (transition.notify_oversight && request.owner_id) {
-      // The rejection goes to the service's oversight owner (the queue's
-      // escalation target), not a department-wide monitor list.
-      await client.query(
-        `INSERT INTO notification (user_id, request_id, type, message)
-         VALUES ($1, $2, 'task_rejected', $3)`,
-        [
-          request.owner_id,
-          request.id,
-          `${user.name} rejected the task for request #${request.id} (${pick(request.service_name)}): ${note}`,
-        ]
-      );
-    }
 
     let extra;
     if (beforeCommit) {
       extra = await beforeCommit(client, { request, task, transition, newStatus });
+    }
+
+    // Notification triggers (Section 7 table), Phase 5 model: targets are
+    // RELATIONSHIPS resolved at fire time — created_by / assigned_to /
+    // assignee_manager — never user ids or roles. Runs after beforeCommit so
+    // `assigned_to` sees the task row /assign just wrote. Messages are
+    // bilingual {en, ar} (deferred here by Phase 3).
+    const svc = (l) => pick(request.service_name, l);
+    for (const target of transition.notify || []) {
+      let row = null; // [user_id, type, {en, ar}]
+      if (target === 'created_by') {
+        row = [
+          request.user_id,
+          // A transition carrying a required form is the "completed" event
+          // (only completion transitions do); the rest are status_changed.
+          transition.required_form_key ? 'completed' : 'status_changed',
+          {
+            en: `Your request #${request.id} (${svc('en')}) is now “${pick(newStatus.label, 'en')}”.`,
+            ar: `طلبك رقم ${request.id} (${svc('ar')}) أصبح الآن «${pick(newStatus.label, 'ar')}».`,
+          },
+        ];
+      } else {
+        // assigned_to / assignee_manager both hang off the task's current
+        // assignee — re-read, the row may have been written in beforeCommit.
+        const { rows: a } = await client.query(
+          `SELECT t.employee_id, u.manager_id FROM task t
+           JOIN users u ON u.id = t.employee_id
+           WHERE t.request_id = $1`,
+          [request.id]
+        );
+        if (!a.length) continue;
+        if (target === 'assigned_to') {
+          row = [
+            a[0].employee_id,
+            'assigned',
+            {
+              en: `You have been assigned request #${request.id} (${svc('en')}).`,
+              ar: `تم إسنادك إلى الطلب رقم ${request.id} (${svc('ar')}).`,
+            },
+          ];
+        } else {
+          // assignee_manager: one step up the tree (§10 gate); a manager-less
+          // assignee falls back to the service owner so the alert never drops.
+          // ponytail: the one seeded use is the reject transition, so the type
+          // and wording say "rejected" — generalize both when a workflow
+          // notifies managers on other transitions.
+          const to = a[0].manager_id || request.owner_id;
+          if (!to) continue;
+          row = [
+            to,
+            'task_rejected',
+            {
+              en: `${user.name} rejected the task for request #${request.id} (${svc('en')}): ${note}`,
+              ar: `رفض ${user.name} المهمة الخاصة بالطلب رقم ${request.id} (${svc('ar')}): ${note}`,
+            },
+          ];
+        }
+      }
+      await client.query(
+        'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
+        [row[0], request.id, row[1], JSON.stringify(row[2])]
+      );
     }
 
     await client.query('COMMIT');

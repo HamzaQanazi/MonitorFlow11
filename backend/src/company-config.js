@@ -34,11 +34,14 @@ const L = (en, ar) => ({ en, ar });
 // generic /requests/{id}/transitions call serves the actor-based transitions
 // (capability:null); oversight (capability-gated) transitions are fired by
 // the dedicated /assign, /priority, /status endpoints.
+// Phase 5: `flags.sla` = minutes a request may sit in this status before the
+// escalation sweep fires (null/absent = no SLA for the status).
 const status = (key, label, flags = {}) => ({
   key,
   label,
   is_initial: flags.initial === true,
   is_terminal: flags.terminal === true,
+  sla_minutes: flags.sla ?? null,
 });
 
 // `who` is exactly one of {actor:'requester'|'assignee'} or {capability:'…'}.
@@ -53,10 +56,10 @@ const transition = (key, from, to, who, extra = {}) => ({
   actor: who.actor ?? null,
   required_form_key: extra.form ?? null,
   requires_note: extra.note === true,
-  // Minimal post-action: notify the service's oversight owner (task_rejected,
-  // §7). Full post_actions are Phase 5/7 — this one flag preserves the
-  // existing rejection notification without an action name.
-  notify_oversight: extra.notifyOversight === true,
+  // Phase 5: notification targets are RELATIONSHIPS resolved at fire time —
+  // created_by | assigned_to | assignee_manager. Every transition notifies
+  // the requester (§7 trigger table); `extra.notify` adds the others.
+  notify: ['created_by', ...(extra.notify ?? [])],
 });
 
 const requester = { actor: 'requester' };
@@ -98,13 +101,16 @@ const equipmentRepairCompletionForm = [
 
 const equipmentRepairWorkflow = {
   statuses: [
-    status('submitted', L('Submitted', 'مُقدَّم'), { initial: true }),
-    status('approved', L('Approved', 'مُعتمَد')),
-    status('assigned', L('Assigned', 'مُسنَد')),
-    status('accepted', L('Accepted', 'مقبول')),
-    status('in_progress', L('In Progress', 'قيد التنفيذ')),
-    status('awaiting_parts', L('Awaiting Parts', 'بانتظار القطع')),
-    status('completed', L('Completed', 'مكتمل')),
+    // SLAs (Phase 5): 4h to triage/assign, 20h on working statuses, 24h for
+    // the requester's confirmation — same numbers as the old per-service
+    // thresholds, now per status.
+    status('submitted', L('Submitted', 'مُقدَّم'), { initial: true, sla: 240 }),
+    status('approved', L('Approved', 'مُعتمَد'), { sla: 240 }),
+    status('assigned', L('Assigned', 'مُسنَد'), { sla: 1200 }),
+    status('accepted', L('Accepted', 'مقبول'), { sla: 1200 }),
+    status('in_progress', L('In Progress', 'قيد التنفيذ'), { sla: 1200 }),
+    status('awaiting_parts', L('Awaiting Parts', 'بانتظار القطع'), { sla: 1200 }),
+    status('completed', L('Completed', 'مكتمل'), { sla: 1440 }),
     status('confirmed', L('Resolved', 'تم الحل'), { terminal: true }),
     status('rejected', L('Rejected', 'مرفوض'), { terminal: true }),
     status('cancelled', L('Cancelled', 'ملغى'), { terminal: true }),
@@ -119,13 +125,13 @@ const equipmentRepairWorkflow = {
     transition('cancel_oversight', 'submitted', 'cancelled', cap('override'),
       { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
     transition('assign', 'approved', 'assigned', cap('assign'),
-      { label: L('Assign', 'إسناد') }),
+      { notify: ['assigned_to'], label: L('Assign', 'إسناد') }),
     transition('cancel_approved', 'approved', 'cancelled', cap('override'),
       { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
     transition('accept', 'assigned', 'accepted', assignee,
       { label: L('Accept task', 'قبول المهمة') }),
     transition('reject', 'assigned', 'approved', assignee,
-      { note: true, notifyOversight: true, label: L('Reject task', 'رفض المهمة') }),
+      { note: true, notify: ['assignee_manager'], label: L('Reject task', 'رفض المهمة') }),
     transition('cancel_assigned', 'assigned', 'cancelled', cap('override'),
       { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
     transition('start', 'accepted', 'in_progress', assignee,
@@ -176,18 +182,18 @@ const homeCleaningCompletionForm = [
 
 const homeCleaningWorkflow = {
   statuses: [
-    status('booked', L('Booked', 'محجوز'), { initial: true }),
-    status('assigned', L('Assigned', 'مُسنَد')),
-    status('accepted', L('Scheduled', 'مجدول')),
-    status('en_route', L('On the Way', 'في الطريق')),
-    status('in_service', L('Service in Progress', 'الخدمة قيد التنفيذ')),
-    status('completed', L('Completed', 'مكتمل')),
+    status('booked', L('Booked', 'محجوز'), { initial: true, sla: 240 }),
+    status('assigned', L('Assigned', 'مُسنَد'), { sla: 1200 }),
+    status('accepted', L('Scheduled', 'مجدول'), { sla: 1200 }),
+    status('en_route', L('On the Way', 'في الطريق'), { sla: 1200 }),
+    status('in_service', L('Service in Progress', 'الخدمة قيد التنفيذ'), { sla: 1200 }),
+    status('completed', L('Completed', 'مكتمل'), { sla: 1440 }),
     status('confirmed', L('Closed', 'مغلق'), { terminal: true }),
     status('cancelled', L('Cancelled', 'ملغى'), { terminal: true }),
   ],
   transitions: [
     transition('assign', 'booked', 'assigned', cap('assign'),
-      { label: L('Assign', 'إسناد') }),
+      { notify: ['assigned_to'], label: L('Assign', 'إسناد') }),
     transition('cancel', 'booked', 'cancelled', requester,
       { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
     transition('cancel_oversight', 'booked', 'cancelled', cap('override'),
@@ -195,7 +201,7 @@ const homeCleaningWorkflow = {
     transition('accept', 'assigned', 'accepted', assignee,
       { label: L('Accept task', 'قبول المهمة') }),
     transition('reject', 'assigned', 'booked', assignee,
-      { note: true, notifyOversight: true, label: L('Reject task', 'رفض المهمة') }),
+      { note: true, notify: ['assignee_manager'], label: L('Reject task', 'رفض المهمة') }),
     transition('cancel_assigned', 'assigned', 'cancelled', cap('override'),
       { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
     transition('depart', 'accepted', 'en_route', assignee,
@@ -214,8 +220,9 @@ const homeCleaningWorkflow = {
 // ---------------------------------------------------------------------------
 // The company's departments + services. Add/remove blocks here per deployment.
 // `department` is a stable key used for grouping and for the bilingual display
-// name in DEPARTMENT_LABELS (seed.js). Escalation thresholds (hours; spec v4
-// E1) — null on any of the three turns that rule off for the service.
+// name in DEPARTMENT_LABELS (seed.js). Escalation is per-status now (Phase 5):
+// `sla` minutes on each workflow status above; a breach escalates up the
+// manager tree via the sweep.
 // ---------------------------------------------------------------------------
 
 const services = [
@@ -223,7 +230,6 @@ const services = [
     name: L('Equipment Repair', 'إصلاح المعدات'),
     department: 'IT',
     default_priority: 'medium',
-    escalation: { unassigned: 4, stale: 20, confirm: 24 },
     requestForm: equipmentRepairRequestForm,
     completionForm: equipmentRepairCompletionForm,
     workflow: equipmentRepairWorkflow,
@@ -232,7 +238,6 @@ const services = [
     name: L('Home Cleaning Visit', 'زيارة تنظيف منزلي'),
     department: 'Facilities',
     default_priority: 'low',
-    escalation: { unassigned: 4, stale: 20, confirm: 24 },
     requestForm: homeCleaningRequestForm,
     completionForm: homeCleaningCompletionForm,
     workflow: homeCleaningWorkflow,

@@ -18,7 +18,7 @@ import '../widgets/states.dart';
 class AppNotification {
   final int id;
   final String type;
-  final String message;
+  final Loc message; // bilingual {en, ar} since Phase 5
   final int? requestId;
   final bool isRead;
   final DateTime createdAt;
@@ -35,7 +35,7 @@ class AppNotification {
   factory AppNotification.fromJson(Map<String, dynamic> json) => AppNotification(
         id: json['id'] as int,
         type: json['type'] as String,
-        message: json['message'] as String,
+        message: Loc.fromJson(json['message']),
         requestId: json['requestId'] as int?,
         isRead: json['isRead'] == true,
         createdAt: DateTime.parse(json['createdAt'] as String),
@@ -167,7 +167,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               color: n.isRead ? MfColors.borderStrong : MfColors.amber600,
             ),
             title: Text(
-              n.message,
+              i18n.l(n.message),
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: n.isRead ? FontWeight.w400 : FontWeight.w600,

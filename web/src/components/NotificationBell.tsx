@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
-import { useI18n } from '../i18n'
+import { useI18n, type Loc } from '../i18n'
 import './NotificationBell.css'
 
 // Shell notification bell — the web sibling of the mobile apps' shared
@@ -13,7 +13,7 @@ import './NotificationBell.css'
 interface Notification {
   id: number
   type: string
-  message: string
+  message: Loc // bilingual {en, ar} since Phase 5
   requestId: number | null
   isRead: boolean
   createdAt: string
@@ -41,7 +41,7 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
-  const { t } = useI18n()
+  const { t, L } = useI18n()
 
   const load = useCallback(() => {
     apiFetch<ListResponse>('/notifications?userId=me&pageSize=20')
@@ -137,7 +137,7 @@ export default function NotificationBell() {
                     className={`bell-item${n.isRead ? '' : ' is-unread'}`}
                     onClick={() => void openItem(n)}
                   >
-                    <span className="bell-item-msg">{n.message}</span>
+                    <span className="bell-item-msg">{L(n.message)}</span>
                     <span className="bell-item-time">{timeAgo(n.createdAt, t)}</span>
                   </button>
                 </li>

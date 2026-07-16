@@ -70,10 +70,10 @@ if (sweepMs > 0) {
   const sweep = () =>
     runEscalationSweep()
       .then((n) => {
-        const total = n.unassigned + n.stale + n.confirm;
+        const total = n.tree + n.confirm;
         if (total) {
           console.log(
-            `escalation sweep: ${total} notification(s) — ${n.unassigned} unassigned, ${n.stale} stale, ${n.confirm} awaiting-confirm`
+            `escalation sweep: ${total} notification(s) — ${n.tree} SLA breach up-tree, ${n.confirm} awaiting-confirm`
           );
         }
       })

@@ -248,11 +248,9 @@ async function seed() {
 
     for (const svc of services) {
       const { rows } = await client.query(
-        `INSERT INTO service_type (name, department_id, default_priority, enabled,
-           escalate_unassigned_hours, escalate_stale_hours, escalate_confirm_hours)
-         VALUES ($1, $2, $3, TRUE, $4, $5, $6) RETURNING id`,
-        [JSON.stringify(svc.name), departmentIds[svc.department], svc.default_priority,
-         svc.escalation.unassigned, svc.escalation.stale, svc.escalation.confirm]
+        `INSERT INTO service_type (name, department_id, default_priority, enabled)
+         VALUES ($1, $2, $3, TRUE) RETURNING id`,
+        [JSON.stringify(svc.name), departmentIds[svc.department], svc.default_priority]
       );
       const serviceTypeId = rows[0].id;
       svc.id = serviceTypeId;

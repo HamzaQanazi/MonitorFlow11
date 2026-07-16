@@ -31,8 +31,16 @@ openapi: 3.0.3
 #     note); the category-based reject-vs-reopen distinction went with
 #     category.
 #   • still dedicated until Phase 5/7: /requests/{id}/{assign,priority,status},
-#     /candidates, assignee-as-transition (assignee_id below), post_actions
-#     (interim: `notify_oversight` boolean on a transition).
+#     /candidates, assignee-as-transition (assignee_id below).
+#
+# PHASE 5 SHIPPED (2026-07-16) — relational notifications + tree SLA:
+#   • transition `notify` lists RELATIONSHIP targets resolved at fire time
+#     (created_by | assigned_to | assignee_manager); notify_oversight is gone.
+#   • statuses carry `sla_minutes` (null = no SLA); a breach escalates to the
+#     assignee's manager (fallback: service owner); the completion-target
+#     status nudges the requester. Service-level escalate_* columns dropped.
+#   • notification `message` is bilingual {en, ar}. Webhook post_actions
+#     remain Phase 7.
 # ─────────────────────────────────────────────────────────────────────────────
 
 info:
@@ -515,18 +523,15 @@ components:
           description: "the party whose turn it is; null on capability-gated transitions"
         required_form_key: { type: string, nullable: true, description: "validator" }
         requires_note: { type: boolean, description: "422 without a note" }
-        notify_oversight:
-          type: boolean
-          description: "interim Phase-4 post_action: notify the service owner (task_rejected) — folds into post_actions in Phase 5/7"
-        post_actions:
+        notify:
           type: array
+          description: >
+            Phase 5: notification targets as RELATIONSHIPS, resolved at fire
+            time (replaces the interim notify_oversight boolean). Webhook
+            post_actions remain Phase 7.
           items:
-            type: object
-            properties:
-              type: { type: string, enum: [notify, webhook] }
-              target:
-                type: string
-                description: "a RELATIONSHIP, resolved at fire time — created_by | assigned_to | assignee_manager"
+            type: string
+            enum: [created_by, assigned_to, assignee_manager]
 
     TransitionOption:
       type: object

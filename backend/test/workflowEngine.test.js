@@ -189,6 +189,35 @@ test('override without a note → 422; same status → 409; without the capabili
   );
 });
 
+test('workflowSchema rejects bad notify targets and bad sla_minutes (Phase 5)', () => {
+  const { validateWorkflowDefinition } = require('../src/lib/workflowSchema');
+  const L = { en: 'x', ar: 'س' };
+  const errors = validateWorkflowDefinition({
+    statuses: [
+      { key: 'a', label: L, is_initial: true, is_terminal: false, sla_minutes: -5 },
+      { key: 'z', label: L, is_initial: false, is_terminal: true },
+    ],
+    transitions: [
+      { key: 't', from: 'a', to: 'z', required_capability: null, actor: 'requester',
+        required_form_key: null, requires_note: false, label: L, notify: ['created_by', 'the_ceo'] },
+    ],
+  });
+  assert.ok(errors.some((e) => e.includes('sla_minutes')));
+  assert.ok(errors.some((e) => e.includes('notify target "the_ceo"')));
+  // Valid shape passes both new rules.
+  const ok = validateWorkflowDefinition({
+    statuses: [
+      { key: 'a', label: L, is_initial: true, is_terminal: false, sla_minutes: 240 },
+      { key: 'z', label: L, is_initial: false, is_terminal: true },
+    ],
+    transitions: [
+      { key: 't', from: 'a', to: 'z', required_capability: null, actor: 'requester',
+        required_form_key: null, requires_note: false, label: L, notify: ['assignee_manager'] },
+    ],
+  });
+  assert.deepEqual(ok, []);
+});
+
 test('validTransitions filters by actor and empties when terminal', () => {
   assert.deepEqual(
     validTransitions(statuses, transitions, 'submitted', 'requester').map((t) => t.to),

@@ -13,6 +13,11 @@ const { CAPABILITIES } = require('./capabilities');
 
 const ACTORS = ['requester', 'assignee'];
 
+// Phase 5: notification targets are relationships resolved at fire time,
+// never user ids or roles — this is what keeps notifications generic across
+// every sector (combineidea.md).
+const NOTIFY_TARGETS = ['created_by', 'assigned_to', 'assignee_manager'];
+
 // Returns an array of human-readable problems; empty array means valid.
 function validateWorkflowDefinition({ statuses, transitions }) {
   const errors = [];
@@ -50,6 +55,15 @@ function validateWorkflowDefinition({ statuses, transitions }) {
       if (typeof status[flag] !== 'boolean') {
         errors.push(`${at}: ${flag} must be a boolean`);
       }
+    }
+    // Phase 5: optional per-status SLA — minutes a request may sit in this
+    // status before the sweep escalates. null/absent = no SLA.
+    if (
+      status.sla_minutes !== null &&
+      status.sla_minutes !== undefined &&
+      (!Number.isInteger(status.sla_minutes) || status.sla_minutes < 1)
+    ) {
+      errors.push(`${at}: sla_minutes must be null or a positive integer`);
     }
     if (status.is_initial === true) initialCount += 1;
     if (status.is_terminal === true) {
@@ -119,9 +133,20 @@ function validateWorkflowDefinition({ statuses, transitions }) {
     if (typeof tr.requires_note !== 'boolean') {
       errors.push(`${at}: requires_note must be a boolean`);
     }
+    // Phase 5: `notify` lists the relationships to notify when the transition
+    // fires (replaces the interim notify_oversight flag).
+    if (!Array.isArray(tr.notify)) {
+      errors.push(`${at}: notify must be an array of relationship targets`);
+    } else {
+      for (const target of tr.notify) {
+        if (!NOTIFY_TARGETS.includes(target)) {
+          errors.push(`${at}: invalid notify target "${target}"`);
+        }
+      }
+    }
   });
 
   return errors;
 }
 
-module.exports = { validateWorkflowDefinition, ACTORS };
+module.exports = { validateWorkflowDefinition, ACTORS, NOTIFY_TARGETS };

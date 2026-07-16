@@ -93,7 +93,7 @@ router.get('/', async (req, res, next) => {
               EXISTS (
                 SELECT 1 FROM jsonb_array_elements(w.transitions) tx
                 WHERE tx->>'from' = r.status AND tx->>'actor' = 'assignee'
-                  AND (tx->>'notify_oversight')::bool
+                  AND tx->'notify' ? 'assignee_manager'
               ) AS needs_response,
               r.priority, r.created_at AS request_created_at,
               r.location_lat, r.location_lng, fd.field_schema,
@@ -118,7 +118,7 @@ router.get('/', async (req, res, next) => {
         serviceTypeName: r.service_type_name,
         status: { key: r.status, label: r.status_label, isTerminal: r.is_terminal },
         // The accept/reject decision window: an assignee reject (the
-        // notify_oversight transition) is still available from this status.
+        // notify-assignee_manager transition) is still available from this status.
         needsResponse: r.needs_response,
         priority: r.priority,
         assignedAt: r.assigned_at,

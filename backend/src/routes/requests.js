@@ -624,7 +624,10 @@ router.post('/:id/comments', async (req, res, next) => {
          VALUES ($1, $2, $3) RETURNING id, created_at`,
         [request.id, req.user.id, body.trim()]
       ));
-      const message = `${req.user.name} commented on request #${request.id} (${pick(request.service_name)}).`;
+      const message = JSON.stringify({
+        en: `${req.user.name} commented on request #${request.id} (${pick(request.service_name, 'en')}).`,
+        ar: `علّق ${req.user.name} على الطلب رقم ${request.id} (${pick(request.service_name, 'ar')}).`,
+      });
       if (isOversight(req.user)) {
         // Oversight → the requester.
         await client.query(
@@ -826,15 +829,8 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
                 'INSERT INTO task (request_id, employee_id, status) VALUES ($1, $2, $3) RETURNING id, assigned_at',
                 [ctx.request.id, employee.id, ctx.transition.to]
               );
-          await tx.query(
-            'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
-            [
-              employee.id,
-              ctx.request.id,
-              'assigned',
-              `You have been assigned request #${ctx.request.id} (${pick(ctx.request.service_name)}).`,
-            ]
-          );
+          // The `assigned` notification is the transition's notify:
+          // ['assigned_to'], resolved by the engine after this hook (Phase 5).
           return upsert.rows[0];
         },
       });
@@ -875,13 +871,18 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
        VALUES ($1, $2, $3, $4)`,
       [request.id, request.status, req.user.id, `Reassigned from ${prevRows[0].name} to ${employee.name}`]
     );
+    // In-place reassignment is not a transition, so no notify data fires —
+    // insert the `assigned` notification directly (bilingual, Phase 5).
     await client.query(
       'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
       [
         employee.id,
         request.id,
         'assigned',
-        `You have been assigned request #${request.id} (${pick(request.service_name)}).`,
+        JSON.stringify({
+          en: `You have been assigned request #${request.id} (${pick(request.service_name, 'en')}).`,
+          ar: `تم إسنادك إلى الطلب رقم ${request.id} (${pick(request.service_name, 'ar')}).`,
+        }),
       ]
     );
     await client.query('COMMIT');
