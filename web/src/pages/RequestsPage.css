@@ -78,12 +78,8 @@
   background: var(--_c, var(--border-strong));
 }
 
-.chip.is-new { --_c: var(--cat-new); --_ink: var(--cat-new-ink); --_bg: var(--cat-new-bg); }
-.chip.is-triage { --_c: var(--cat-triage); --_ink: var(--cat-triage-ink); --_bg: var(--cat-triage-bg); }
-.chip.is-in_progress { --_c: var(--cat-in_progress); --_ink: var(--cat-in_progress-ink); --_bg: var(--cat-in_progress-bg); }
-.chip.is-done { --_c: var(--cat-done); --_ink: var(--cat-done-ink); --_bg: var(--cat-done-bg); }
-.chip.is-closed { --_c: var(--cat-closed); --_ink: var(--cat-closed-ink); --_bg: var(--cat-closed-bg); }
-.chip.is-terminated { --_c: var(--cat-terminated); --_ink: var(--cat-terminated-ink); --_bg: var(--cat-terminated-bg); }
+.chip.is-open { --_c: var(--state-open); --_ink: var(--state-open-ink); --_bg: var(--state-open-bg); }
+.chip.is-closed { --_c: var(--state-closed); --_ink: var(--state-closed-ink); --_bg: var(--state-closed-bg); }
 
 .control-row {
   display: flex;
@@ -201,7 +197,7 @@
   font-weight: 650;
 }
 
-/* Status pill — the fixed category palette, always paired with the label
+/* Status pill — the fixed state palette, always paired with the label
    text (DESIGN.md: Status-Owns-Color, never color alone). */
 .status-pill {
   display: inline-flex;
@@ -224,12 +220,8 @@
   background: var(--_c, var(--border-strong));
 }
 
-.status-pill.is-new { --_c: var(--cat-new); --_ink: var(--cat-new-ink); --_bg: var(--cat-new-bg); }
-.status-pill.is-triage { --_c: var(--cat-triage); --_ink: var(--cat-triage-ink); --_bg: var(--cat-triage-bg); }
-.status-pill.is-in_progress { --_c: var(--cat-in_progress); --_ink: var(--cat-in_progress-ink); --_bg: var(--cat-in_progress-bg); }
-.status-pill.is-done { --_c: var(--cat-done); --_ink: var(--cat-done-ink); --_bg: var(--cat-done-bg); }
-.status-pill.is-closed { --_c: var(--cat-closed); --_ink: var(--cat-closed-ink); --_bg: var(--cat-closed-bg); }
-.status-pill.is-terminated { --_c: var(--cat-terminated); --_ink: var(--cat-terminated-ink); --_bg: var(--cat-terminated-bg); }
+.status-pill.is-open { --_c: var(--state-open); --_ink: var(--state-open-ink); --_bg: var(--state-open-bg); }
+.status-pill.is-closed { --_c: var(--state-closed); --_ink: var(--state-closed-ink); --_bg: var(--state-closed-bg); }
 
 /* --- Pager --- */
 
@@ -580,12 +572,8 @@
   background: var(--_c, var(--border-strong));
 }
 
-.tl-item.is-new { --_c: var(--cat-new); }
-.tl-item.is-triage { --_c: var(--cat-triage); }
-.tl-item.is-in_progress { --_c: var(--cat-in_progress); }
-.tl-item.is-done { --_c: var(--cat-done); }
-.tl-item.is-closed { --_c: var(--cat-closed); }
-.tl-item.is-terminated { --_c: var(--cat-terminated); }
+.tl-item.is-open { --_c: var(--state-open); }
+.tl-item.is-closed { --_c: var(--state-closed); }
 
 .tl-body {
   min-width: 0;
@@ -876,7 +864,7 @@
   color: var(--muted);
 }
 
-/* Pin: teardrop in the status category accent, white outline for contrast on
+/* Pin: teardrop in the status state accent, white outline for contrast on
    tiles. Color always travels with the tooltip text (Status-Owns-Color). */
 .map-pin {
   display: block;
@@ -886,17 +874,13 @@
   transform: rotate(-45deg);
   border: 2px solid #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
-  background: var(--_c, var(--cat-closed));
+  background: var(--_c, var(--state-closed));
 }
 
-.map-pin.is-new { --_c: var(--cat-new); }
-.map-pin.is-triage { --_c: var(--cat-triage); }
-.map-pin.is-in_progress { --_c: var(--cat-in_progress); }
-.map-pin.is-done { --_c: var(--cat-done); }
-.map-pin.is-closed { --_c: var(--cat-closed); }
-.map-pin.is-terminated { --_c: var(--cat-terminated); }
+.map-pin.is-open { --_c: var(--state-open); }
+.map-pin.is-closed { --_c: var(--state-closed); }
 
-/* Clusters mix categories — neutral count circle, never a category color. */
+/* Clusters mix states — neutral count circle, never a state color. */
 .map-cluster {
   display: flex;
   align-items: center;

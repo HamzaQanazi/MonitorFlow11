@@ -7,7 +7,13 @@ const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
 const { validateFormResponse } = require('../lib/validateFormResponse');
-const { categoryOf, executeTransition, WorkflowError } = require('../lib/workflowEngine');
+const {
+  statusOf,
+  isTerminal,
+  validTransitions,
+  executeTransition,
+  WorkflowError,
+} = require('../lib/workflowEngine');
 const { buildRequestFilter, PRIORITIES } = require('../lib/requestQuery');
 const { isOversight } = require('../lib/capabilities');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
@@ -22,17 +28,12 @@ router.use(requireAuth);
 // through to oversight visibility (must-pass #20).
 router.use(requireRole('user', 'employee'));
 
-function statusOf(workflowStatuses, key) {
-  const s = workflowStatuses.find((st) => st.key === key);
-  return { key, label: s ? s.label : key, category: s ? s.category : null };
-}
-
 function listItem(row) {
   return {
     id: row.id,
     serviceTypeId: row.service_type_id,
     serviceTypeName: row.service_type_name,
-    status: { key: row.status, label: row.status_label, category: row.category },
+    status: { key: row.status, label: row.status_label, isTerminal: row.is_terminal },
     priority: row.priority,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -167,7 +168,7 @@ router.get('/', async (req, res, next) => {
     params.push(pageSize, (page - 1) * pageSize);
     const { rows } = await pool.query(
       `SELECT r.id, r.service_type_id, st.name AS service_type_name,
-              r.status, s->'label' AS status_label, s->>'category' AS category,
+              r.status, s->'label' AS status_label, (s->>'is_terminal')::bool AS is_terminal,
               r.priority, r.created_at, r.updated_at,
               u.id AS requester_id, u.name AS requester_name,
               r.location_lat, r.location_lng,
@@ -325,32 +326,155 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// PATCH /requests/{id}/resolution — the request owner confirms or disputes
-// from a done-category status. The gate lives in the workflow data: the
-// confirm/dispute-action transitions only exist from done statuses, so a
-// too-early call resolves no transition and the engine answers 409
-// (must-pass #15). Note required for `unresolved` (Section 7).
-router.patch('/:id/resolution', async (req, res, next) => {
+// GET /requests/{id}/transitions — the ONE generic call (Phase 4 §10): the
+// legal next actions from the current status that this caller may fire, both
+// gates already applied. The requester sees their own actions (own request,
+// 404 otherwise); the assigned employee sees theirs (own task, 404 otherwise);
+// oversight employees act through the dedicated /assign, /priority, /status
+// endpoints, so they get an empty list here. Clients render exactly these
+// buttons and nothing else — the accept/reject/complete/confirm/dispute
+// endpoints are gone.
+async function loadTransitionContext(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  const { rows } = await pool.query(
+    `SELECT r.id, r.user_id, r.status, r.service_type_id, w.statuses, w.transitions
+     FROM request r
+     JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+     WHERE r.id = $1`,
+    [id]
+  );
+  if (!rows.length) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  const request = rows[0];
+
+  // Party + ownership (404-over-403). Oversight employees have no actor
+  // transitions here — they use the dedicated oversight endpoints.
+  if (req.user.role === 'user') {
+    if (request.user_id !== req.user.id) {
+      res.status(404).json({ error: 'Not found' });
+      return null;
+    }
+    return { id, request, party: 'requester' };
+  }
+  if (isOversight(req.user)) return { id, request, party: null };
+  const { rows: taskRows } = await pool.query(
+    'SELECT employee_id FROM task WHERE request_id = $1',
+    [id]
+  );
+  if (!taskRows.length || taskRows[0].employee_id !== req.user.id) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  return { id, request, party: 'assignee' };
+}
+
+router.get('/:id/transitions', async (req, res, next) => {
   try {
-    if (req.user.role !== 'user') return res.status(403).json({ error: 'Forbidden' });
+    const ctx = await loadTransitionContext(req, res);
+    if (!ctx) return;
+    const { request, party } = ctx;
+    let options = party
+      ? validTransitions(request.statuses, request.transitions, request.status, party)
+      : [];
+    // The requester's cancel (terminal move out of the initial status)
+    // vanishes once a task exists — the display mirror of the engine's
+    // requester-cancel guard. Confirm (terminal, but later in the flow)
+    // stays.
+    const cancelLike = (t) =>
+      isTerminal(request.statuses, t.to) &&
+      request.statuses.some((s) => s.key === t.from && s.is_initial);
+    if (party === 'requester' && options.some(cancelLike)) {
+      const { rows: taskRows } = await pool.query('SELECT 1 FROM task WHERE request_id = $1', [
+        ctx.id,
+      ]);
+      if (taskRows.length) {
+        options = options.filter((t) => !cancelLike(t));
+      }
+    }
+    res.json({
+      transitions: options.map((t) => ({
+        key: t.key,
+        label: t.label,
+        to: t.to,
+        toLabel: statusOf(request.statuses, t.to).label,
+        toTerminal: isTerminal(request.statuses, t.to),
+        requiresNote: !!t.requires_note,
+        requiredFormKey: t.required_form_key ?? null,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /requests/{id}/transitions — fire one transition. The engine re-locks
+// and re-validates everything (legal-from-status → party → note → form →
+// expected_status concurrency); this handler only pre-validates the required
+// form so a 422's per-field errors reach the client. A transition carrying a
+// required_form_key stores its response on the task inside the same
+// transaction (the completion form, §7).
+router.post('/:id/transitions', async (req, res, next) => {
+  try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
-    const { outcome, note } = req.body || {};
-    if (outcome !== 'confirmed' && outcome !== 'unresolved') {
-      return res
-        .status(422)
-        .json({ errors: { outcome: 'Outcome must be "confirmed" or "unresolved"' } });
+    const body = req.body || {};
+    const transitionKey = body.transition_key;
+    if (typeof transitionKey !== 'string' || !transitionKey) {
+      return res.status(422).json({ errors: { transition_key: 'A transition key is required' } });
     }
-    if (outcome === 'unresolved' && !(typeof note === 'string' && note.trim())) {
-      return res
-        .status(422)
-        .json({ errors: { note: 'A note is required when reporting unresolved' } });
+
+    // Peek at the transition (unlocked) to see whether a form is required and
+    // validate it before the engine runs — the engine re-checks under the lock.
+    const { rows } = await pool.query(
+      `SELECT r.status, r.service_type_id, w.transitions
+       FROM request r JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+       WHERE r.id = $1`,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    const pending = rows[0].transitions.find(
+      (t) => t.key === transitionKey && t.from === rows[0].status
+    );
+
+    let formValidated = false;
+    let beforeCommit = null;
+    if (pending && pending.required_form_key) {
+      const { rows: fd } = await pool.query(
+        `SELECT field_schema FROM form_definition
+         WHERE service_type_id = $1 AND form_type = $2`,
+        [rows[0].service_type_id, pending.required_form_key]
+      );
+      if (!fd.length) return res.status(422).json({ errors: { form: 'Unknown form' } });
+      const errors = await validateFormResponse(fd[0].field_schema, body.form, {
+        db: pool,
+        userId: req.user.id,
+      });
+      if (Object.keys(errors).length) return res.status(422).json({ errors });
+      formValidated = true;
+      // The completion response lives on the task (nullable until completed).
+      beforeCommit = (tx, ctx) =>
+        ctx.task
+          ? tx.query('UPDATE task SET completion_form_response = $1 WHERE id = $2', [
+              JSON.stringify(body.form),
+              ctx.task.id,
+            ])
+          : null;
     }
+
     const result = await executeTransition({
       requestId: id,
       user: req.user,
-      action: outcome === 'confirmed' ? 'confirm' : 'dispute',
-      note: note ?? null,
+      transitionKey,
+      note: body.note ?? null,
+      expectedStatus: typeof body.expected_status === 'string' ? body.expected_status : null,
+      formValidated,
+      beforeCommit,
     });
     res.json({ request: { id, status: result.status } });
   } catch (err) {
@@ -381,29 +505,31 @@ router.patch('/:id/cancel', async (req, res, next) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     const { statuses, transitions } = rows[0];
+    // The cancel target is derived from the data: the requester transition
+    // out of the initial status into a terminal one — never confirm, which
+    // is also requester→terminal but fires later in the flow. No status key
+    // in code (§9).
+    const isInitial = (key) => statuses.some((s) => s.key === key && s.is_initial);
     const cancelTransition = transitions.find(
-      (t) => t.allowed_role === 'user' && categoryOf(statuses, t.to) === 'terminated'
+      (t) => t.actor === 'requester' && isTerminal(statuses, t.to) && isInitial(t.from)
     );
     if (!cancelTransition) {
       return res.status(409).json({ error: 'This request cannot be cancelled' });
     }
 
+    const oversight = isOversight(req.user);
     let result;
     try {
       result = await executeTransition({
         requestId: id,
         user: req.user,
-        to: cancelTransition.to,
+        // Oversight cancels from any state as an override; the requester fires
+        // their own cancel transition (only while unassigned — the engine's
+        // requester-terminal guard enforces it under the row lock).
+        ...(oversight
+          ? { to: cancelTransition.to, override: true }
+          : { transitionKey: cancelTransition.key }),
         note,
-        override: isOversight(req.user),
-        beforeCommit:
-          req.user.role === 'user'
-            ? (tx, ctx) => {
-                if (ctx.task) {
-                  throw new WorkflowError(409, 'This request can no longer be cancelled — it has been assigned');
-                }
-              }
-            : null,
       });
     } catch (err) {
       // For the owner, "a cancel path exists from here but not for your
@@ -421,11 +547,11 @@ router.patch('/:id/cancel', async (req, res, next) => {
   }
 });
 
-// PATCH /requests/{id}/status — monitor override (Section 7, constrained).
-// The engine's resolveOverride enforces: target key exists (422), category
-// terminated or triage/in_progress only (422), note always (422). Reopening
-// past a terminated status unlocks the task automatically because the task
-// lock is a function of the current category, not a flag (Section 5).
+// PATCH /requests/{id}/status — oversight override (Section 7, constrained).
+// The engine's resolveOverride enforces: target key exists (422), not the
+// initial status (422), not the current status (409), note always (422).
+// Reopening past a terminal status unlocks the task automatically because the
+// task lock is a function of is_terminal, not a flag (Section 5).
 router.patch('/:id/status', requireCapability('override'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -671,10 +797,11 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
     );
     const task = taskRows[0] || null;
 
-    const acceptTransition = request.transitions.find((t) => t.action === 'accept');
-    const assignTarget = acceptTransition ? acceptTransition.from : null;
+    // The assign transition is the oversight (assign-capability) transition
+    // out of the current status; its target is where work begins. Derived
+    // from the data — no status key in code (§9).
     const assignTransition = request.transitions.find(
-      (t) => t.from === request.status && t.to === assignTarget && t.allowed_role === 'monitor'
+      (t) => t.from === request.status && t.required_capability === 'assign'
     );
 
     if (assignTransition) {
@@ -687,7 +814,7 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
       const result = await executeTransition({
         requestId: request.id,
         user: req.user,
-        to: assignTarget,
+        transitionKey: assignTransition.key,
         note,
         beforeCommit: async (tx, ctx) => {
           const upsert = ctx.task
@@ -723,9 +850,9 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
     }
 
     // No transition into the assign target from here: only an in-place
-    // reassignment of an existing, still-open task is possible.
-    const category = categoryOf(request.statuses, request.status);
-    if (!task || category === 'terminated' || category === 'closed') {
+    // reassignment of an existing, still-open task is possible. A terminal
+    // request can't be reassigned.
+    if (!task || isTerminal(request.statuses, request.status)) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This request cannot be assigned in its current state' });
     }
@@ -760,14 +887,7 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
     await client.query('COMMIT');
 
     res.json({
-      request: {
-        id: request.id,
-        status: {
-          key: request.status,
-          label: request.statuses.find((s) => s.key === request.status)?.label ?? request.status,
-          category,
-        },
-      },
+      request: { id: request.id, status: statusOf(request.statuses, request.status) },
       task: {
         id: updated[0].id,
         employeeId: employee.id,

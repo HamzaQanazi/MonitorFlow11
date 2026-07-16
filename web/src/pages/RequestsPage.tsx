@@ -6,11 +6,10 @@ import RequestDetailPane from './RequestDetailPane'
 import RequestsMapView from './RequestsMapView'
 import './RequestsPage.css'
 
-// Categories are the closed enum from CLAUDE.md Section 9 — the only workflow
-// vocabulary application code may know. Status labels are seeded {en,ar} data,
-// resolved by the backend and picked client-side with L().
-const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'] as const
-type Category = (typeof CATEGORIES)[number]
+// Phase 4: category is gone — the only cross-service vocabulary is open vs
+// closed, from each status's isTerminal flag. Status labels are seeded {en,ar}
+// data, resolved by the backend and picked client-side with L().
+const STATES = ['open', 'closed'] as const
 
 const PRIORITIES = ['high', 'medium', 'low'] as const
 
@@ -21,7 +20,7 @@ interface RequestRow {
   id: number
   serviceTypeId: number
   serviceTypeName: Loc
-  status: { key: string; label: Loc; category: Category | null }
+  status: { key: string; label: Loc; isTerminal: boolean }
   priority: string
   createdAt: string
   updatedAt: string
@@ -74,14 +73,14 @@ export default function RequestsPage() {
   const { id: idParam } = useParams()
   const selectedId = idParam !== undefined && Number.isInteger(Number(idParam)) ? Number(idParam) : null
   const page = Math.max(1, Number(params.get('page')) || 1)
-  const category = params.get('category') ?? ''
+  const state = params.get('state') ?? ''
   const serviceTypeId = params.get('service') ?? ''
   const priority = params.get('priority') ?? ''
   const q = params.get('q') ?? ''
   const employeeId = params.get('employee') ?? ''
   // v5: list ⇄ map over the same filters (no new page — a view mode).
   const view = params.get('view') === 'map' ? 'map' : 'list'
-  const hasFilters = Boolean(category || serviceTypeId || priority || q || employeeId)
+  const hasFilters = Boolean(state || serviceTypeId || priority || q || employeeId)
 
   const [data, setData] = useState<ListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -132,7 +131,7 @@ export default function RequestsPage() {
 
   const load = useCallback(async () => {
     const qs = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
-    if (category) qs.set('category', category)
+    if (state) qs.set('state', state)
     if (serviceTypeId) qs.set('serviceTypeId', serviceTypeId)
     if (priority) qs.set('priority', priority)
     if (q) qs.set('q', q)
@@ -141,7 +140,7 @@ export default function RequestsPage() {
     setData(res)
     setUpdatedAt(new Date())
     setError(null)
-  }, [page, category, serviceTypeId, priority, q, employeeId])
+  }, [page, state, serviceTypeId, priority, q, employeeId])
 
   useEffect(() => {
     let cancelled = false
@@ -214,25 +213,25 @@ export default function RequestsPage() {
       </header>
 
       <div className="req-filters">
-        <div className="chip-row" role="group" aria-label={t('req_filter_category')}>
+        <div className="chip-row" role="group" aria-label={t('req_filter_state')}>
           <button
             type="button"
             className="chip"
-            aria-pressed={category === ''}
-            onClick={() => setFilter('category', '')}
+            aria-pressed={state === ''}
+            onClick={() => setFilter('state', '')}
           >
             {t('all')}
           </button>
-          {CATEGORIES.map((c) => (
+          {STATES.map((s) => (
             <button
-              key={c}
+              key={s}
               type="button"
-              className={`chip is-${c}`}
-              aria-pressed={category === c}
-              onClick={() => setFilter('category', category === c ? '' : c)}
+              className={`chip is-${s}`}
+              aria-pressed={state === s}
+              onClick={() => setFilter('state', state === s ? '' : s)}
             >
               <i className="chip-dot" aria-hidden="true" />
-              {t(`cat_${c}`)}
+              {t(`state_${s}`)}
             </button>
           ))}
         </div>
@@ -312,7 +311,7 @@ export default function RequestsPage() {
         <div className="req-main">
       {view === 'map' ? (
         <RequestsMapView
-          category={category}
+          state={state}
           serviceTypeId={serviceTypeId}
           priority={priority}
           q={q}
@@ -403,7 +402,7 @@ export default function RequestsPage() {
                     </td>
                     <td>{r.requester.name}</td>
                     <td>
-                      <span className={`status-pill${r.status.category ? ` is-${r.status.category}` : ''}`}>
+                      <span className={`status-pill is-${r.status.isTerminal ? 'closed' : 'open'}`}>
                         <i className="pill-dot" aria-hidden="true" />
                         {L(r.status.label)}
                       </span>

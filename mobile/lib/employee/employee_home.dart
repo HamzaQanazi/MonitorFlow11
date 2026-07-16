@@ -13,7 +13,7 @@ import '../models/task.dart';
 import '../shared/notifications_screen.dart';
 import '../shared/profile_screen.dart';
 import '../theme.dart';
-import '../widgets/category_chips.dart';
+import '../widgets/state_chips.dart';
 import '../widgets/states.dart';
 import 'task_detail_screen.dart';
 import 'task_map_view.dart';
@@ -29,7 +29,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   List<TaskSummary>? _tasks;
   Object? _error;
   Timer? _poll;
-  String? _categoryFilter; // chip toggle, same behavior as the web board
+  String? _stateFilter; // open/closed chip toggle, same behavior as the web board
   bool _showHistory = false;
   bool _mapMode = false; // v5: list ⇄ map view of the same filtered queue
 
@@ -64,10 +64,11 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     }
   }
 
-  Map<String, int> _categoryCounts() {
+  Map<String, int> _stateCounts() {
     final counts = <String, int>{};
     for (final t in _tasks!) {
-      counts[t.status.category] = (counts[t.status.category] ?? 0) + 1;
+      final s = t.status.isTerminal ? 'closed' : 'open';
+      counts[s] = (counts[s] ?? 0) + 1;
     }
     return counts;
   }
@@ -154,12 +155,15 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     }
 
     // The queue is grouped by actionability, not assignment date: the
-    // accept/reject decision first, live work next, finished work folded
-    // away. Within groups: high priority first, then longest-waiting.
-    const historyCats = {'done', 'closed', 'terminated'};
-    final filtered = _categoryFilter == null
+    // accept/reject decision first (the server-derived needsResponse
+    // window), live work next, finished work folded away. Within groups:
+    // high priority first, then longest-waiting. Phase 4: history is simply
+    // the terminal statuses — no categories.
+    final filtered = _stateFilter == null
         ? _tasks!
-        : _tasks!.where((t) => t.status.category == _categoryFilter).toList();
+        : _tasks!
+            .where((t) => (t.status.isTerminal ? 'closed' : 'open') == _stateFilter)
+            .toList();
     int prio(TaskSummary t) =>
         const {'high': 0, 'medium': 1, 'low': 2}[t.priority] ?? 3;
     int byUrgency(TaskSummary a, TaskSummary b) {
@@ -167,13 +171,14 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       return p != 0 ? p : a.assignedAt.compareTo(b.assignedAt);
     }
 
-    final needsResponse = filtered.where((t) => t.status.category == 'triage').toList()
-      ..sort(byUrgency);
+    final needsResponse =
+        filtered.where((t) => !t.status.isTerminal && t.needsResponse).toList()
+          ..sort(byUrgency);
     final active = filtered
-        .where((t) => !historyCats.contains(t.status.category) && t.status.category != 'triage')
+        .where((t) => !t.status.isTerminal && !t.needsResponse)
         .toList()
       ..sort(byUrgency);
-    final history = filtered.where((t) => historyCats.contains(t.status.category)).toList()
+    final history = filtered.where((t) => t.status.isTerminal).toList()
       ..sort((a, b) => b.assignedAt.compareTo(a.assignedAt));
 
     final toggle = Center(
@@ -189,10 +194,9 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     );
 
     if (_mapMode) {
-      // Pins are active work only — finished/terminated tasks stay in the
-      // list's History fold (same category set, no status keys).
-      final mapTasks =
-          filtered.where((t) => !historyCats.contains(t.status.category)).toList();
+      // Pins are active work only — finished tasks stay in the list's
+      // History fold (isTerminal, no status keys).
+      final mapTasks = filtered.where((t) => !t.status.isTerminal).toList();
       return Column(
         children: [
           Padding(
@@ -201,11 +205,11 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
               children: [
                 toggle,
                 const SizedBox(height: 12),
-                CategoryChips(
-                  counts: _categoryCounts(),
-                  selected: _categoryFilter,
-                  onToggle: (cat) => setState(
-                      () => _categoryFilter = _categoryFilter == cat ? null : cat),
+                StateChips(
+                  counts: _stateCounts(),
+                  selected: _stateFilter,
+                  onToggle: (s) => setState(
+                      () => _stateFilter = _stateFilter == s ? null : s),
                 ),
               ],
             ),
@@ -234,11 +238,11 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
         children: [
           toggle,
           const SizedBox(height: 12),
-          CategoryChips(
-            counts: _categoryCounts(),
-            selected: _categoryFilter,
-            onToggle: (cat) => setState(
-                () => _categoryFilter = _categoryFilter == cat ? null : cat),
+          StateChips(
+            counts: _stateCounts(),
+            selected: _stateFilter,
+            onToggle: (s) => setState(
+                () => _stateFilter = _stateFilter == s ? null : s),
           ),
           const SizedBox(height: 16),
           if (filtered.isEmpty)
@@ -248,7 +252,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
                 icon: Icons.filter_alt_off_outlined,
                 title: i18n.tr('eh_none_cat'),
                 action: OutlinedButton(
-                  onPressed: () => setState(() => _categoryFilter = null),
+                  onPressed: () => setState(() => _stateFilter = null),
                   child: Text(i18n.tr('clear_filter')),
                 ),
               ),

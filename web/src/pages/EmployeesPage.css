@@ -21,8 +21,8 @@
 }
 
 .emp-badge.is-active {
-  background: var(--cat-in_progress-bg);
-  color: var(--cat-in_progress-ink);
+  background: var(--state-open-bg);
+  color: var(--state-open-ink);
 }
 
 .emp-badge.is-inactive {

@@ -1,5 +1,5 @@
 // MonitorFlow design tokens — sRGB conversions of web/src/styles/tokens.css
-// (OKLCH source of truth). The status-category palette is the one fixed
+// (OKLCH source of truth). The status-state palette is the one fixed
 // assignment shared by all three apps (DESIGN.md: Status-Owns-Color) — never
 // color alone, always paired with the label text.
 import 'package:flutter/material.dart';
@@ -24,27 +24,20 @@ abstract final class MfColors {
   static const errorBorder = Color(0xFFF3C0B9);
 }
 
-/// Accent / ink / tint triple for one workflow status category.
-class CategoryColors {
+/// Accent / ink / tint triple for one request state. Phase 4 dropped workflow
+/// categories — the cross-service vocabulary is open vs closed (isTerminal).
+class StateColors {
   final Color accent;
   final Color ink;
   final Color tint;
-  const CategoryColors(this.accent, this.ink, this.tint);
+  const StateColors(this.accent, this.ink, this.tint);
 }
 
-/// The fixed six-category assignment (keys are Section 9 categories).
-/// Unknown categories fall back to `closed`'s neutral — never crash.
-const Map<String, CategoryColors> kCategoryColors = {
-  'new': CategoryColors(Color(0xFF2A75BA), Color(0xFF124A7B), Color(0xFFE8F3FF)),
-  'triage': CategoryColors(Color(0xFF7F5BB6), Color(0xFF523779), Color(0xFFF4EFFE)),
-  'in_progress': CategoryColors(Color(0xFF008388), Color(0xFF004D51), Color(0xFFE3F6F7)),
-  'done': CategoryColors(Color(0xFF33854A), Color(0xFF1D4E2B), Color(0xFFE7F7E9)),
-  'closed': CategoryColors(Color(0xFF5B646F), Color(0xFF3C434A), Color(0xFFEEF0F3)),
-  'terminated': CategoryColors(Color(0xFF785C52), Color(0xFF56423C), Color(0xFFF5EEEC)),
-};
+/// open = the web tokens' --state-open (teal); closed = --state-closed (gray).
+const kOpenColors = StateColors(Color(0xFF008388), Color(0xFF004D51), Color(0xFFE3F6F7));
+const kClosedColors = StateColors(Color(0xFF5B646F), Color(0xFF3C434A), Color(0xFFEEF0F3));
 
-CategoryColors categoryColors(String category) =>
-    kCategoryColors[category] ?? kCategoryColors['closed']!;
+StateColors stateColors(bool isTerminal) => isTerminal ? kClosedColors : kOpenColors;
 
 ThemeData buildTheme() {
   final base = ThemeData(

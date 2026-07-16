@@ -34,7 +34,7 @@ router.get('/', async (req, res, next) => {
     const listParams = [...params, pageSize, (page - 1) * pageSize];
     const list = await pool.query(
       `SELECT r.id, r.service_type_id, st.name AS service_type_name,
-              r.status, s->'label' AS status_label, s->>'category' AS category,
+              r.status, s->'label' AS status_label, (s->>'is_terminal')::bool AS is_terminal,
               r.priority, r.created_at, r.updated_at,
               u.id AS requester_id, u.name AS requester_name,
               COUNT(*) OVER()::int AS total
@@ -45,15 +45,17 @@ router.get('/', async (req, res, next) => {
     );
 
     const agg = await pool.query(
-      `SELECT s->>'category' AS category, r.priority, st.name->>'en' AS service_type_name
+      `SELECT (s->>'is_terminal')::bool AS is_terminal, r.priority, st.name->>'en' AS service_type_name
        ${FROM} ${whereSql}`,
       params
     );
-    const byCategory = {};
+    // §10 dropped category; the cross-service aggregate is open vs closed.
+    const byState = { open: 0, closed: 0 };
     const byPriority = {};
     const byService = {};
     for (const row of agg.rows) {
-      byCategory[row.category] = (byCategory[row.category] || 0) + 1;
+      if (row.is_terminal) byState.closed += 1;
+      else byState.open += 1;
       byPriority[row.priority] = (byPriority[row.priority] || 0) + 1;
       byService[row.service_type_name] = (byService[row.service_type_name] || 0) + 1;
     }
@@ -63,7 +65,7 @@ router.get('/', async (req, res, next) => {
         id: r.id,
         serviceTypeId: r.service_type_id,
         serviceTypeName: r.service_type_name,
-        status: { key: r.status, label: r.status_label, category: r.category },
+        status: { key: r.status, label: r.status_label, isTerminal: r.is_terminal },
         priority: r.priority,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
@@ -72,7 +74,7 @@ router.get('/', async (req, res, next) => {
       page,
       pageSize,
       total: list.rows.length ? list.rows[0].total : 0,
-      aggregates: { total: agg.rows.length, byCategory, byPriority, byService },
+      aggregates: { total: agg.rows.length, byState, byPriority, byService },
     });
   } catch (err) {
     next(err);
@@ -88,9 +90,11 @@ function csvCell(value) {
   return s;
 }
 
-// GET /reports/export.csv — same filters, frozen columns. completed_at is
-// derived from the first history row whose status is a `done` category (the
-// completion moment), not a stored column.
+// GET /reports/export.csv — same filters, frozen columns (§10 replaced the
+// `category` column with `state` = open/closed). completed_at is the first
+// history row whose status is the completion transition's target (the status a
+// required_form_key transition lands in), derived from the data — no category,
+// no status key.
 router.get('/export.csv', requireCapability('export'), async (req, res, next) => {
   try {
     const filter = buildRequestFilter(req.query, req.user, await subtreeIds(req.user.id));
@@ -102,7 +106,7 @@ router.get('/export.csv', requireCapability('export'), async (req, res, next) =>
     // add a cap/streaming if the request table ever grows large.
     const { rows } = await pool.query(
       `SELECT r.id, st.name->>'en' AS service_type_name,
-              s->'label'->>'en' AS status_label, s->>'category' AS category,
+              s->'label'->>'en' AS status_label, (s->>'is_terminal')::bool AS is_terminal,
               r.priority, u.name AS requester_name,
               emp.name AS employee_name, r.created_at,
               comp.completed_at
@@ -112,20 +116,24 @@ router.get('/export.csv', requireCapability('export'), async (req, res, next) =>
        LEFT JOIN LATERAL (
          SELECT MIN(h.changed_at) AS completed_at
          FROM request_status_history h
-         JOIN LATERAL jsonb_array_elements(w.statuses) ds ON ds->>'key' = h.status
-         WHERE h.request_id = r.id AND ds->>'category' = 'done'
+         WHERE h.request_id = r.id
+           AND h.status = (
+             SELECT tr->>'to' FROM jsonb_array_elements(w.transitions) tr
+             WHERE tr->>'required_form_key' IS NOT NULL
+             LIMIT 1
+           )
        ) comp ON TRUE
        ${whereSql}
        ORDER BY r.created_at DESC`,
       params
     );
 
-    const header = ['id', 'service_type', 'status_label', 'category', 'priority',
+    const header = ['id', 'service_type', 'status_label', 'state', 'priority',
       'requester_name', 'employee_name', 'created_at', 'completed_at'];
     const lines = [header.join(',')];
     for (const r of rows) {
       lines.push([
-        r.id, r.service_type_name, r.status_label, r.category, r.priority,
+        r.id, r.service_type_name, r.status_label, r.is_terminal ? 'closed' : 'open', r.priority,
         r.requester_name, r.employee_name,
         r.created_at ? r.created_at.toISOString() : '',
         r.completed_at ? r.completed_at.toISOString() : '',

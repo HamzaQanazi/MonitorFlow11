@@ -345,14 +345,15 @@ async function seed() {
 
       for (let s = 0; s < demo.path.length; s++) {
         // First step is the initial status, written by the requester; each
-        // later step's actor comes from the transition's allowed_role.
+        // later step's actor comes from the transition — a requester/assignee
+        // party, or an oversight owner for capability-gated transitions.
         let changedBy = requesterId;
         if (s > 0) {
           const t = svc.workflow.transitions.find(
             (tr) => tr.from === demo.path[s - 1] && tr.to === demo.path[s]
           );
-          changedBy = t.allowed_role === 'user' ? requesterId
-            : t.allowed_role === 'employee' ? employeeId
+          changedBy = t.actor === 'requester' ? requesterId
+            : t.actor === 'assignee' ? employeeId
             : ownerByDept[svc.department];
         }
         await client.query(

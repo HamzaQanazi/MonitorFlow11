@@ -22,29 +22,17 @@
   --pane-muted: oklch(0.74 0.035 57);
   --pane-border: oklch(0.32 0.025 57);
 
-  /* Status categories — the one fixed assignment shared by all three apps
-     (DESIGN.md: Status-Owns-Color). Per category: accent (dot/segment), ink
-     (text ≥4.5:1 on bg and tint), tint (chip/row background). Never color
-     alone — every use pairs with the label text. Hues avoid amber (57) and
-     error red (27); terminated is a warm neutral: a dead file, not an error. */
-  --cat-new: oklch(0.55 0.13 250);
-  --cat-new-ink: oklch(0.4 0.1 250);
-  --cat-new-bg: oklch(0.96 0.02 250);
-  --cat-triage: oklch(0.55 0.14 300);
-  --cat-triage-ink: oklch(0.4 0.11 300);
-  --cat-triage-bg: oklch(0.96 0.02 300);
-  --cat-in_progress: oklch(0.55 0.1 200);
-  --cat-in_progress-ink: oklch(0.38 0.07 200);
-  --cat-in_progress-bg: oklch(0.96 0.02 200);
-  --cat-done: oklch(0.55 0.12 150);
-  --cat-done-ink: oklch(0.38 0.08 150);
-  --cat-done-bg: oklch(0.96 0.025 150);
-  --cat-closed: oklch(0.5 0.02 250);
-  --cat-closed-ink: oklch(0.38 0.015 250);
-  --cat-closed-bg: oklch(0.955 0.005 250);
-  --cat-terminated: oklch(0.5 0.04 40);
-  --cat-terminated-ink: oklch(0.4 0.03 40);
-  --cat-terminated-bg: oklch(0.955 0.008 40);
+  /* Request state — Phase 4 dropped workflow categories; the cross-service
+     vocabulary is open vs closed (is_terminal). Per state: accent (dot/
+     segment), ink (text ≥4.5:1 on bg and tint), tint (chip/row background).
+     Never color alone — every use pairs with the label text. Hues avoid
+     amber (57) and error red (27); closed is a neutral: a dead file. */
+  --state-open: oklch(0.55 0.1 200);
+  --state-open-ink: oklch(0.38 0.07 200);
+  --state-open-bg: oklch(0.96 0.02 200);
+  --state-closed: oklch(0.5 0.02 250);
+  --state-closed-ink: oklch(0.38 0.015 250);
+  --state-closed-bg: oklch(0.955 0.005 250);
 
   /* Semantic */
   --error: oklch(0.5 0.19 27);

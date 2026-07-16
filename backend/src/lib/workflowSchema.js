@@ -1,11 +1,17 @@
-// Seed-time validation for WORKFLOW_DEFINITION (CLAUDE.md Sections 8 + 9.1).
-// Enforced before insert; the workflow engine then trusts stored definitions.
+// Seed-time validation for WORKFLOW_DEFINITION (CLAUDE.md Sections 8 + 9.1,
+// Phase 4 model §10). Enforced before insert; the workflow engine then trusts
+// stored definitions.
+//
+// Phase 4 shape: statuses carry `is_terminal` (category is gone); transitions
+// are keyed and gated by exactly one of `required_capability` (oversight, Gate
+// 1) or `actor` (the party whose turn it is). `required_form_key` replaces
+// `requires_completion_form`; `action` is retired (the transition `key` binds
+// the client, not a hardcoded action name).
 
 const { isBilingual } = require('./i18nLabel');
+const { CAPABILITIES } = require('./capabilities');
 
-const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'];
-const ACTIONS = ['accept', 'reject', 'complete', 'confirm', 'dispute'];
-const ROLES = ['user', 'employee', 'monitor'];
+const ACTORS = ['requester', 'assignee'];
 
 // Returns an array of human-readable problems; empty array means valid.
 function validateWorkflowDefinition({ statuses, transitions }) {
@@ -20,8 +26,9 @@ function validateWorkflowDefinition({ statuses, transitions }) {
   if (errors.length) return errors;
 
   const keys = new Set();
+  const terminalKeys = new Set();
   let initialCount = 0;
-  let finalCount = 0;
+  let terminalCount = 0;
 
   statuses.forEach((status, i) => {
     const at = `statuses[${i}]${status && status.key ? ` "${status.key}"` : ''}`;
@@ -39,32 +46,39 @@ function validateWorkflowDefinition({ statuses, transitions }) {
     if (!isBilingual(status.label)) {
       errors.push(`${at}: label must be a {en, ar} object with both languages`);
     }
-    if (!CATEGORIES.includes(status.category)) {
-      errors.push(`${at}: invalid category "${status.category}"`);
-    }
-    for (const flag of ['is_initial', 'is_final']) {
+    for (const flag of ['is_initial', 'is_terminal']) {
       if (typeof status[flag] !== 'boolean') {
         errors.push(`${at}: ${flag} must be a boolean`);
       }
     }
     if (status.is_initial === true) initialCount += 1;
-    if (status.is_final === true) finalCount += 1;
+    if (status.is_terminal === true) {
+      terminalCount += 1;
+      terminalKeys.add(status.key);
+    }
   });
 
   if (initialCount !== 1) {
     errors.push(`workflow must have exactly one is_initial status (found ${initialCount})`);
   }
-  if (finalCount < 1) {
-    errors.push('workflow must have at least one is_final status');
+  if (terminalCount < 1) {
+    errors.push('workflow must have at least one is_terminal status');
   }
 
-  const seenActions = new Set();
+  const seenTransitionKeys = new Set();
 
   transitions.forEach((tr, i) => {
-    const at = `transitions[${i}]${tr && tr.from && tr.to ? ` ${tr.from}->${tr.to}` : ''}`;
+    const at = `transitions[${i}]${tr && tr.key ? ` "${tr.key}"` : ''}`;
     if (!tr || typeof tr !== 'object') {
       errors.push(`${at}: must be an object`);
       return;
+    }
+    if (!tr.key || typeof tr.key !== 'string') {
+      errors.push(`${at}: key must be a non-empty string`);
+    } else if (seenTransitionKeys.has(tr.key)) {
+      errors.push(`${at}: duplicate transition key`);
+    } else {
+      seenTransitionKeys.add(tr.key);
     }
     for (const end of ['from', 'to']) {
       if (!tr[end] || typeof tr[end] !== 'string') {
@@ -73,26 +87,41 @@ function validateWorkflowDefinition({ statuses, transitions }) {
         errors.push(`${at}: ${end} status "${tr[end]}" does not exist in statuses`);
       }
     }
-    if (!ROLES.includes(tr.allowed_role)) {
-      errors.push(`${at}: invalid allowed_role "${tr.allowed_role}"`);
+    // A terminal status is final — nothing transitions out of it (this is
+    // what makes is_terminal the task lock, §5).
+    if (terminalKeys.has(tr.from)) {
+      errors.push(`${at}: cannot transition out of terminal status "${tr.from}"`);
     }
-    if (tr.action !== null) {
-      if (!ACTIONS.includes(tr.action)) {
-        errors.push(`${at}: invalid action "${tr.action}"`);
-      } else if (seenActions.has(tr.action)) {
-        errors.push(`${at}: action "${tr.action}" appears more than once in this workflow`);
-      } else {
-        seenActions.add(tr.action);
-      }
+    if (!isBilingual(tr.label)) {
+      errors.push(`${at}: label must be a {en, ar} object with both languages`);
     }
-    for (const flag of ['requires_note', 'requires_completion_form']) {
-      if (typeof tr[flag] !== 'boolean') {
-        errors.push(`${at}: ${flag} must be a boolean`);
-      }
+    // Gate model: exactly one of required_capability / actor is set. A
+    // capability-gated transition is oversight (actor null); an actor-gated
+    // transition is the requester's or assignee's turn (capability null).
+    const hasCap = tr.required_capability !== null && tr.required_capability !== undefined;
+    const hasActor = tr.actor !== null && tr.actor !== undefined;
+    if (hasCap === hasActor) {
+      errors.push(`${at}: set exactly one of required_capability or actor`);
+    }
+    if (hasCap && !CAPABILITIES.includes(tr.required_capability)) {
+      errors.push(`${at}: invalid required_capability "${tr.required_capability}"`);
+    }
+    if (hasActor && !ACTORS.includes(tr.actor)) {
+      errors.push(`${at}: invalid actor "${tr.actor}"`);
+    }
+    if (
+      tr.required_form_key !== null &&
+      tr.required_form_key !== undefined &&
+      (typeof tr.required_form_key !== 'string' || !tr.required_form_key)
+    ) {
+      errors.push(`${at}: required_form_key must be null or a non-empty string`);
+    }
+    if (typeof tr.requires_note !== 'boolean') {
+      errors.push(`${at}: requires_note must be a boolean`);
     }
   });
 
   return errors;
 }
 
-module.exports = { validateWorkflowDefinition, CATEGORIES, ACTIONS, ROLES };
+module.exports = { validateWorkflowDefinition, ACTORS };

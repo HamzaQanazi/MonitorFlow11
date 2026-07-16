@@ -9,22 +9,21 @@ import './ReportsPage.css'
 // (the backend reuses the one query engine), plus aggregate cards and a CSV
 // export of the current filter set.
 
-const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'] as const
-type Category = (typeof CATEGORIES)[number]
+const STATES = ['open', 'closed'] as const
 const PRIORITIES = ['high', 'medium', 'low'] as const
 const PAGE_SIZE = 20
 
 interface ReportRow {
   id: number
   serviceTypeName: Loc
-  status: { key: string; label: Loc; category: Category | null }
+  status: { key: string; label: Loc; isTerminal: boolean }
   priority: string
   createdAt: string
   requester: { id: number; name: string }
 }
 interface Aggregates {
   total: number
-  byCategory: Record<string, number>
+  byState: Record<string, number>
   byPriority: Record<string, number>
   // byService is keyed by the English service name (backend resolves it) — a
   // documented Phase-3 gap: these keys stay English even in the Arabic view.
@@ -56,14 +55,14 @@ export default function ReportsPage() {
   const { t, L } = useI18n()
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
-  const category = params.get('category') ?? ''
+  const state = params.get('state') ?? ''
   const serviceTypeId = params.get('service') ?? ''
   const employeeId = params.get('employee') ?? ''
   const priority = params.get('priority') ?? ''
   const dateFrom = params.get('dateFrom') ?? ''
   const dateTo = params.get('dateTo') ?? ''
   const q = params.get('q') ?? ''
-  const hasFilters = Boolean(category || serviceTypeId || employeeId || priority || dateFrom || dateTo || q)
+  const hasFilters = Boolean(state || serviceTypeId || employeeId || priority || dateFrom || dateTo || q)
 
   const [data, setData] = useState<ReportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -98,7 +97,7 @@ export default function ReportsPage() {
   // The filter query string the backend understands (shared by list + export).
   const backendQuery = useCallback(() => {
     const qs = new URLSearchParams()
-    if (category) qs.set('category', category)
+    if (state) qs.set('state', state)
     if (serviceTypeId) qs.set('serviceTypeId', serviceTypeId)
     if (employeeId) qs.set('employeeId', employeeId)
     if (priority) qs.set('priority', priority)
@@ -106,7 +105,7 @@ export default function ReportsPage() {
     if (dateTo) qs.set('dateTo', dateTo)
     if (q) qs.set('q', q)
     return qs
-  }, [category, serviceTypeId, employeeId, priority, dateFrom, dateTo, q])
+  }, [state, serviceTypeId, employeeId, priority, dateFrom, dateTo, q])
 
   const load = useCallback(async () => {
     const qs = backendQuery()
@@ -190,20 +189,20 @@ export default function ReportsPage() {
       </header>
 
       <div className="req-filters">
-        <div className="chip-row" role="group" aria-label={t('req_filter_category')}>
-          <button type="button" className="chip" aria-pressed={category === ''} onClick={() => setFilter('category', '')}>
+        <div className="chip-row" role="group" aria-label={t('req_filter_state')}>
+          <button type="button" className="chip" aria-pressed={state === ''} onClick={() => setFilter('state', '')}>
             {t('all')}
           </button>
-          {CATEGORIES.map((c) => (
+          {STATES.map((s) => (
             <button
-              key={c}
+              key={s}
               type="button"
-              className={`chip is-${c}`}
-              aria-pressed={category === c}
-              onClick={() => setFilter('category', category === c ? '' : c)}
+              className={`chip is-${s}`}
+              aria-pressed={state === s}
+              onClick={() => setFilter('state', state === s ? '' : s)}
             >
               <i className="chip-dot" aria-hidden="true" />
-              {t(`cat_${c}`)}
+              {t(`state_${s}`)}
             </button>
           ))}
         </div>
@@ -288,18 +287,18 @@ export default function ReportsPage() {
               <span className="rep-card-label">{t('rep_total_requests')}</span>
             </div>
             <div className="rep-card">
-              <h3>{t('rep_by_category')}</h3>
+              <h3>{t('rep_by_state')}</h3>
               <ul className="rep-breakdown">
-                {CATEGORIES.filter((c) => agg.byCategory[c]).map((c) => (
-                  <li key={c}>
-                    <span className={`status-pill is-${c}`}>
+                {STATES.filter((s) => agg.byState[s]).map((s) => (
+                  <li key={s}>
+                    <span className={`status-pill is-${s}`}>
                       <i className="pill-dot" aria-hidden="true" />
-                      {t(`cat_${c}`)}
+                      {t(`state_${s}`)}
                     </span>
-                    <b>{agg.byCategory[c]}</b>
+                    <b>{agg.byState[s]}</b>
                   </li>
                 ))}
-                {Object.keys(agg.byCategory).length === 0 && <li className="rep-none">{t('no_data')}</li>}
+                {STATES.every((s) => !agg.byState[s]) && <li className="rep-none">{t('no_data')}</li>}
               </ul>
             </div>
             <div className="rep-card">
@@ -365,7 +364,7 @@ export default function ReportsPage() {
                         <td className="req-service">{L(r.serviceTypeName)}</td>
                         <td>{r.requester.name}</td>
                         <td>
-                          <span className={`status-pill${r.status.category ? ` is-${r.status.category}` : ''}`}>
+                          <span className={`status-pill is-${r.status.isTerminal ? 'closed' : 'open'}`}>
                             <i className="pill-dot" aria-hidden="true" />
                             {L(r.status.label)}
                           </span>

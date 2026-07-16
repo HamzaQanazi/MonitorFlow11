@@ -3,15 +3,15 @@ import { apiFetch } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
 import './DashboardPage.css'
 
-// Categories are the closed enum from CLAUDE.md Section 9 — the only workflow
-// vocabulary application code may know. No status key appears here. Labels come
-// from t('cat_<category>') so they flip language with the console.
-const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'] as const
-type Category = (typeof CATEGORIES)[number]
+// Phase 4: category is gone — the cross-service grouping is open vs closed
+// (is_terminal). No status key appears here. Labels come from t('state_<s>')
+// so they flip language with the console.
+const STATES = ['open', 'closed'] as const
+type State = (typeof STATES)[number]
 
 interface Stats {
   total: number
-  byCategory: { category: Category; count: number }[]
+  byState: { state: State; count: number }[]
   // Service names arrive bilingual ({en,ar}) — the dashboard picks with L().
   byService: { serviceTypeId: number; name: Loc; count: number }[]
   byPriority: { priority: string; count: number }[]
@@ -97,8 +97,8 @@ export default function DashboardPage() {
         <div className="dash-skeleton" aria-hidden="true">
           <div className="skel skel-title" />
           <div className="skel-strip">
-            {CATEGORIES.map((c) => (
-              <div className="skel skel-cat" key={c} />
+            {STATES.map((s) => (
+              <div className="skel skel-cat" key={s} />
             ))}
           </div>
           <div className="skel-grid">
@@ -140,29 +140,29 @@ export default function DashboardPage() {
 
       <section className="dash-queue" aria-labelledby="queue-heading">
         <h2 id="queue-heading" className="visually-hidden">
-          {t('dash_by_category')}
+          {t('dash_by_state')}
         </h2>
         <ol className="cat-strip">
-          {stats.byCategory.map((c) => (
-            <li key={c.category} className={`cat is-${c.category}${c.count === 0 ? ' is-zero' : ''}`}>
+          {stats.byState.map((c) => (
+            <li key={c.state} className={`cat is-${c.state}${c.count === 0 ? ' is-zero' : ''}`}>
               <span className="cat-count">{c.count}</span>
               <span className="cat-name">
                 <i className="cat-dot" aria-hidden="true" />
-                {t(`cat_${c.category}`)}
+                {t(`state_${c.state}`)}
               </span>
             </li>
           ))}
         </ol>
         {stats.total > 0 && (
           <div className="cat-bar" aria-hidden="true">
-            {stats.byCategory
+            {stats.byState
               .filter((c) => c.count > 0)
               .map((c) => (
                 <span
-                  key={c.category}
-                  className={`cat-seg is-${c.category}`}
+                  key={c.state}
+                  className={`cat-seg is-${c.state}`}
                   style={{ flexGrow: c.count }}
-                  title={`${t(`cat_${c.category}`)}: ${c.count}`}
+                  title={`${t(`state_${c.state}`)}: ${c.count}`}
                 />
               ))}
           </div>

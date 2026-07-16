@@ -1,20 +1,54 @@
 import '../i18n.dart';
 
-/// Request payloads from /requests endpoints. Status is always the
-/// {key, label, category} triple — code reasons via category only
-/// (CLAUDE.md Section 9); the key is never referenced. `label` is bilingual
-/// ({en,ar}); render it through i18n.l().
+/// Request payloads from /requests endpoints. Status is the
+/// {key, label, isTerminal} triple (Phase 4: category is gone) — code
+/// reasons via isTerminal only; the key is only echoed back as
+/// expected_status. `label` is bilingual ({en,ar}); render through i18n.l().
 class StatusInfo {
   final String key;
   final Loc label;
-  final String category;
+  final bool isTerminal;
 
-  const StatusInfo({required this.key, required this.label, required this.category});
+  const StatusInfo({required this.key, required this.label, required this.isTerminal});
 
   factory StatusInfo.fromJson(Map<String, dynamic> json) => StatusInfo(
         key: json['key'] as String,
         label: Loc.fromJson(json['label']),
-        category: (json['category'] as String?) ?? 'closed',
+        isTerminal: json['isTerminal'] == true,
+      );
+}
+
+/// One row of GET /requests/{id}/transitions — the caller's legal next
+/// actions, both gates already applied server-side. Clients render exactly
+/// these buttons (Phase 4: the accept/reject/complete/resolution endpoints
+/// are gone; everything fires POST /requests/{id}/transitions).
+class TransitionOption {
+  final String key;
+  final Loc label; // bilingual button label, rendered verbatim
+  final String to;
+  final Loc toLabel;
+  final bool toTerminal; // destructive styling hint (cancel-like moves)
+  final bool requiresNote;
+  final String? requiredFormKey; // non-null ⇒ collect this form first
+
+  const TransitionOption({
+    required this.key,
+    required this.label,
+    required this.to,
+    required this.toLabel,
+    required this.toTerminal,
+    required this.requiresNote,
+    this.requiredFormKey,
+  });
+
+  factory TransitionOption.fromJson(Map<String, dynamic> json) => TransitionOption(
+        key: json['key'] as String,
+        label: Loc.fromJson(json['label']),
+        to: json['to'] as String,
+        toLabel: Loc.fromJson(json['toLabel']),
+        toTerminal: json['toTerminal'] == true,
+        requiresNote: json['requiresNote'] == true,
+        requiredFormKey: json['requiredFormKey'] as String?,
       );
 }
 

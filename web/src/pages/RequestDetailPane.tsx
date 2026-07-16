@@ -26,7 +26,7 @@ async function downloadAttachment(id: string, filename: string) {
 interface Status {
   key: string
   label: Loc
-  category: string | null
+  isTerminal: boolean
 }
 
 interface Detail {
@@ -65,17 +65,22 @@ interface Employee {
   openTaskCount: number
 }
 
+// Raw workflow JSONB from GET /services/{id}/workflow (Phase 4 shape).
 interface WorkflowStatus {
   key: string
   label: Loc
-  category: string
+  is_initial: boolean
+  is_terminal: boolean
 }
 
 interface WorkflowTransition {
+  key: string
+  label: Loc
   from: string
   to: string
-  allowed_role: string
-  action: string | null
+  required_capability: string | null
+  actor: string | null
+  requires_note: boolean
 }
 
 interface Workflow {
@@ -339,38 +344,42 @@ export default function RequestDetailPane({
     )
   }
 
-  const category = detail.status.category
-  const assignable = category !== 'terminated' && category !== 'closed'
+  const assignable = !detail.status.isTerminal
   // Spec v4 E2: least-loaded first — the top pick is the suggestion. The
   // server does not enforce it; the monitor stays free to pick anyone.
   const pickable = employees
     .filter((e) => e.id !== detail.task?.employeeId)
     .sort((a, b) => a.openTaskCount - b.openTaskCount)
 
-  // Monitor actions come from the workflow data — no status key is named in
-  // this file. Assignment's target status (the from-status of the accept
-  // transition) is excluded: entering it without an employee would strand
-  // the request, and the Assignment section owns that move.
-  const categoryOf = (key: string) => workflow?.statuses.find((s) => s.key === key)?.category
+  // Oversight actions come from the workflow data — no status key is named in
+  // this file. The assign-capability transition's target is excluded: entering
+  // it without an employee would strand the request, and the Assignment
+  // section owns that move.
+  const terminalOf = (key: string) => !!workflow?.statuses.find((s) => s.key === key)?.is_terminal
   const labelOf = (key: string) => {
     const s = workflow?.statuses.find((st) => st.key === key)
     return s ? L(s.label) : key
   }
-  const assignTarget = workflow?.transitions.find((tr) => tr.action === 'accept')?.from
+  const assignTarget = workflow?.transitions.find((tr) => tr.required_capability === 'assign')?.to
   const monitorMoves = workflow
     ? workflow.transitions.filter(
-        (tr) => tr.from === detail.status.key && tr.allowed_role === 'monitor' && tr.to !== assignTarget
+        (tr) =>
+          tr.from === detail.status.key && tr.required_capability !== null && tr.to !== assignTarget
       )
     : []
   // Standalone cancel only when no workflow button already terminates from
-  // here (the /cancel endpoint covers states with no monitor transitions).
+  // here (the /cancel endpoint covers states with no oversight transitions).
   const showCancel =
-    assignable && !monitorMoves.some((tr) => categoryOf(tr.to) === 'terminated')
+    assignable && !monitorMoves.some((tr) => terminalOf(tr.to))
+  // Reopen (override) may target any non-initial, non-terminal status —
+  // mirrors the server's loosened override rule, minus terminal targets
+  // (those are the reject/cancel buttons above, not a reopen).
   const reopenTargets =
-    category === 'terminated' && workflow
+    detail.status.isTerminal && workflow
       ? workflow.statuses.filter(
           (s) =>
-            (s.category === 'triage' || s.category === 'in_progress') &&
+            !s.is_terminal &&
+            !s.is_initial &&
             (detail.task !== null || s.key !== assignTarget)
         )
       : []
@@ -384,7 +393,7 @@ export default function RequestDetailPane({
             <span className="detail-id">#{detail.id}</span> {L(detail.serviceTypeName)}
           </h2>
           <p className="detail-sub">
-            <span className={`status-pill${category ? ` is-${category}` : ''}`}>
+            <span className={`status-pill is-${detail.status.isTerminal ? 'closed' : 'open'}`}>
               <i className="pill-dot" aria-hidden="true" />
               {L(detail.status.label)}
             </span>
@@ -425,23 +434,23 @@ export default function RequestDetailPane({
           <h3 id={`act-h-${detail.id}`}>{t('detail_actions')}</h3>
           <div className="detail-actions">
             {monitorMoves.map((tr) => {
-              const danger = categoryOf(tr.to) === 'terminated'
+              const danger = terminalOf(tr.to)
               return (
                 <button
-                  key={tr.to}
+                  key={tr.key}
                   type="button"
                   className={`action-btn${danger ? ' is-danger' : ''}`}
                   onClick={() =>
                     openAction({
                       title: `${t('detail_move_pre')} #${detail.id} ${t('detail_to')} “${labelOf(tr.to)}”?`,
-                      confirmLabel: `${t('detail_mark_as')} ${labelOf(tr.to)}`,
+                      confirmLabel: L(tr.label),
                       danger,
                       run: (n) =>
                         apiFetch(`/requests/${id}/status`, { method: 'PATCH', body: { to: tr.to, note: n } }),
                     })
                   }
                 >
-                  {t('detail_mark_as')} {labelOf(tr.to)}
+                  {L(tr.label)}
                 </button>
               )
             })}
@@ -558,7 +567,7 @@ export default function RequestDetailPane({
         <h3 id={`tl-h-${detail.id}`}>{t('detail_timeline')}</h3>
         <ol className="timeline">
           {detail.statusHistory.map((h, i) => (
-            <li key={i} className={`tl-item${h.status.category ? ` is-${h.status.category}` : ''}`}>
+            <li key={i} className={`tl-item is-${h.status.isTerminal ? 'closed' : 'open'}`}>
               <i className="tl-dot" aria-hidden="true" />
               <div className="tl-body">
                 <p className="tl-line">

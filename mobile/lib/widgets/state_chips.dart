@@ -1,20 +1,20 @@
-// Category filter chips — the web board's vocabulary, toggled the same way.
-// Shared by the employee queue and My Requests; each list passes its own
-// counts from the unfiltered data. Categories only, never status keys
-// (CLAUDE.md Section 9).
+// State filter chips — open vs closed, the web board's Phase-4 vocabulary,
+// toggled the same way. Shared by the employee queue and My Requests; each
+// list passes its own counts from the unfiltered data. No status keys, no
+// categories (CLAUDE.md §10 Phase 4).
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../i18n.dart';
 import '../theme.dart';
 
-class CategoryChips extends StatelessWidget {
-  /// Category → item count, from the unfiltered list.
+class StateChips extends StatelessWidget {
+  /// State ('open' | 'closed') → item count, from the unfiltered list.
   final Map<String, int> counts;
   final String? selected;
-  final void Function(String category) onToggle;
+  final void Function(String state) onToggle;
 
-  const CategoryChips({
+  const StateChips({
     super.key,
     required this.counts,
     required this.selected,
@@ -24,14 +24,13 @@ class CategoryChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<I18n>();
-    final cats =
-        kCategoryColors.keys.where((c) => (counts[c] ?? 0) > 0).toList();
+    final states = ['open', 'closed'].where((s) => (counts[s] ?? 0) > 0).toList();
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          for (final cat in cats) ...[
-            _chip(i18n, cat, counts[cat]!),
+          for (final s in states) ...[
+            _chip(i18n, s, counts[s]!),
             const SizedBox(width: 8),
           ],
         ],
@@ -39,9 +38,9 @@ class CategoryChips extends StatelessWidget {
     );
   }
 
-  Widget _chip(I18n i18n, String cat, int count) {
-    final c = categoryColors(cat);
-    final isSelected = selected == cat;
+  Widget _chip(I18n i18n, String state, int count) {
+    final c = stateColors(state == 'closed');
+    final isSelected = selected == state;
     return Material(
       color: isSelected ? c.tint : MfColors.bg,
       shape: RoundedRectangleBorder(
@@ -50,7 +49,7 @@ class CategoryChips extends StatelessWidget {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
-        onTap: () => onToggle(cat),
+        onTap: () => onToggle(state),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
           child: Row(
@@ -63,7 +62,7 @@ class CategoryChips extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                '${i18n.tr('cat_$cat')} · $count',
+                '${i18n.tr('state_$state')} · $count',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,

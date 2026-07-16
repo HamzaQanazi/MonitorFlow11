@@ -10,7 +10,7 @@ import '../auth/auth_state.dart';
 import '../i18n.dart';
 import '../models/request.dart';
 import '../theme.dart';
-import '../widgets/category_chips.dart';
+import '../widgets/state_chips.dart';
 import '../widgets/states.dart';
 import 'request_detail_screen.dart';
 
@@ -25,7 +25,7 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
   List<RequestSummary>? _requests;
   Object? _error;
   Timer? _poll;
-  String? _categoryFilter; // chip toggle, same behavior as the employee queue
+  String? _stateFilter; // open/closed chip toggle, same behavior as the employee queue
 
   @override
   void initState() {
@@ -91,11 +91,14 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
     }
     final counts = <String, int>{};
     for (final r in _requests!) {
-      counts[r.status.category] = (counts[r.status.category] ?? 0) + 1;
+      final s = r.status.isTerminal ? 'closed' : 'open';
+      counts[s] = (counts[s] ?? 0) + 1;
     }
-    final filtered = _categoryFilter == null
+    final filtered = _stateFilter == null
         ? _requests!
-        : _requests!.where((r) => r.status.category == _categoryFilter).toList();
+        : _requests!
+            .where((r) => (r.status.isTerminal ? 'closed' : 'open') == _stateFilter)
+            .toList();
 
     return RefreshIndicator(
       color: MfColors.amber600,
@@ -104,11 +107,11 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
-          CategoryChips(
+          StateChips(
             counts: counts,
-            selected: _categoryFilter,
-            onToggle: (cat) => setState(
-                () => _categoryFilter = _categoryFilter == cat ? null : cat),
+            selected: _stateFilter,
+            onToggle: (s) => setState(
+                () => _stateFilter = _stateFilter == s ? null : s),
           ),
           const SizedBox(height: 16),
           if (filtered.isEmpty)
@@ -118,7 +121,7 @@ class _MyRequestsScreenState extends State<MyRequestsScreen> {
                 icon: Icons.filter_alt_off_outlined,
                 title: i18n.tr('my_none_cat'),
                 action: OutlinedButton(
-                  onPressed: () => setState(() => _categoryFilter = null),
+                  onPressed: () => setState(() => _stateFilter = null),
                   child: Text(i18n.tr('clear_filter')),
                 ),
               ),

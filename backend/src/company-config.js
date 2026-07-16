@@ -25,22 +25,43 @@
 
 const L = (en, ar) => ({ en, ar });
 
-const status = (key, label, category, flags = {}) => ({
+// Phase 4 transition model (CLAUDE.md §10): statuses carry `is_terminal`
+// (category is gone); transitions are keyed and gated by two orthogonal
+// fields — `required_capability` (Gate 1, an oversight capability or null)
+// and `actor` (the party whose turn it is: 'requester' | 'assignee' | null).
+// The old `allowed_role` split cleanly into these: user→actor:'requester',
+// employee→actor:'assignee', monitor→required_capability (actor:null). The
+// generic /requests/{id}/transitions call serves the actor-based transitions
+// (capability:null); oversight (capability-gated) transitions are fired by
+// the dedicated /assign, /priority, /status endpoints.
+const status = (key, label, flags = {}) => ({
   key,
   label,
-  category,
   is_initial: flags.initial === true,
-  is_final: flags.final === true,
+  is_terminal: flags.terminal === true,
 });
 
-const transition = (from, to, allowed_role, extra = {}) => ({
+// `who` is exactly one of {actor:'requester'|'assignee'} or {capability:'…'}.
+// `extra.form` names the FORM_DEFINITION form_type a transition requires
+// (replaces requires_completion_form); `extra.note` keeps requires_note.
+const transition = (key, from, to, who, extra = {}) => ({
+  key,
   from,
   to,
-  allowed_role,
-  action: extra.action || null,
+  label: extra.label, // bilingual button label the client renders verbatim
+  required_capability: who.capability ?? null,
+  actor: who.actor ?? null,
+  required_form_key: extra.form ?? null,
   requires_note: extra.note === true,
-  requires_completion_form: extra.form === true,
+  // Minimal post-action: notify the service's oversight owner (task_rejected,
+  // §7). Full post_actions are Phase 5/7 — this one flag preserves the
+  // existing rejection notification without an action name.
+  notify_oversight: extra.notifyOversight === true,
 });
+
+const requester = { actor: 'requester' };
+const assignee = { actor: 'assignee' };
+const cap = (capability) => ({ capability });
 
 // ---------------------------------------------------------------------------
 // Service A: Equipment Repair (IT) — approval gate, hold loop, rejected terminal
@@ -77,33 +98,48 @@ const equipmentRepairCompletionForm = [
 
 const equipmentRepairWorkflow = {
   statuses: [
-    status('submitted', L('Submitted', 'مُقدَّم'), 'new', { initial: true }),
-    status('approved', L('Approved', 'مُعتمَد'), 'triage'),
-    status('assigned', L('Assigned', 'مُسنَد'), 'triage'),
-    status('accepted', L('Accepted', 'مقبول'), 'in_progress'),
-    status('in_progress', L('In Progress', 'قيد التنفيذ'), 'in_progress'),
-    status('awaiting_parts', L('Awaiting Parts', 'بانتظار القطع'), 'in_progress'),
-    status('completed', L('Completed', 'مكتمل'), 'done'),
-    status('confirmed', L('Resolved', 'تم الحل'), 'closed', { final: true }),
-    status('rejected', L('Rejected', 'مرفوض'), 'terminated', { final: true }),
-    status('cancelled', L('Cancelled', 'ملغى'), 'terminated', { final: true }),
+    status('submitted', L('Submitted', 'مُقدَّم'), { initial: true }),
+    status('approved', L('Approved', 'مُعتمَد')),
+    status('assigned', L('Assigned', 'مُسنَد')),
+    status('accepted', L('Accepted', 'مقبول')),
+    status('in_progress', L('In Progress', 'قيد التنفيذ')),
+    status('awaiting_parts', L('Awaiting Parts', 'بانتظار القطع')),
+    status('completed', L('Completed', 'مكتمل')),
+    status('confirmed', L('Resolved', 'تم الحل'), { terminal: true }),
+    status('rejected', L('Rejected', 'مرفوض'), { terminal: true }),
+    status('cancelled', L('Cancelled', 'ملغى'), { terminal: true }),
   ],
   transitions: [
-    transition('submitted', 'approved', 'monitor'),
-    transition('submitted', 'rejected', 'monitor', { note: true }),
-    transition('submitted', 'cancelled', 'user', { note: true }),
-    transition('submitted', 'cancelled', 'monitor', { note: true }),
-    transition('approved', 'assigned', 'monitor'),
-    transition('approved', 'cancelled', 'monitor', { note: true }),
-    transition('assigned', 'accepted', 'employee', { action: 'accept' }),
-    transition('assigned', 'approved', 'employee', { action: 'reject', note: true }),
-    transition('assigned', 'cancelled', 'monitor', { note: true }),
-    transition('accepted', 'in_progress', 'employee'),
-    transition('in_progress', 'awaiting_parts', 'employee', { note: true }),
-    transition('in_progress', 'completed', 'employee', { action: 'complete', form: true }),
-    transition('awaiting_parts', 'in_progress', 'employee'),
-    transition('completed', 'confirmed', 'user', { action: 'confirm' }),
-    transition('completed', 'in_progress', 'user', { action: 'dispute', note: true }),
+    transition('approve', 'submitted', 'approved', cap('override'),
+      { label: L('Approve', 'اعتماد') }),
+    transition('reject_request', 'submitted', 'rejected', cap('override'),
+      { note: true, label: L('Reject request', 'رفض الطلب') }),
+    transition('cancel', 'submitted', 'cancelled', requester,
+      { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
+    transition('cancel_oversight', 'submitted', 'cancelled', cap('override'),
+      { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
+    transition('assign', 'approved', 'assigned', cap('assign'),
+      { label: L('Assign', 'إسناد') }),
+    transition('cancel_approved', 'approved', 'cancelled', cap('override'),
+      { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
+    transition('accept', 'assigned', 'accepted', assignee,
+      { label: L('Accept task', 'قبول المهمة') }),
+    transition('reject', 'assigned', 'approved', assignee,
+      { note: true, notifyOversight: true, label: L('Reject task', 'رفض المهمة') }),
+    transition('cancel_assigned', 'assigned', 'cancelled', cap('override'),
+      { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
+    transition('start', 'accepted', 'in_progress', assignee,
+      { label: L('Start work', 'بدء العمل') }),
+    transition('hold', 'in_progress', 'awaiting_parts', assignee,
+      { note: true, label: L('Put on hold', 'وضع قيد الانتظار') }),
+    transition('complete', 'in_progress', 'completed', assignee,
+      { form: 'completion', label: L('Complete task', 'إكمال المهمة') }),
+    transition('resume', 'awaiting_parts', 'in_progress', assignee,
+      { label: L('Resume work', 'استئناف العمل') }),
+    transition('confirm', 'completed', 'confirmed', requester,
+      { label: L('Confirm resolution', 'تأكيد الحل') }),
+    transition('dispute', 'completed', 'in_progress', requester,
+      { note: true, label: L('Report unresolved', 'الإبلاغ عن عدم الحل') }),
   ],
 };
 
@@ -140,27 +176,38 @@ const homeCleaningCompletionForm = [
 
 const homeCleaningWorkflow = {
   statuses: [
-    status('booked', L('Booked', 'محجوز'), 'new', { initial: true }),
-    status('assigned', L('Assigned', 'مُسنَد'), 'triage'),
-    status('accepted', L('Scheduled', 'مجدول'), 'in_progress'),
-    status('en_route', L('On the Way', 'في الطريق'), 'in_progress'),
-    status('in_service', L('Service in Progress', 'الخدمة قيد التنفيذ'), 'in_progress'),
-    status('completed', L('Completed', 'مكتمل'), 'done'),
-    status('confirmed', L('Closed', 'مغلق'), 'closed', { final: true }),
-    status('cancelled', L('Cancelled', 'ملغى'), 'terminated', { final: true }),
+    status('booked', L('Booked', 'محجوز'), { initial: true }),
+    status('assigned', L('Assigned', 'مُسنَد')),
+    status('accepted', L('Scheduled', 'مجدول')),
+    status('en_route', L('On the Way', 'في الطريق')),
+    status('in_service', L('Service in Progress', 'الخدمة قيد التنفيذ')),
+    status('completed', L('Completed', 'مكتمل')),
+    status('confirmed', L('Closed', 'مغلق'), { terminal: true }),
+    status('cancelled', L('Cancelled', 'ملغى'), { terminal: true }),
   ],
   transitions: [
-    transition('booked', 'assigned', 'monitor'),
-    transition('booked', 'cancelled', 'user', { note: true }),
-    transition('booked', 'cancelled', 'monitor', { note: true }),
-    transition('assigned', 'accepted', 'employee', { action: 'accept' }),
-    transition('assigned', 'booked', 'employee', { action: 'reject', note: true }),
-    transition('assigned', 'cancelled', 'monitor', { note: true }),
-    transition('accepted', 'en_route', 'employee'),
-    transition('en_route', 'in_service', 'employee'),
-    transition('in_service', 'completed', 'employee', { action: 'complete', form: true }),
-    transition('completed', 'confirmed', 'user', { action: 'confirm' }),
-    transition('completed', 'in_service', 'user', { action: 'dispute', note: true }),
+    transition('assign', 'booked', 'assigned', cap('assign'),
+      { label: L('Assign', 'إسناد') }),
+    transition('cancel', 'booked', 'cancelled', requester,
+      { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
+    transition('cancel_oversight', 'booked', 'cancelled', cap('override'),
+      { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
+    transition('accept', 'assigned', 'accepted', assignee,
+      { label: L('Accept task', 'قبول المهمة') }),
+    transition('reject', 'assigned', 'booked', assignee,
+      { note: true, notifyOversight: true, label: L('Reject task', 'رفض المهمة') }),
+    transition('cancel_assigned', 'assigned', 'cancelled', cap('override'),
+      { note: true, label: L('Cancel request', 'إلغاء الطلب') }),
+    transition('depart', 'accepted', 'en_route', assignee,
+      { label: L('On the way', 'في الطريق') }),
+    transition('arrive', 'en_route', 'in_service', assignee,
+      { label: L('Start service', 'بدء الخدمة') }),
+    transition('complete', 'in_service', 'completed', assignee,
+      { form: 'completion', label: L('Complete task', 'إكمال المهمة') }),
+    transition('confirm', 'completed', 'confirmed', requester,
+      { label: L('Confirm resolution', 'تأكيد الحل') }),
+    transition('dispute', 'completed', 'in_service', requester,
+      { note: true, label: L('Report unresolved', 'الإبلاغ عن عدم الحل') }),
   ],
 };
 

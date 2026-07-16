@@ -2,7 +2,6 @@
 // backs GET /requests, GET /reports, and the CSV export — the spec forbids a
 // second one. This validates the standard list params and builds the WHERE
 // clause + bound params; each caller appends its own SELECT / pagination.
-const CATEGORIES = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'];
 const PRIORITIES = ['low', 'medium', 'high'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -19,12 +18,13 @@ function buildRequestFilter(q, user, ownerScope = null) {
   const bad = [];
   if (!Number.isInteger(page) || page < 1) bad.push('page');
   if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) bad.push('pageSize');
-  if (q.category !== undefined && !CATEGORIES.includes(q.category)) bad.push('category');
   if (q.priority !== undefined && !PRIORITIES.includes(q.priority)) bad.push('priority');
   if (q.serviceTypeId !== undefined && !Number.isInteger(Number(q.serviceTypeId))) bad.push('serviceTypeId');
   if (q.employeeId !== undefined && !Number.isInteger(Number(q.employeeId))) bad.push('employeeId');
   if (q.dateFrom !== undefined && !DATE_RE.test(q.dateFrom)) bad.push('dateFrom');
   if (q.dateTo !== undefined && !DATE_RE.test(q.dateTo)) bad.push('dateTo');
+  // Phase 4: `state` (open|closed, from is_terminal) replaces `category`.
+  if (q.state !== undefined && !['open', 'closed'].includes(q.state)) bad.push('state');
   if (bad.length) return { error: `Invalid query params: ${bad.join(', ')}` };
 
   const where = [];
@@ -39,7 +39,7 @@ function buildRequestFilter(q, user, ownerScope = null) {
   // their subtree. No scope (or an empty one) matches nothing: fail closed.
   if (user.role === 'employee') add('st.owner_id = ANY(?)', ownerScope || []);
   if (q.status !== undefined) add('r.status = ?', q.status);
-  if (q.category !== undefined) add("s->>'category' = ?", q.category);
+  if (q.state !== undefined) add("(s->>'is_terminal')::bool = ?", q.state === 'closed');
   if (q.serviceTypeId !== undefined) add('r.service_type_id = ?', Number(q.serviceTypeId));
   // Subquery, not a join — callers share the fixed alias set (see above),
   // and a request has at most one task row (Section 5).
@@ -49,9 +49,10 @@ function buildRequestFilter(q, user, ownerScope = null) {
   if (q.priority !== undefined) add('r.priority = ?', q.priority);
   if (q.dateFrom !== undefined) add('r.created_at >= ?::date', q.dateFrom);
   if (q.dateTo !== undefined) add("r.created_at < ?::date + INTERVAL '1 day'", q.dateTo);
-  if (q.q) add('(u.name ILIKE ? OR st.name ILIKE ?)', `%${q.q}%`);
+  // st.name is bilingual JSONB (Phase 3) — search both language values.
+  if (q.q) add("(u.name ILIKE ? OR st.name->>'en' ILIKE ? OR st.name->>'ar' ILIKE ?)", `%${q.q}%`);
 
   return { where, params, page, pageSize };
 }
 
-module.exports = { buildRequestFilter, CATEGORIES, PRIORITIES, DATE_RE };
+module.exports = { buildRequestFilter, PRIORITIES, DATE_RE };

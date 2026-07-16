@@ -74,12 +74,8 @@
   background: var(--_c, var(--border-strong));
 }
 
-.cat.is-new { --_c: var(--cat-new); }
-.cat.is-triage { --_c: var(--cat-triage); }
-.cat.is-in_progress { --_c: var(--cat-in_progress); }
-.cat.is-done { --_c: var(--cat-done); }
-.cat.is-closed { --_c: var(--cat-closed); }
-.cat.is-terminated { --_c: var(--cat-terminated); }
+.cat.is-open { --_c: var(--state-open); }
+.cat.is-closed { --_c: var(--state-closed); }
 
 /* Zero counts stay legible but recede; the dot goes hollow. */
 .cat.is-zero .cat-count {
@@ -103,12 +99,8 @@
   border-radius: 3px;
 }
 
-.cat-seg.is-new { background: var(--cat-new); }
-.cat-seg.is-triage { background: var(--cat-triage); }
-.cat-seg.is-in_progress { background: var(--cat-in_progress); }
-.cat-seg.is-done { background: var(--cat-done); }
-.cat-seg.is-closed { background: var(--cat-closed); }
-.cat-seg.is-terminated { background: var(--cat-terminated); }
+.cat-seg.is-open { background: var(--state-open); }
+.cat-seg.is-closed { background: var(--state-closed); }
 
 /* --- Two-column zone below the strip --- */
 

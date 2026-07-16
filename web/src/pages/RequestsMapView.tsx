@@ -1,4 +1,4 @@
-// Map mode for Requests Management (v5 amendment) — clustered, category-
+// Map mode for Requests Management (v5 amendment) — clustered, state-
 // colored pins over OSM tiles, driven by the same filters as the list. Not a
 // route: RequestsPage swaps this in for the table. Owns its fetch because the
 // map wants one big page (100 = the API max) instead of the list's 20.
@@ -17,13 +17,13 @@ const NABLUS: [number, number] = [32.22, 35.26]
 interface MapRow {
   id: number
   serviceTypeName: Loc
-  status: { key: string; label: Loc; category: string | null }
+  status: { key: string; label: Loc; isTerminal: boolean }
   location: { lat: number; lng: number } | null
   assignedEmployee: { id: number; name: string } | null
 }
 
 interface Props {
-  category: string
+  state: string
   serviceTypeId: string
   priority: string
   q: string
@@ -33,16 +33,16 @@ interface Props {
 
 // L.divIcon everywhere — CSS-token colors, and it sidesteps the Leaflet/Vite
 // default-marker-asset bug entirely.
-function pinIcon(category: string | null) {
+function pinIcon(isTerminal: boolean) {
   return L.divIcon({
     className: '',
-    html: `<span class="map-pin is-${category ?? 'closed'}"></span>`,
+    html: `<span class="map-pin is-${isTerminal ? 'closed' : 'open'}"></span>`,
     iconSize: [18, 18],
     iconAnchor: [9, 18],
   })
 }
 
-// Clusters mix categories, so they may not borrow a category color
+// Clusters mix states, so they may not borrow a state color
 // (Status-Owns-Color) — neutral count circle.
 function clusterIcon(cluster: { getChildCount(): number }) {
   return L.divIcon({
@@ -65,7 +65,7 @@ function FitToMarkers({ points, fitKey }: { points: [number, number][]; fitKey: 
   return null
 }
 
-export default function RequestsMapView({ category, serviceTypeId, priority, q, employeeId, openDetail }: Props) {
+export default function RequestsMapView({ state, serviceTypeId, priority, q, employeeId, openDetail }: Props) {
   // The module already binds Leaflet to `L`; alias the i18n picker as `loc`.
   const { t, L: loc } = useI18n()
   const [rows, setRows] = useState<MapRow[] | null>(null)
@@ -76,7 +76,7 @@ export default function RequestsMapView({ category, serviceTypeId, priority, q, 
     let cancelled = false
     const load = () => {
       const qs = new URLSearchParams({ page: '1', pageSize: String(MAP_PAGE_SIZE) })
-      if (category) qs.set('category', category)
+      if (state) qs.set('state', state)
       if (serviceTypeId) qs.set('serviceTypeId', serviceTypeId)
       if (priority) qs.set('priority', priority)
       if (q) qs.set('q', q)
@@ -100,7 +100,7 @@ export default function RequestsMapView({ category, serviceTypeId, priority, q, 
       cancelled = true
       clearInterval(timer)
     }
-  }, [category, serviceTypeId, priority, q, employeeId])
+  }, [state, serviceTypeId, priority, q, employeeId])
 
   if (rows === null) {
     return error ? (
@@ -120,7 +120,7 @@ export default function RequestsMapView({ category, serviceTypeId, priority, q, 
   const located = rows.filter((r) => r.location !== null)
   const missing = rows.length - located.length
   const points = located.map((r) => [r.location!.lat, r.location!.lng] as [number, number])
-  const fitKey = [category, serviceTypeId, priority, q, employeeId].join('|')
+  const fitKey = [state, serviceTypeId, priority, q, employeeId].join('|')
 
   return (
     <div className="req-mapwrap">
@@ -147,7 +147,7 @@ export default function RequestsMapView({ category, serviceTypeId, priority, q, 
                 <Marker
                   key={r.id}
                   position={[r.location!.lat, r.location!.lng]}
-                  icon={pinIcon(r.status.category)}
+                  icon={pinIcon(r.status.isTerminal)}
                   eventHandlers={{ click: () => openDetail(r.id) }}
                 >
                   <Tooltip direction="top" offset={[0, -16]}>

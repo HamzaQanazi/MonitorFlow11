@@ -1,6 +1,6 @@
-// Dashboard stats + chart (CLAUDE.md Section 7, monitor only). Counts are
-// grouped by status *category* resolved from each service's seeded workflow —
-// no status key appears in this code (Section 9).
+// Dashboard stats + chart (CLAUDE.md Section 7, oversight only). Phase 4 (§10):
+// `category` is gone, so the cross-service grouping is open vs closed, resolved
+// from each status's `is_terminal` flag — no status key appears here (Section 9).
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireCapability } = require('../middleware/auth');
@@ -14,9 +14,9 @@ router.use(requireAuth, requireCapability('view_all'));
 router.get('/stats', async (req, res, next) => {
   try {
     const dept = [await subtreeIds(req.user.id)];
-    const [byCategory, byService, byPriority] = await Promise.all([
+    const [byState, byService, byPriority] = await Promise.all([
       pool.query(
-        `SELECT s->>'category' AS category, COUNT(*)::int AS count
+        `SELECT (s->>'is_terminal')::bool AS is_terminal, COUNT(*)::int AS count
          FROM request r
          JOIN service_type st ON st.id = r.service_type_id
          JOIN workflow_definition w ON w.service_type_id = r.service_type_id
@@ -43,14 +43,23 @@ router.get('/stats', async (req, res, next) => {
       ),
     ]);
 
-    const categoryCounts = Object.fromEntries(byCategory.rows.map((r) => [r.category, r.count]));
+    // Open vs closed replaces the old six-way category breakdown (§10 dropped
+    // category). `is_terminal: true` rows are closed; everything else is open.
+    let open = 0;
+    let closed = 0;
+    for (const r of byState.rows) {
+      if (r.is_terminal) closed += r.count;
+      else open += r.count;
+    }
     const priorityCounts = Object.fromEntries(byPriority.rows.map((r) => [r.priority, r.count]));
-    const categories = ['new', 'triage', 'in_progress', 'done', 'closed', 'terminated'];
     const priorities = ['high', 'medium', 'low'];
 
     res.json({
-      total: byCategory.rows.reduce((sum, r) => sum + r.count, 0),
-      byCategory: categories.map((c) => ({ category: c, count: categoryCounts[c] || 0 })),
+      total: open + closed,
+      byState: [
+        { state: 'open', count: open },
+        { state: 'closed', count: closed },
+      ],
       byService: byService.rows.map((r) => ({ serviceTypeId: r.id, name: r.name, count: r.count })),
       byPriority: priorities.map((p) => ({ priority: p, count: priorityCounts[p] || 0 })),
     });

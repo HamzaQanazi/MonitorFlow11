@@ -1,6 +1,6 @@
 // Shared list/page states — every list gets designed loading, empty and
 // error states (CLAUDE.md Section 4 UI-state rule), plus the status pill:
-// the one category color-and-shape language used everywhere, always with
+// the one state color-and-shape language used everywhere, always with
 // its label text (DESIGN.md: Status-Owns-Color).
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -19,7 +19,7 @@ class StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<I18n>();
-    final c = categoryColors(status.category);
+    final c = stateColors(status.isTerminal);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(

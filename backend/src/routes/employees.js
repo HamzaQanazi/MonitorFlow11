@@ -86,7 +86,7 @@ router.get('/', async (req, res, next) => {
                JOIN request r ON r.id = t.request_id
                JOIN workflow_definition w ON w.service_type_id = r.service_type_id
                JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = t.status
-               WHERE t.employee_id = u.id AND (s->>'is_final')::boolean = FALSE
+               WHERE t.employee_id = u.id AND (s->>'is_terminal')::boolean = FALSE
               ) AS open_task_count,
               COUNT(*) OVER()::int AS total
        FROM users u
@@ -236,7 +236,7 @@ router.patch('/:id/deactivate', async (req, res, next) => {
        CROSS JOIN LATERAL jsonb_array_elements(w.statuses) s
        WHERE t.employee_id = $1
          AND s->>'key' = t.status
-         AND (s->>'is_final')::boolean = FALSE
+         AND (s->>'is_terminal')::boolean = FALSE
        LIMIT 1`,
       [emp.id]
     );
@@ -273,8 +273,8 @@ router.patch('/:id/reset-password', async (req, res, next) => {
   }
 });
 
-// GET /employees/{id}/tasks — one employee's tasks (status label/category from
-// the workflow data). Read-only monitor view of assignment progress.
+// GET /employees/{id}/tasks — one employee's tasks (status label + is_terminal
+// from the workflow data). Read-only oversight view of assignment progress.
 router.get('/:id/tasks', async (req, res, next) => {
   try {
     const emp = await loadEmployee(Number(req.params.id), req.user.id);

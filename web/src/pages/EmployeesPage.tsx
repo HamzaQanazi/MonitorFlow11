@@ -526,13 +526,13 @@ function ResetPasswordDialog({ employee, onClose }: { employee: Employee; onClos
 }
 
 // Read-only workload summary: every task ever assigned to this employee,
-// with per-category counts. Data is the existing GET /employees/{id}/tasks —
+// with open/closed counts. Data is the existing GET /employees/{id}/tasks —
 // no new endpoint.
 interface EmployeeTask {
   id: number
   requestId: number
   serviceTypeName: Loc
-  status: { key: string; label: Loc; category: string | null }
+  status: { key: string; label: Loc; isTerminal: boolean }
   priority: string
   assignedAt: string
 }
@@ -556,8 +556,8 @@ function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onCl
 
   const counts = new Map<string, number>()
   for (const tk of tasks ?? []) {
-    const cat = tk.status.category ?? 'unknown'
-    counts.set(cat, (counts.get(cat) ?? 0) + 1)
+    const state = tk.status.isTerminal ? 'closed' : 'open'
+    counts.set(state, (counts.get(state) ?? 0) + 1)
   }
 
   return (
@@ -589,9 +589,9 @@ function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onCl
           <>
             <p className="emp-summary-counts">
               {tasks.length} {tasks.length === 1 ? t('task_word') : t('tasks_word')}
-              {[...counts.entries()].map(([cat, n]) => (
-                <span key={cat} className={`status-pill is-${cat}`}>
-                  {n} {cat === 'unknown' ? cat : t(`cat_${cat}`)}
+              {[...counts.entries()].map(([state, n]) => (
+                <span key={state} className={`status-pill is-${state}`}>
+                  {n} {t(`state_${state}`)}
                 </span>
               ))}
             </p>
@@ -612,7 +612,7 @@ function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onCl
                       <td>#{tk.requestId}</td>
                       <td className="req-service">{L(tk.serviceTypeName)}</td>
                       <td>
-                        <span className={`status-pill${tk.status.category ? ` is-${tk.status.category}` : ''}`}>
+                        <span className={`status-pill is-${tk.status.isTerminal ? 'closed' : 'open'}`}>
                           {L(tk.status.label)}
                         </span>
                       </td>

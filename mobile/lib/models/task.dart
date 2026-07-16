@@ -11,6 +11,10 @@ class TaskSummary {
   final int serviceTypeId;
   final Loc serviceTypeName;
   final StatusInfo status;
+
+  /// The accept/reject decision window (server-derived from the workflow:
+  /// an assignee reject is still available from the current status).
+  final bool needsResponse;
   final String priority;
   final DateTime assignedAt;
 
@@ -24,6 +28,7 @@ class TaskSummary {
     required this.serviceTypeId,
     required this.serviceTypeName,
     required this.status,
+    this.needsResponse = false,
     required this.priority,
     required this.assignedAt,
     this.location,
@@ -37,6 +42,7 @@ class TaskSummary {
       serviceTypeId: json['serviceTypeId'] as int,
       serviceTypeName: Loc.fromJson(json['serviceTypeName']),
       status: StatusInfo.fromJson(json['status'] as Map<String, dynamic>),
+      needsResponse: json['needsResponse'] == true,
       priority: json['priority'] as String,
       assignedAt: DateTime.parse(json['assignedAt'] as String),
       location: loc == null
@@ -78,31 +84,5 @@ class TaskDetail {
   }
 }
 
-/// One row of GET /tasks/{id}/valid-transitions — the data that drives
-/// which action buttons exist (no status keys in code, Section 9).
-class TaskTransition {
-  final String to;
-  final Loc toLabel;
-  final String toCategory;
-  final String? action; // accept | reject | complete | null (generic)
-  final bool requiresNote;
-  final bool requiresCompletionForm;
-
-  const TaskTransition({
-    required this.to,
-    required this.toLabel,
-    required this.toCategory,
-    this.action,
-    required this.requiresNote,
-    required this.requiresCompletionForm,
-  });
-
-  factory TaskTransition.fromJson(Map<String, dynamic> json) => TaskTransition(
-        to: json['to'] as String,
-        toLabel: Loc.fromJson(json['toLabel']),
-        toCategory: json['toCategory'] as String,
-        action: json['action'] as String?,
-        requiresNote: json['requiresNote'] == true,
-        requiresCompletionForm: json['requiresCompletionForm'] == true,
-      );
-}
+// Phase 4: TaskTransition is gone — action buttons come from
+// GET /requests/{id}/transitions (TransitionOption in models/request.dart).

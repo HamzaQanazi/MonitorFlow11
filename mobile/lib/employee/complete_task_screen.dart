@@ -1,7 +1,9 @@
-// Complete Task (Section 4, Employee app) — the completion FORM_DEFINITION
-// rendered through the same dynamic form engine as Create Request, posted
-// to POST /tasks/{id}/complete. Server 422s render per-field; a 409 means
-// the task moved under us (monitor cancelled, etc.) — surface and go back.
+// Complete Task (Section 4, Employee app) — the form named by the
+// transition's required_form_key, rendered through the same dynamic form
+// engine as Create Request and fired via the one generic
+// POST /requests/{id}/transitions (Phase 4) with the form payload. Server
+// 422s render per-field; a 409 means the task moved under us (monitor
+// cancelled, concurrent fire) — surface and go back.
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -10,17 +12,24 @@ import '../auth/auth_state.dart';
 import '../forms/dynamic_form.dart';
 import '../forms/form_schema.dart';
 import '../i18n.dart';
+import '../models/request.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
 
 class CompleteTaskScreen extends StatefulWidget {
   final int taskId;
+  final int requestId;
+  final TransitionOption transition;
+  final String expectedStatus;
   final int serviceTypeId;
   final Loc serviceTypeName;
 
   const CompleteTaskScreen({
     super.key,
     required this.taskId,
+    required this.requestId,
+    required this.transition,
+    required this.expectedStatus,
     required this.serviceTypeId,
     required this.serviceTypeName,
   });
@@ -43,7 +52,8 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
 
   Future<List<FormFieldDef>> _load() async {
     final api = context.read<AuthState>().api;
-    final json = await api.get('/services/${widget.serviceTypeId}/forms/completion');
+    final formKey = widget.transition.requiredFormKey ?? 'completion';
+    final json = await api.get('/services/${widget.serviceTypeId}/forms/$formKey');
     return FormFieldDef.parseSchema(json['fields'] as List<dynamic>);
   }
 
@@ -75,8 +85,11 @@ class _CompleteTaskScreenState extends State<CompleteTaskScreen> {
     setState(() => _submitting = true);
     final api = context.read<AuthState>().api;
     try {
-      await api.post('/tasks/${widget.taskId}/complete',
-          body: {'completionFormResponse': response});
+      await api.post('/requests/${widget.requestId}/transitions', body: {
+        'transition_key': widget.transition.key,
+        'expected_status': widget.expectedStatus,
+        'form': response,
+      });
       if (!mounted) return;
       Navigator.of(context).pop(true);
       ScaffoldMessenger.of(context).showSnackBar(

@@ -95,12 +95,8 @@ const Map<String, Map<String, String>> _dict = {
   },
 
   // categories (the closed enum, Section 9)
-  'cat_new': {'en': 'New', 'ar': 'جديد'},
-  'cat_triage': {'en': 'Triage', 'ar': 'فرز'},
-  'cat_in_progress': {'en': 'In progress', 'ar': 'قيد التنفيذ'},
-  'cat_done': {'en': 'Done', 'ar': 'منجز'},
-  'cat_closed': {'en': 'Closed', 'ar': 'مغلق'},
-  'cat_terminated': {'en': 'Terminated', 'ar': 'منتهٍ'},
+  'state_open': {'en': 'Open', 'ar': 'مفتوح'},
+  'state_closed': {'en': 'Closed', 'ar': 'مغلق'},
 
   // priorities (full phrase — word order differs across languages)
   'pri_phrase_high': {'en': 'High priority', 'ar': 'أولوية عالية'},
@@ -201,6 +197,8 @@ const Map<String, Map<String, String>> _dict = {
   'rd_cancel_q': {'en': 'Cancel this request?', 'ar': 'إلغاء هذا الطلب؟'},
   'rd_cancel_body': {'en': 'This cannot be undone. A short reason is required.', 'ar': 'لا يمكن التراجع عن هذا. سبب موجز مطلوب.'},
   'rd_cancel_btn': {'en': 'Cancel request', 'ar': 'إلغاء الطلب'},
+  'rd_act_body': {'en': 'This updates your request and notifies the team.', 'ar': 'هذا يحدّث طلبك ويُعلم الفريق.'},
+  'rd_note_body': {'en': 'A short reason is required.', 'ar': 'سبب موجز مطلوب.'},
   'rd_service_unavailable': {'en': 'This service is not available right now.', 'ar': 'هذه الخدمة غير متاحة حاليًا.'},
   'rd_now_pre': {'en': 'Request is now', 'ar': 'الطلب الآن'},
   'rd_not_found': {'en': 'This request could not be found.', 'ar': 'تعذّر العثور على هذا الطلب.'},

@@ -109,7 +109,7 @@ class TaskMapView extends StatelessWidget {
                         child: Icon(
                           Icons.place,
                           size: 40,
-                          color: categoryColors(t.status.category).accent,
+                          color: stateColors(t.status.isTerminal).accent,
                         ),
                       ),
                     ),

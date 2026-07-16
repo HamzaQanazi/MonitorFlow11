@@ -1,9 +1,10 @@
 // Task Details (Section 4, Employee app) — GET /tasks/{id} (the limited
-// employee view; employees never call GET /requests/{id}). Every action
-// button is driven by GET /tasks/{id}/valid-transitions: accept/reject,
-// generic status moves (Update Task Status), and Complete Task. All
-// confirm; note fields appear where the workflow requires them
-// (Section 4 UI-state rule + workflow requires_note).
+// employee view; employees never call GET /requests/{id} for data). Every
+// action button is driven by GET /requests/{requestId}/transitions (Phase 4:
+// the one generic call — accept/reject/complete/status endpoints are gone)
+// and fired via POST /requests/{requestId}/transitions with expected_status
+// for concurrency. All confirm; note fields appear where the workflow
+// requires them (Section 4 UI-state rule + requires_note).
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +14,7 @@ import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../forms/form_schema.dart';
 import '../i18n.dart';
+import '../models/request.dart';
 import '../models/task.dart';
 import '../theme.dart';
 import '../widgets/form_response_view.dart';
@@ -31,7 +33,7 @@ class TaskDetailScreen extends StatefulWidget {
 class _TaskDetailScreenState extends State<TaskDetailScreen>
     with WidgetsBindingObserver {
   TaskDetail? _detail;
-  List<TaskTransition>? _transitions;
+  List<TransitionOption>? _transitions;
   List<FormFieldDef>? _requestFields; // labels for the answers; optional
   Object? _error;
   bool _acting = false;
@@ -58,15 +60,16 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     if (!silent) setState(() => _error = null);
     final api = context.read<AuthState>().api;
     try {
-      final results = await Future.wait([
-        api.get('/tasks/${widget.taskId}'),
-        api.get('/tasks/${widget.taskId}/valid-transitions'),
-      ]);
+      // The task first (it carries requestId), then the actions for that
+      // request — the assignee party of the one generic transitions call.
+      final taskJson = await api.get('/tasks/${widget.taskId}');
+      final detail = TaskDetail.fromJson(taskJson['task'] as Map<String, dynamic>);
+      final txJson = await api.get('/requests/${detail.summary.requestId}/transitions');
       if (!mounted) return;
       setState(() {
-        _detail = TaskDetail.fromJson(results[0]['task'] as Map<String, dynamic>);
-        _transitions = (results[1]['transitions'] as List<dynamic>)
-            .map((t) => TaskTransition.fromJson(t as Map<String, dynamic>))
+        _detail = detail;
+        _transitions = (txJson['transitions'] as List<dynamic>)
+            .map((t) => TransitionOption.fromJson(t as Map<String, dynamic>))
             .toList();
         _error = null;
       });
@@ -103,53 +106,19 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     }
   }
 
-  Future<void> _accept(TaskTransition t) async {
-    final i18n = context.read<I18n>();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(i18n.tr('td_accept_q')),
-        content: Text('${i18n.tr('td_accept_body_pre')} "${i18n.l(t.toLabel)}" '
-            '${i18n.tr('td_accept_body_post')}'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(i18n.tr('back')),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(i18n.tr('td_accept_btn')),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    await _act('/tasks/${widget.taskId}/accept', {});
-  }
-
-  Future<void> _reject(TaskTransition t) async {
-    final i18n = context.read<I18n>();
-    final note = await _promptNote(
-      title: i18n.tr('td_reject_q'),
-      message: i18n.tr('td_reject_body'),
-      confirmLabel: i18n.tr('td_reject_btn'),
-    );
-    if (note == null) return;
-    await _act('/tasks/${widget.taskId}/reject', {'note': note});
-  }
-
-  /// Update Task Status — a generic workflow move (no dedicated action).
-  Future<void> _updateStatus(TaskTransition t) async {
+  /// One generic action path: note prompt when the transition requires it,
+  /// plain confirm otherwise — the button labels come from the workflow data.
+  Future<void> _fire(TransitionOption t) async {
     final i18n = context.read<I18n>();
     final moveTitle = '${i18n.tr('td_move_pre')} "${i18n.l(t.toLabel)}"?';
     if (t.requiresNote) {
       final note = await _promptNote(
         title: moveTitle,
         message: i18n.tr('td_move_note'),
-        confirmLabel: i18n.tr('td_update_btn'),
+        confirmLabel: i18n.l(t.label),
       );
       if (note == null) return;
-      await _act('/tasks/${widget.taskId}/status', {'to': t.to, 'note': note});
+      await _act(t, note);
       return;
     }
     final confirmed = await showDialog<bool>(
@@ -164,20 +133,25 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(i18n.tr('td_update_btn')),
+            child: Text(i18n.l(t.label)),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
-    await _act('/tasks/${widget.taskId}/status', {'to': t.to});
+    await _act(t, null);
   }
 
-  Future<void> _complete() async {
+  /// A transition carrying a required form (completion) opens the form
+  /// screen, which fires the transition together with the form payload.
+  Future<void> _complete(TransitionOption t) async {
     final done = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => CompleteTaskScreen(
           taskId: widget.taskId,
+          requestId: _detail!.summary.requestId,
+          transition: t,
+          expectedStatus: _detail!.summary.status.key,
           serviceTypeId: _detail!.summary.serviceTypeId,
           serviceTypeName: _detail!.summary.serviceTypeName,
         ),
@@ -229,12 +203,18 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     );
   }
 
-  Future<void> _act(String path, Map<String, dynamic> body) async {
+  Future<void> _act(TransitionOption t, String? note) async {
     final i18n = context.read<I18n>();
     setState(() => _acting = true);
     final api = context.read<AuthState>().api;
     try {
-      await api.patch(path, body: body);
+      await api.post('/requests/${_detail!.summary.requestId}/transitions', body: {
+        'transition_key': t.key,
+        // Optimistic concurrency: the status we acted on. A concurrent move
+        // makes the server 409 instead of double-firing (must-pass #12).
+        'expected_status': _detail!.summary.status.key,
+        'note': ?note,
+      });
       if (!mounted) return;
       await _load(silent: true);
       if (!mounted) return;
@@ -286,8 +266,6 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     if (_detail == null) return const LoadingState();
 
     final d = _detail!;
-    final accept = _transitions?.where((t) => t.action == 'accept').firstOrNull;
-    final reject = _transitions?.where((t) => t.action == 'reject').firstOrNull;
 
     return RefreshIndicator(
       color: MfColors.amber600,
@@ -347,43 +325,31 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
           const SizedBox(height: 10),
           FormResponseView(response: d.requestFormResponse, fields: _requestFields),
           const SizedBox(height: 28),
-          if (accept != null) ...[
-            ElevatedButton(
-              onPressed: _acting ? null : () => _accept(accept),
-              child: Text(i18n.tr('td_accept_btn')),
-            ),
-            const SizedBox(height: 12),
-          ],
-          // Complete first (the primary move), then generic status moves.
-          for (final t in _transitions ?? const <TaskTransition>[])
-            if (t.action == 'complete') ...[
+          // Exactly the server's legal next actions, in workflow-data order:
+          // a form-carrying transition (complete) opens its form; a plain
+          // move is primary; a note-requiring move (reject, hold) is the
+          // quieter outlined button.
+          for (final t in _transitions ?? const <TransitionOption>[]) ...[
+            if (t.requiredFormKey != null)
               ElevatedButton(
-                onPressed: _acting ? null : _complete,
-                child: Text(i18n.tr('td_complete_btn')),
-              ),
-              const SizedBox(height: 12),
-            ],
-          for (final t in _transitions ?? const <TaskTransition>[])
-            if (t.action == null) ...[
+                onPressed: _acting ? null : () => _complete(t),
+                child: Text(i18n.l(t.label)),
+              )
+            else if (t.requiresNote)
               OutlinedButton(
-                onPressed: _acting ? null : () => _updateStatus(t),
+                onPressed: _acting ? null : () => _fire(t),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size.fromHeight(52),
                 ),
-                child: Text('${i18n.tr('td_move_pre')} "${i18n.l(t.toLabel)}"'),
+                child: Text(i18n.l(t.label)),
+              )
+            else
+              ElevatedButton(
+                onPressed: _acting ? null : () => _fire(t),
+                child: Text(i18n.l(t.label)),
               ),
-              const SizedBox(height: 12),
-            ],
-          if (reject != null)
-            OutlinedButton(
-              onPressed: _acting ? null : () => _reject(reject),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: MfColors.error,
-                side: const BorderSide(color: MfColors.errorBorder),
-                minimumSize: const Size.fromHeight(52),
-              ),
-              child: Text(i18n.tr('td_reject_btn')),
-            ),
+            const SizedBox(height: 12),
+          ],
           if (_transitions != null && _transitions!.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),

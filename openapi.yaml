@@ -15,6 +15,24 @@ openapi: 3.0.3
 # request/response bodies are sketched to the shape the invariants require, not
 # yet field-complete. Fill in per-endpoint as each is built. Nothing here is
 # sector-specific — that is the whole point.
+#
+# PHASE 4 SHIPPED (2026-07-16) — the transition model is live:
+#   • status `category` is GONE everywhere; the cross-service vocabulary is
+#     `is_terminal` (API: status {key, label, isTerminal}); dashboards/reports
+#     group open vs closed; list filter `state=open|closed` replaces
+#     `category=`.
+#   • transitions are keyed and gated by exactly one of `required_capability`
+#     (Gate 1) or `actor` (requester|assignee) — see TransitionDef.
+#   • GET/POST /requests/{id}/transitions serve the actor parties; the old
+#     /tasks/{id}/{accept,reject,complete,status,valid-transitions} and
+#     /requests/{id}/resolution endpoints are deleted.
+#   • oversight override (PATCH /requests/{id}/status) loosened: any existing
+#     non-initial, non-current status is a legal target ('override' cap +
+#     note); the category-based reject-vs-reopen distinction went with
+#     category.
+#   • still dedicated until Phase 5/7: /requests/{id}/{assign,priority,status},
+#     /candidates, assignee-as-transition (assignee_id below), post_actions
+#     (interim: `notify_oversight` boolean on a transition).
 # ─────────────────────────────────────────────────────────────────────────────
 
 info:
@@ -243,8 +261,11 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/TransitionOption' }
+                type: object
+                properties:
+                  transitions:
+                    type: array
+                    items: { $ref: '#/components/schemas/TransitionOption' }
     post:
       tags: [requests]
       summary: >
@@ -475,7 +496,11 @@ components:
 
     TransitionDef:
       type: object
-      description: One-way directed edge. Backward moves (reassign, reopen) are just extra rows — the engine has no concept of a loop.
+      description: >
+        One-way directed edge. Backward moves (reassign, reopen) are just extra
+        rows — the engine has no concept of a loop. Gated by EXACTLY ONE of
+        required_capability (an oversight capability, Gate 1) or actor (the
+        party whose turn it is) — seed-time enforced.
       required: [key, label, from, to]
       properties:
         key: { type: string }
@@ -483,7 +508,16 @@ components:
         from: { type: string }
         to: { type: string }
         required_capability: { type: string, nullable: true, description: "Gate 1" }
+        actor:
+          type: string
+          nullable: true
+          enum: [requester, assignee]
+          description: "the party whose turn it is; null on capability-gated transitions"
         required_form_key: { type: string, nullable: true, description: "validator" }
+        requires_note: { type: boolean, description: "422 without a note" }
+        notify_oversight:
+          type: boolean
+          description: "interim Phase-4 post_action: notify the service owner (task_rejected) — folds into post_actions in Phase 5/7"
         post_actions:
           type: array
           items:
@@ -496,12 +530,19 @@ components:
 
     TransitionOption:
       type: object
-      description: A transition the caller may fire right now (both gates already applied)
+      description: >
+        A transition the caller may fire right now (both gates already
+        applied). Response fields are camelCase like every other response
+        body. requires_assignee arrives with assignee-as-transition (Phase
+        5/7); until then assignment stays on PATCH /requests/{id}/assign.
       properties:
         key: { type: string }
         label: { $ref: '#/components/schemas/LocalizedText' }
-        requires_assignee: { type: boolean }
-        required_form_key: { type: string, nullable: true }
+        to: { type: string }
+        toLabel: { $ref: '#/components/schemas/LocalizedText' }
+        toTerminal: { type: boolean, description: "destructive-styling hint" }
+        requiresNote: { type: boolean }
+        requiredFormKey: { type: string, nullable: true }
 
     FieldDescriptor:
       type: object

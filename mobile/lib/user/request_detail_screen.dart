@@ -2,8 +2,10 @@
 // page (Section 4). GET /requests/{id} embeds history and comments;
 // refreshes on focus resume, not a timer (the polling rules). The user's
 // actions — cancel (only while unassigned), confirm resolution, report
-// unresolved — are driven by the service's workflow definition: code
-// reads categories and actions, never status keys (Section 9).
+// unresolved — come from GET /requests/{id}/transitions (Phase 4: the one
+// generic call, gates already applied server-side) and fire via
+// POST /requests/{id}/transitions with expected_status. No status keys,
+// no categories in code.
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -13,7 +15,6 @@ import '../auth/auth_state.dart';
 import '../forms/form_schema.dart';
 import '../i18n.dart';
 import '../models/request.dart';
-import '../models/workflow.dart';
 import '../theme.dart';
 import '../widgets/form_response_view.dart';
 import '../widgets/states.dart';
@@ -31,7 +32,7 @@ class RequestDetailScreen extends StatefulWidget {
 class _RequestDetailScreenState extends State<RequestDetailScreen>
     with WidgetsBindingObserver {
   RequestDetail? _detail;
-  WorkflowDef? _workflow;
+  List<TransitionOption>? _transitions;
   List<FormFieldDef>? _requestFields;
   Object? _error;
   bool _acting = false;
@@ -58,10 +59,18 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
     if (!silent) setState(() => _error = null);
     final api = context.read<AuthState>().api;
     try {
-      final json = await api.get('/requests/${widget.requestId}');
+      // Detail + the caller's legal next actions, together — the buttons
+      // must always match the status they were computed from.
+      final results = await Future.wait([
+        api.get('/requests/${widget.requestId}'),
+        api.get('/requests/${widget.requestId}/transitions'),
+      ]);
       if (!mounted) return;
       setState(() {
-        _detail = RequestDetail.fromJson(json['request'] as Map<String, dynamic>);
+        _detail = RequestDetail.fromJson(results[0]['request'] as Map<String, dynamic>);
+        _transitions = (results[1]['transitions'] as List<dynamic>)
+            .map((t) => TransitionOption.fromJson(t as Map<String, dynamic>))
+            .toList();
         _error = null;
       });
       _loadConfig();
@@ -71,36 +80,45 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
     }
   }
 
-  /// Workflow (drives the action buttons) and form schema (labels the
-  /// answers). Best-effort: failure hides actions and keeps prettified
-  /// ids rather than blocking the page; retried on the next refresh.
+  /// Form schema (labels the answers). Best-effort: failure keeps
+  /// prettified ids rather than blocking the page; retried on refresh.
   Future<void> _loadConfig() async {
-    if (_workflow != null && _requestFields != null) return;
+    if (_requestFields != null) return;
     final api = context.read<AuthState>().api;
     final sid = _detail!.summary.serviceTypeId;
     try {
-      final results = await Future.wait([
-        api.get('/services/$sid/workflow'),
-        api.get('/services/$sid/forms/request'),
-      ]);
+      final json = await api.get('/services/$sid/forms/request');
       if (!mounted) return;
       setState(() {
-        _workflow = WorkflowDef.fromJson(results[0]);
-        _requestFields =
-            FormFieldDef.parseSchema(results[1]['fields'] as List<dynamic>);
+        _requestFields = FormFieldDef.parseSchema(json['fields'] as List<dynamic>);
       });
     } on Exception {
-      // actions stay hidden this round; next load retries
+      // labels stay prettified this round; next load retries
     }
   }
 
-  Future<void> _confirmResolution() async {
+  /// One generic action path (Phase 4): note prompt when the transition
+  /// requires it, plain confirm otherwise. `destructive` = a note-requiring
+  /// move into a terminal status (cancel-like).
+  Future<void> _fire(TransitionOption t) async {
     final i18n = context.read<I18n>();
+    final destructive = t.requiresNote && t.toTerminal;
+    if (t.requiresNote) {
+      final note = await _promptNote(
+        title: '${i18n.l(t.label)}?',
+        message: destructive ? i18n.tr('rd_cancel_body') : i18n.tr('rd_note_body'),
+        confirmLabel: i18n.l(t.label),
+        destructive: destructive,
+      );
+      if (note == null) return;
+      await _act(t, note);
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(i18n.tr('rd_confirm_q')),
-        content: Text(i18n.tr('rd_confirm_body')),
+        title: Text('${i18n.l(t.label)}?'),
+        content: Text(i18n.tr('rd_act_body')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -108,37 +126,13 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: Text(i18n.tr('confirm')),
+            child: Text(i18n.l(t.label)),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
-    await _act('/requests/${widget.requestId}/resolution', {'outcome': 'confirmed'});
-  }
-
-  Future<void> _dispute() async {
-    final i18n = context.read<I18n>();
-    final note = await _promptNote(
-      title: i18n.tr('rd_dispute_q'),
-      message: i18n.tr('rd_dispute_body'),
-      confirmLabel: i18n.tr('rd_dispute_btn'),
-    );
-    if (note == null) return;
-    await _act('/requests/${widget.requestId}/resolution',
-        {'outcome': 'unresolved', 'note': note});
-  }
-
-  Future<void> _cancel() async {
-    final i18n = context.read<I18n>();
-    final note = await _promptNote(
-      title: i18n.tr('rd_cancel_q'),
-      message: i18n.tr('rd_cancel_body'),
-      confirmLabel: i18n.tr('rd_cancel_btn'),
-      destructive: true,
-    );
-    if (note == null) return;
-    await _act('/requests/${widget.requestId}/cancel', {'note': note});
+    await _act(t, null);
   }
 
   Future<String?> _promptNote({
@@ -221,12 +215,18 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
     );
   }
 
-  Future<void> _act(String path, Map<String, dynamic> body) async {
+  Future<void> _act(TransitionOption t, String? note) async {
     final i18n = context.read<I18n>();
     setState(() => _acting = true);
     final api = context.read<AuthState>().api;
     try {
-      await api.patch(path, body: body);
+      await api.post('/requests/${widget.requestId}/transitions', body: {
+        'transition_key': t.key,
+        // The status we acted on — a concurrent move 409s instead of
+        // double-firing (must-pass #12/#13).
+        'expected_status': _detail!.summary.status.key,
+        'note': ?note,
+      });
       if (!mounted) return;
       await _load(silent: true);
       if (!mounted) return;
@@ -271,13 +271,16 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
     if (_detail == null) return const LoadingState();
 
     final d = _detail!;
-    final statusKey = d.summary.status.key;
-    final confirm = _workflow?.confirmFrom(statusKey);
-    final dispute = _workflow?.disputeFrom(statusKey);
-    final cancel = d.taskExists ? null : _workflow?.cancelFrom(statusKey);
+    // The server's legal next actions — both gates and the unassigned-only
+    // cancel rule already applied. Destructive = a note-requiring move into
+    // a terminal status (cancel-like); the rest live in the actions card.
+    final actions = _transitions ?? const <TransitionOption>[];
+    final destructive =
+        actions.where((t) => t.requiresNote && t.toTerminal).toList();
+    final regular =
+        actions.where((t) => !(t.requiresNote && t.toTerminal)).toList();
     // The request has run its course — offer a prefilled resubmission.
-    final finished =
-        const {'closed', 'terminated'}.contains(d.summary.status.category);
+    final finished = d.summary.status.isTerminal;
 
     return RefreshIndicator(
       color: MfColors.amber600,
@@ -308,7 +311,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
           _SectionTitle(i18n.tr('rd_timeline')),
           const SizedBox(height: 12),
           _Timeline(entries: d.statusHistory),
-          if (confirm != null || dispute != null) ...[
+          if (regular.isNotEmpty) ...[
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(16),
@@ -324,20 +327,23 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 14),
-                  if (confirm != null)
-                    ElevatedButton(
-                      onPressed: _acting ? null : _confirmResolution,
-                      child: Text(i18n.tr('rd_confirm_btn')),
-                    ),
-                  if (dispute != null) ...[
-                    const SizedBox(height: 10),
-                    OutlinedButton(
-                      onPressed: _acting ? null : _dispute,
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size.fromHeight(52),
+                  for (var i = 0; i < regular.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 10),
+                    // Plain moves (confirm) are primary; note-requiring
+                    // moves (dispute) are the quieter outlined button.
+                    if (regular[i].requiresNote)
+                      OutlinedButton(
+                        onPressed: _acting ? null : () => _fire(regular[i]),
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size.fromHeight(52),
+                        ),
+                        child: Text(i18n.l(regular[i].label)),
+                      )
+                    else
+                      ElevatedButton(
+                        onPressed: _acting ? null : () => _fire(regular[i]),
+                        child: Text(i18n.l(regular[i].label)),
                       ),
-                      child: Text(i18n.tr('rd_dispute_btn')),
-                    ),
                   ],
                 ],
               ),
@@ -364,16 +370,16 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
               label: Text(i18n.tr('rd_again')),
             ),
           ],
-          if (cancel != null) ...[
+          for (final t in destructive) ...[
             const SizedBox(height: 28),
             OutlinedButton(
-              onPressed: _acting ? null : _cancel,
+              onPressed: _acting ? null : () => _fire(t),
               style: OutlinedButton.styleFrom(
                 foregroundColor: MfColors.error,
                 side: const BorderSide(color: MfColors.errorBorder),
                 minimumSize: const Size.fromHeight(52),
               ),
-              child: Text(i18n.tr('rd_cancel_btn')),
+              child: Text(i18n.l(t.label)),
             ),
           ],
           const SizedBox(height: 32),
@@ -420,7 +426,7 @@ class _TimelineRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<I18n>();
-    final c = categoryColors(entry.status.category);
+    final c = stateColors(entry.status.isTerminal);
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,

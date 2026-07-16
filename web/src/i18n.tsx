@@ -43,13 +43,9 @@ const dict: Record<string, Loc> = {
   updated: { en: 'updated', ar: 'حُدّث' },
   pagination: { en: 'Pagination', ar: 'ترقيم الصفحات' },
 
-  // workflow categories (the closed enum — Section 9)
-  cat_new: { en: 'New', ar: 'جديد' },
-  cat_triage: { en: 'Triage', ar: 'فرز' },
-  cat_in_progress: { en: 'In progress', ar: 'قيد التنفيذ' },
-  cat_done: { en: 'Done', ar: 'منجز' },
-  cat_closed: { en: 'Closed', ar: 'مغلق' },
-  cat_terminated: { en: 'Terminated', ar: 'منتهٍ' },
+  // request state (Phase 4: open/closed from is_terminal — category is gone)
+  state_open: { en: 'Open', ar: 'مفتوح' },
+  state_closed: { en: 'Closed', ar: 'مغلق' },
 
   // priorities
   pri_high: { en: 'High', ar: 'عالية' },
@@ -109,7 +105,7 @@ const dict: Record<string, Loc> = {
   // dashboard
   dash_overview: { en: 'Overview', ar: 'نظرة عامة' },
   dash_on_board: { en: 'on the board', ar: 'على اللوحة' },
-  dash_by_category: { en: 'Requests by workflow category', ar: 'الطلبات حسب فئة سير العمل' },
+  dash_by_state: { en: 'Requests by state', ar: 'الطلبات حسب الحالة' },
   dash_clear_h: { en: 'The board is clear', ar: 'اللوحة خالية' },
   dash_clear_p: {
     en: 'New requests appear here the moment users submit them, grouped by where they stand in their workflow. Activity charts and per-service breakdowns fill in as work arrives.',
@@ -127,7 +123,7 @@ const dict: Record<string, Loc> = {
 
   // requests
   req_title: { en: 'Requests', ar: 'الطلبات' },
-  req_filter_category: { en: 'Filter by workflow category', ar: 'تصفية حسب فئة سير العمل' },
+  req_filter_state: { en: 'Filter by state', ar: 'تصفية حسب الحالة' },
   req_search_ph: { en: 'Search requester or service…', ar: 'ابحث عن مقدّم الطلب أو الخدمة…' },
   req_search_aria: { en: 'Search by requester or service name', ar: 'ابحث بالاسم أو اسم الخدمة' },
   req_filter_service: { en: 'Filter by service type', ar: 'تصفية حسب نوع الخدمة' },
@@ -148,8 +144,8 @@ const dict: Record<string, Loc> = {
   },
   req_clear_h: { en: 'The board is clear', ar: 'اللوحة خالية' },
   req_clear_p: {
-    en: 'Requests appear here the moment users submit them, newest first, with their current workflow status. Filters above narrow the board by category, service, or priority.',
-    ar: 'تظهر الطلبات هنا لحظة إرسالها، الأحدث أولًا، مع حالتها الحالية في سير العمل. تحصر عوامل التصفية أعلاه اللوحة حسب الفئة أو الخدمة أو الأولوية.',
+    en: 'Requests appear here the moment users submit them, newest first, with their current workflow status. Filters above narrow the board by state, service, or priority.',
+    ar: 'تظهر الطلبات هنا لحظة إرسالها، الأحدث أولًا، مع حالتها الحالية في سير العمل. تحصر عوامل التصفية أعلاه اللوحة حسب الحالة أو الخدمة أو الأولوية.',
   },
   col_id: { en: 'ID', ar: 'المعرّف' },
   col_service: { en: 'Service', ar: 'الخدمة' },
@@ -308,7 +304,7 @@ const dict: Record<string, Loc> = {
   rep_to_date_aria: { en: 'To date', ar: 'إلى تاريخ' },
   rep_summary: { en: 'Summary', ar: 'الملخّص' },
   rep_total_requests: { en: 'Total requests', ar: 'إجمالي الطلبات' },
-  rep_by_category: { en: 'By category', ar: 'حسب الفئة' },
+  rep_by_state: { en: 'By state', ar: 'حسب الحالة' },
   rep_by_priority: { en: 'By priority', ar: 'حسب الأولوية' },
   rep_by_service: { en: 'By service', ar: 'حسب الخدمة' },
   rep_load_err: { en: 'Couldn’t load reports:', ar: 'تعذّر تحميل التقارير:' },
