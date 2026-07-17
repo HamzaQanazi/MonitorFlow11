@@ -24,12 +24,13 @@ const SEED_DEMO_DATA = process.env.SEED_DEMO_DATA !== 'false';
 // and demo starts from identical state (Section 15).
 const DEV_PASSWORD = 'Password123!';
 
-// Two levels for the demo: an oversight lead (every capability — the old
-// monitor's powers) and a field technician (none). A real deployment defines
-// its own grades; the capability catalogue is fixed (lib/capabilities.js).
+// Two levels: a Manager (every capability — oversight) and a Field Officer
+// (none). The City Manager and the three department heads are all Managers;
+// what differentiates who-sees-what is the reporting TREE (Gate 2), not the
+// level. The capability catalogue itself is fixed (lib/capabilities.js).
 const LEVEL_GRANTS = {
-  'Operations Lead': CAPABILITIES,
-  'Field Technician': [],
+  Manager: CAPABILITIES,
+  'Field Officer': [],
 };
 
 // Phase 3: department and level display names are bilingual {en, ar} in the DB.
@@ -37,119 +38,145 @@ const LEVEL_GRANTS = {
 // the stored name. `L` mirrors company-config.js.
 const L = (en, ar) => ({ en, ar });
 const DEPARTMENT_LABELS = {
-  IT: L('IT', 'تقنية المعلومات'),
-  Facilities: L('Facilities', 'المرافق'),
+  'Public Works': L('Public Works', 'الأشغال العامة'),
+  Sanitation: L('Sanitation', 'النظافة'),
+  Licensing: L('Licensing & Permits', 'التراخيص والتصاريح'),
 };
 const LEVEL_LABELS = {
-  'Operations Lead': L('Operations Lead', 'قائد العمليات'),
-  'Field Technician': L('Field Technician', 'فني ميداني'),
+  Manager: L('Manager', 'مدير'),
+  'Field Officer': L('Field Officer', 'موظف ميداني'),
 };
 
 // Always seeded — a real handover needs the admin to create staff. Change the
 // login/password before deploying to a client.
 const adminAccount = {
-  name: 'Adel Admin', login: 'admin@monitorflow.dev', email: 'admin@monitorflow.dev',
+  name: 'Adam Admin', login: 'admin@city.gov', email: 'admin@city.gov',
   role: 'admin', department: null,
 };
 // Everything below is demo/dev fixtures — seeded only when SEED_DEMO_DATA is on.
 // Order matters: a manager must be inserted before its reports (manager_id FK).
-// Oversight leads own their department's queue and manage its field techs; the
-// leads log in by email (they use the web dashboard), the techs by EMP-id.
+// The City Manager is the root (no manager) and sees every request; each
+// department head reports to her and owns that department's services; the field
+// staff report to their head. Heads log in by email (web dashboard), field
+// staff by EMP-id (mobile app).
 const demoAccounts = [
-  { name: 'Mona Manager', login: 'monitor@monitorflow.dev', email: 'monitor@monitorflow.dev',
-    role: 'employee', department: 'IT', level: 'Operations Lead' },
-  { name: 'Malak Manager', login: 'monitor2@monitorflow.dev', email: 'monitor2@monitorflow.dev',
-    role: 'employee', department: 'Facilities', level: 'Operations Lead' },
-  { name: 'Ehab Technician', login: 'EMP-1001', email: null, role: 'employee', department: 'IT',
-    level: 'Field Technician', manager: 'monitor@monitorflow.dev', phone: '+970 59 200 1001' },
-  // Second IT tech so reassignment can be exercised and demoed.
-  { name: 'Rana Technician', login: 'EMP-1002', email: null, role: 'employee', department: 'IT',
-    level: 'Field Technician', manager: 'monitor@monitorflow.dev', phone: '+970 59 200 1002' },
-  { name: 'Fadia Cleaner', login: 'EMP-1003', email: null, role: 'employee', department: 'Facilities',
-    level: 'Field Technician', manager: 'monitor2@monitorflow.dev', phone: '+970 59 200 1003' },
-  { name: 'Uma User', login: 'user@monitorflow.dev', email: 'user@monitorflow.dev',
-    role: 'user', department: null, phone: '+970 59 100 2000' },
+  { name: 'Maya Manager', login: 'manager@city.gov', email: 'manager@city.gov',
+    role: 'employee', department: null, level: 'Manager' },
+  { name: 'Rami Roads', login: 'roads@city.gov', email: 'roads@city.gov',
+    role: 'employee', department: 'Public Works', level: 'Manager', manager: 'manager@city.gov' },
+  { name: 'Widad Waste', login: 'waste@city.gov', email: 'waste@city.gov',
+    role: 'employee', department: 'Sanitation', level: 'Manager', manager: 'manager@city.gov' },
+  { name: 'Peter Permits', login: 'permits@city.gov', email: 'permits@city.gov',
+    role: 'employee', department: 'Licensing', level: 'Manager', manager: 'manager@city.gov' },
+  // Two Public Works crew so reassignment can be exercised and demoed.
+  { name: 'Ziad Field', login: 'EMP-2001', email: null, role: 'employee', department: 'Public Works',
+    level: 'Field Officer', manager: 'roads@city.gov', phone: '+970 59 200 2001' },
+  { name: 'Zaid Field', login: 'EMP-2002', email: null, role: 'employee', department: 'Public Works',
+    level: 'Field Officer', manager: 'roads@city.gov', phone: '+970 59 200 2002' },
+  { name: 'Sami Collector', login: 'EMP-2003', email: null, role: 'employee', department: 'Sanitation',
+    level: 'Field Officer', manager: 'waste@city.gov', phone: '+970 59 200 2003' },
+  { name: 'Lina Inspector', login: 'EMP-2004', email: null, role: 'employee', department: 'Licensing',
+    level: 'Field Officer', manager: 'permits@city.gov', phone: '+970 59 200 2004' },
+  { name: 'Rania Resident', login: 'resident@city.gov', email: 'resident@city.gov',
+    role: 'user', department: null, phone: '+970 59 100 3000' },
 ];
 
 // ---------------------------------------------------------------------------
 // Demo requests — a realistic queue so the dashboard, lists, and timelines
 // have data from day one (Section 15: demo data only ever enters via seed).
 // `path` is the status walk from initial to current; a history row is written
-// per step, with changed_by resolved from the transition's allowed_role. A
-// task row is created whenever the walk passes through an assignment.
+// per step, with changed_by resolved from the transition's actor/capability. A
+// task row is created whenever the walk reaches the assignment status (derived
+// from the workflow's assign-capability transition — never a hardcoded key).
 // ---------------------------------------------------------------------------
 
-const aForm = (equipment_type, location, problem_description, urgent = false, coords = null) => ({
-  equipment_type, location, problem_description, urgent,
-  ...(coords ? { site_location: coords } : {}),
-});
-// coords is mandatory on B — visit_location is a required field.
-const bForm = (preferred_date, pkg, num_rooms, has_pets, address, coords, gate_code) => ({
-  preferred_date, package: pkg, num_rooms, has_pets, address, visit_location: coords,
-  ...(gate_code ? { gate_code } : {}),
-});
+// Per-service form builders (keep demo.form shapes matched to each schema).
+const potholeForm = (severity, road_name, description, coords, blocking = false) =>
+  ({ severity, road_name, description, blocking_traffic: blocking, site_location: coords });
+const lightForm = (issue, description, coords, pole_id) =>
+  ({ issue, ...(pole_id ? { pole_id } : {}), ...(description ? { description } : {}), site_location: coords });
+const leakForm = (severity, description, coords) => ({ severity, description, site_location: coords });
+const bulkyForm = (item_type, quantity, preferred_date, address, coords, notes) =>
+  ({ item_type, quantity, preferred_date, address, ...(notes ? { notes } : {}), pickup_location: coords });
+const missedForm = (collection_type, missed_date, address, notes) =>
+  ({ collection_type, missed_date, address, ...(notes ? { notes } : {}) });
+const permitForm = (project_type, property_address, plot_area_m2, description) =>
+  ({ project_type, property_address, plot_area_m2, description });
+const licenseForm = (business_name, business_type, owner_id_number, address, description) =>
+  ({ business_name, business_type, owner_id_number, address, ...(description ? { description } : {}) });
 
-// Cumulative walks per service (keys are seed data, not application code).
-const A_WALK = ['submitted', 'approved', 'assigned', 'accepted', 'in_progress', 'completed', 'confirmed'];
-const B_WALK = ['booked', 'assigned', 'accepted', 'en_route', 'in_service', 'completed', 'confirmed'];
+// Cumulative walks per workflow (keys are seed data, not application code).
+const DISPATCH_WALK = ['reported', 'assigned', 'accepted', 'en_route', 'in_progress', 'completed', 'confirmed'];
+const PICKUP_WALK = ['requested', 'scheduled', 'accepted', 'completed', 'confirmed'];
+const APPROVAL_WALK = ['submitted', 'under_review', 'approved', 'assigned', 'accepted', 'completed', 'confirmed'];
 const walkTo = (walk, key) => walk.slice(0, walk.indexOf(key) + 1);
 
 const demoRequests = [
-  // Service A: Equipment Repair
-  { svc: 0, priority: 'high', daysAgo: 0, path: walkTo(A_WALK, 'submitted'),
-    form: aForm('printer', 'Room 214', 'Printer jams on every duplex job and shows error E-04.', true, { lat: 32.2322, lng: 35.2494 }) },
-  { svc: 0, priority: 'medium', daysAgo: 1, path: walkTo(A_WALK, 'submitted'),
-    form: aForm('laptop', 'Reception desk', 'Battery drains from full to empty in under an hour.', false, { lat: 32.2239, lng: 35.2606 }) },
-  { svc: 0, priority: 'medium', daysAgo: 2, path: walkTo(A_WALK, 'approved'),
-    form: aForm('desktop', 'Lab 3, seat 12', 'No display output after the last power cut; fans spin up.', false, { lat: 32.2155, lng: 35.2784 }) },
-  { svc: 0, priority: 'high', daysAgo: 3, path: walkTo(A_WALK, 'assigned'), employee: 'EMP-1001',
-    form: aForm('network', 'Server room B', 'Switch port 14 flapping — link drops every few minutes.', true, { lat: 32.2411, lng: 35.2367 }) },
-  { svc: 0, priority: 'medium', daysAgo: 4, path: walkTo(A_WALK, 'accepted'), employee: 'EMP-1001',
-    form: aForm('laptop', 'Room 108', 'Keyboard keys Q and W stopped responding.', false, { lat: 32.208, lng: 35.2461 }) },
-  { svc: 0, priority: 'high', daysAgo: 5, path: walkTo(A_WALK, 'in_progress'), employee: 'EMP-1001',
-    form: aForm('desktop', 'Finance office', 'PC restarts randomly under load, twice today.', true, { lat: 32.2547, lng: 35.2628 }) },
-  { svc: 0, priority: 'low', daysAgo: 8, path: [...walkTo(A_WALK, 'in_progress'), 'awaiting_parts'], employee: 'EMP-1001',
-    form: aForm('printer', 'Room 301', 'Faded print on the left half of every page — likely drum unit.', false, { lat: 32.1965, lng: 35.2912 }) },
-  { svc: 0, priority: 'medium', daysAgo: 9, path: walkTo(A_WALK, 'completed'), employee: 'EMP-1001',
-    form: aForm('laptop', 'Room 122', 'Screen flickers at low brightness levels.', false, { lat: 32.22, lng: 35.274 }),
-    completion: { work_performed: 'Reseated the display cable and updated the panel driver; retested at all brightness levels.', parts_used: 'None' } },
-  { svc: 0, priority: 'low', daysAgo: 14, path: walkTo(A_WALK, 'confirmed'), employee: 'EMP-1001',
-    // ~300 m from Room 122 above — the IT map's cluster merge/split pair.
-    form: aForm('desktop', 'Room 210', 'Very slow startup, over five minutes to desktop.', false, { lat: 32.2227, lng: 35.274 }),
-    completion: { work_performed: 'Replaced failing HDD with SSD, cloned system, verified boot in 40 seconds.', parts_used: '480GB SSD' } },
-  { svc: 0, priority: 'medium', daysAgo: 21, path: walkTo(A_WALK, 'confirmed'), employee: 'EMP-1001',
-    form: aForm('network', 'Room 115', 'Wall port dead — no link light on any device.', false, { lat: 32.2655, lng: 35.2245 }),
-    completion: { work_performed: 'Re-terminated the wall port and patched it through on the floor switch.', parts_used: 'RJ45 keystone' } },
-  { svc: 0, priority: 'low', daysAgo: 6, path: ['submitted', 'rejected'],
-    form: aForm('other', 'Cafeteria', 'Coffee machine displays descale warning.') },
-  { svc: 0, priority: 'low', daysAgo: 17, path: ['submitted', 'cancelled'],
-    form: aForm('laptop', 'Room 118', 'Trackpad cursor jumps occasionally.') },
+  // --- Public Works: Pothole (svc 0) ---
+  { svc: 0, priority: 'high', daysAgo: 0, path: walkTo(DISPATCH_WALK, 'reported'),
+    form: potholeForm('severe', 'Rafidia Street', 'Deep pothole across the right lane near the pharmacy.', { lat: 32.2222, lng: 35.2450 }, true) },
+  { svc: 0, priority: 'medium', daysAgo: 3, path: walkTo(DISPATCH_WALK, 'assigned'), employee: 'EMP-2001',
+    form: potholeForm('moderate', 'Faisal Street', 'Cracked asphalt forming a shallow hole.', { lat: 32.2205, lng: 35.2600 }) },
+  { svc: 0, priority: 'high', daysAgo: 5, path: walkTo(DISPATCH_WALK, 'in_progress'), employee: 'EMP-2002',
+    form: potholeForm('severe', 'Old City junction', 'Sinkhole widening after the rains.', { lat: 32.2211, lng: 35.2620 }, true) },
+  { svc: 0, priority: 'low', daysAgo: 6, path: ['reported', 'cancelled'],
+    form: potholeForm('minor', 'Tunis Street', 'Small dip, reported twice by mistake.', { lat: 32.2180, lng: 35.2555 }) },
 
-  // Service B: Home Cleaning Visit
-  { svc: 1, priority: 'low', daysAgo: 0, path: walkTo(B_WALK, 'booked'),
-    form: bForm('2026-07-08', 'standard', 3, false, '14 Olive Street, Apt 2', { lat: 32.2121, lng: 35.2698 }) },
-  { svc: 1, priority: 'medium', daysAgo: 2, path: walkTo(B_WALK, 'booked'),
-    form: bForm('2026-07-06', 'deep', 5, true, '9 Cedar Lane', { lat: 32.246, lng: 35.1952 }, '4417') },
-  { svc: 1, priority: 'low', daysAgo: 3, path: walkTo(B_WALK, 'assigned'), employee: 'EMP-1003',
-    form: bForm('2026-07-05', 'standard', 2, false, '31 Harbor Road, floor 3', { lat: 32.1758, lng: 35.281 }) },
-  { svc: 1, priority: 'low', daysAgo: 5, path: walkTo(B_WALK, 'accepted'), employee: 'EMP-1003',
-    form: bForm('2026-07-04', 'standard', 4, true, '5 Almond Court', { lat: 32.2602, lng: 35.287 }) },
-  { svc: 1, priority: 'medium', daysAgo: 1, path: walkTo(B_WALK, 'en_route'), employee: 'EMP-1003',
-    form: bForm('2026-07-03', 'deep', 6, false, '22 Palm Avenue', { lat: 32.2215, lng: 35.2315 }, '0091') },
-  { svc: 1, priority: 'high', daysAgo: 0, path: walkTo(B_WALK, 'in_service'), employee: 'EMP-1003',
-    // ~300 m from 22 Palm Avenue above — the Facilities map's cluster pair.
-    form: bForm('2026-07-03', 'deep', 8, true, '2 Jasmine Boulevard, villa 7', { lat: 32.2242, lng: 35.2315 }) },
-  { svc: 1, priority: 'low', daysAgo: 7, path: walkTo(B_WALK, 'completed'), employee: 'EMP-1003',
-    form: bForm('2026-06-27', 'standard', 3, false, '18 Maple Walk', { lat: 32.1888, lng: 35.239 }),
-    completion: { rooms_cleaned: 3, notes: 'All rooms done; left windows ajar to air out the kitchen.' } },
-  { svc: 1, priority: 'low', daysAgo: 12, path: walkTo(B_WALK, 'confirmed'), employee: 'EMP-1003',
-    form: bForm('2026-06-22', 'standard', 2, false, '7 Birch Close', { lat: 32.2333, lng: 35.30 }),
-    completion: { rooms_cleaned: 2 } },
-  { svc: 1, priority: 'medium', daysAgo: 26, path: walkTo(B_WALK, 'confirmed'), employee: 'EMP-1003',
-    form: bForm('2026-06-08', 'deep', 5, true, '40 Rosewood Drive', { lat: 32.203, lng: 35.21 }, '2203'),
-    completion: { rooms_cleaned: 5, notes: 'Deep clean complete; pet hair filter replaced in the vacuum.' } },
-  { svc: 1, priority: 'low', daysAgo: 24, path: ['booked', 'cancelled'],
-    form: bForm('2026-06-12', 'standard', 1, false, '3 Fig Tree Lane', { lat: 32.1695, lng: 35.2545 }) },
+  // --- Public Works: Streetlight (svc 1) ---
+  { svc: 1, priority: 'low', daysAgo: 1, path: walkTo(DISPATCH_WALK, 'reported'),
+    form: lightForm('off', 'Two poles dark in front of the school.', { lat: 32.2300, lng: 35.2480 }, 'PL-114') },
+  { svc: 1, priority: 'medium', daysAgo: 4, path: walkTo(DISPATCH_WALK, 'accepted'), employee: 'EMP-2001',
+    form: lightForm('flickering', 'Flickers all night.', { lat: 32.2255, lng: 35.2705 }) },
+  { svc: 1, priority: 'low', daysAgo: 9, path: [...walkTo(DISPATCH_WALK, 'in_progress'), 'awaiting_materials'], employee: 'EMP-2002',
+    form: lightForm('damaged', 'Pole leaning after a car hit it; fixture cracked.', { lat: 32.2150, lng: 35.2790 }, 'PL-207') },
+
+  // --- Public Works: Water leak (svc 2) ---
+  { svc: 2, priority: 'high', daysAgo: 0, path: walkTo(DISPATCH_WALK, 'en_route'), employee: 'EMP-2001',
+    form: leakForm('burst', 'Main burst flooding the street, water rising fast.', { lat: 32.2410, lng: 35.2360 }) },
+  { svc: 2, priority: 'medium', daysAgo: 8, path: walkTo(DISPATCH_WALK, 'completed'), employee: 'EMP-2002',
+    form: leakForm('moderate', 'Steady leak from a valve box on the sidewalk.', { lat: 32.2088, lng: 35.2465 }),
+    completion: { work_performed: 'Replaced the corroded valve and resealed the box.', materials_used: 'Gate valve, sealant' } },
+  { svc: 2, priority: 'low', daysAgo: 15, path: walkTo(DISPATCH_WALK, 'confirmed'), employee: 'EMP-2001',
+    form: leakForm('minor', 'Slow drip at a hydrant base.', { lat: 32.2550, lng: 35.2630 }),
+    completion: { work_performed: 'Tightened the hydrant flange and tested pressure.', materials_used: 'None' } },
+
+  // --- Sanitation: Bulky waste (svc 3) ---
+  { svc: 3, priority: 'low', daysAgo: 0, path: walkTo(PICKUP_WALK, 'requested'),
+    form: bulkyForm('furniture', 3, '2026-07-20', '12 Amman Street, Apt 4', { lat: 32.2121, lng: 35.2698 }, 'Two sofas and a table.') },
+  { svc: 3, priority: 'medium', daysAgo: 3, path: walkTo(PICKUP_WALK, 'scheduled'), employee: 'EMP-2003',
+    form: bulkyForm('appliance', 1, '2026-07-19', '9 Cedar Lane', { lat: 32.2460, lng: 35.1952 }) },
+  { svc: 3, priority: 'low', daysAgo: 7, path: walkTo(PICKUP_WALK, 'completed'), employee: 'EMP-2003',
+    form: bulkyForm('garden_waste', 5, '2026-07-12', '31 Harbor Road', { lat: 32.1758, lng: 35.2810 }, 'Branches by the gate.'),
+    completion: { items_collected: 5, notes: 'All bags and branches removed.' } },
+  { svc: 3, priority: 'low', daysAgo: 20, path: ['requested', 'cancelled'],
+    form: bulkyForm('other', 2, '2026-06-30', '3 Fig Tree Lane', { lat: 32.1695, lng: 35.2545 }) },
+
+  // --- Sanitation: Missed collection (svc 4) ---
+  { svc: 4, priority: 'medium', daysAgo: 1, path: walkTo(PICKUP_WALK, 'accepted'), employee: 'EMP-2003',
+    form: missedForm('household', '2026-07-15', '22 Palm Avenue', 'Bin left out, not collected.') },
+  { svc: 4, priority: 'low', daysAgo: 12, path: walkTo(PICKUP_WALK, 'confirmed'), employee: 'EMP-2003',
+    form: missedForm('recycling', '2026-07-04', '7 Birch Close'),
+    completion: { resolution: 'Recycling collected same day and route note updated.' } },
+
+  // --- Licensing: Building permit (svc 5) ---
+  { svc: 5, priority: 'medium', daysAgo: 2, path: walkTo(APPROVAL_WALK, 'under_review'),
+    form: permitForm('renovation', '5 Almond Court', 180, 'Interior renovation of a ground-floor shop into a cafe.') },
+  { svc: 5, priority: 'high', daysAgo: 6, path: walkTo(APPROVAL_WALK, 'assigned'), employee: 'EMP-2004',
+    form: permitForm('new_construction', 'North Ring Road, plot 42', 650, 'New two-storey retail building with basement parking.') },
+  { svc: 5, priority: 'medium', daysAgo: 10, path: walkTo(APPROVAL_WALK, 'confirmed'), employee: 'EMP-2004',
+    form: permitForm('extension', '18 Maple Walk', 95, 'Rear kitchen extension for a residence.'),
+    completion: { permit_number: 'BP-2026-0142', conditions: 'Setback of 2m from the rear boundary.' } },
+  { svc: 5, priority: 'low', daysAgo: 8, path: ['submitted', 'under_review', 'rejected'],
+    form: permitForm('demolition', '40 Rosewood Drive', 300, 'Demolish an old warehouse; no structural survey attached.') },
+
+  // --- Licensing: Business license (svc 6) ---
+  { svc: 6, priority: 'low', daysAgo: 4, path: walkTo(APPROVAL_WALK, 'approved'),
+    form: licenseForm('Olive Grove Cafe', 'food', '9-1122334', '14 Rafidia Street', 'Small cafe, 20 seats.') },
+  { svc: 6, priority: 'medium', daysAgo: 14, path: walkTo(APPROVAL_WALK, 'completed'), employee: 'EMP-2004',
+    form: licenseForm('Cedar Hardware', 'retail', '9-5566778', '2 Faisal Street'),
+    completion: { license_number: 'BL-2026-0311', valid_until: '2027-07-01' } },
+  { svc: 6, priority: 'low', daysAgo: 18, path: ['submitted', 'cancelled'],
+    form: licenseForm('Quick Print', 'office', '9-9081726', '60 Tunis Street', 'Print and copy shop.') },
 ];
 
 function validateAll() {
@@ -157,11 +184,11 @@ function validateAll() {
   for (const svc of services) {
     for (const [formType, fields] of [['request', svc.requestForm], ['completion', svc.completionForm]]) {
       for (const err of validateFieldSchema(fields)) {
-        problems.push(`${svc.name} ${formType} form: ${err}`);
+        problems.push(`${svc.name.en} ${formType} form: ${err}`);
       }
     }
     for (const err of validateWorkflowDefinition(svc.workflow)) {
-      problems.push(`${svc.name} workflow: ${err}`);
+      problems.push(`${svc.name.en} workflow: ${err}`);
     }
   }
   return problems;
@@ -173,7 +200,7 @@ async function validateDemo() {
   const problems = [];
   for (const [i, demo] of demoRequests.entries()) {
     const svc = services[demo.svc];
-    const label = `demo request #${i + 1} (${svc.name})`;
+    const label = `demo request #${i + 1} (${svc.name.en})`;
     const keys = new Set(svc.workflow.statuses.map((s) => s.key));
     for (const key of demo.path) {
       if (!keys.has(key)) problems.push(`${label}: unknown status "${key}"`);
@@ -289,13 +316,15 @@ async function seed() {
     // Demo fixtures (accounts + request queue) only — real handovers stop at
     // departments + services + admin (SEED_DEMO_DATA=false).
     if (SEED_DEMO_DATA) {
-    const requesterId = accountIds['user@monitorflow.dev'];
+    const requesterId = accountIds['resident@city.gov'];
     // Oversight actions in demo history come from the service's owner (the
-    // department's Operations Lead). This map is also the request-visibility
-    // anchor: set each service's owner_id now that the leads exist.
+    // department head). This map is also the request-visibility anchor: set
+    // each service's owner_id now that the heads exist. The City Manager sees
+    // everything because every head is inside her subtree (Gate 2).
     const ownerByDept = {
-      IT: accountIds['monitor@monitorflow.dev'],
-      Facilities: accountIds['monitor2@monitorflow.dev'],
+      'Public Works': accountIds['roads@city.gov'],
+      Sanitation: accountIds['waste@city.gov'],
+      Licensing: accountIds['permits@city.gov'],
     };
     for (const svc of services) {
       await client.query('UPDATE service_type SET owner_id = $1 WHERE id = $2', [
@@ -304,8 +333,8 @@ async function seed() {
     }
 
     // Audit trail matching how these accounts really enter the system: the
-    // admin creates the leads (manager = null), each lead creates its techs.
-    const adminId = accountIds['admin@monitorflow.dev'];
+    // admin creates the City Manager + heads, each head creates its field staff.
+    const adminId = accountIds['admin@city.gov'];
     for (const acc of demoAccounts) {
       if (acc.role !== 'employee') continue;
       await client.query(
@@ -365,7 +394,12 @@ async function seed() {
         );
       }
 
-      const assignedStep = demo.path.indexOf('assigned');
+      // The task appears once the walk reaches the workflow's assignment status
+      // — the `to` of the transition that carries the `assign` capability.
+      // Derived per workflow so W2 ("scheduled") works like W1/W3 ("assigned")
+      // without hardcoding a status key (CLAUDE.md §2).
+      const assignTr = svc.workflow.transitions.find((t) => t.required_capability === 'assign');
+      const assignedStep = assignTr ? demo.path.indexOf(assignTr.to) : -1;
       if (assignedStep !== -1) {
         await client.query(
           `INSERT INTO task (request_id, employee_id, status, completion_form_response, assigned_at)
