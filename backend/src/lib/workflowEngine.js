@@ -21,6 +21,7 @@ const { ownerInScope } = require('./scope');
 const { isOversight } = require('./capabilities');
 const { pick } = require('./i18nLabel');
 const { fireWebhook } = require('./webhooks');
+const { logAudit } = require('./audit');
 
 class WorkflowError extends Error {
   constructor(status, message) {
@@ -179,6 +180,11 @@ async function executeTransition({
   formValidated = false,
   beforeCommit = null,
   override = false,
+  // Operational audit (§6 re-scope): a request.* audit_event row written in the
+  // SAME transaction as the status change (I9). The caller may override the
+  // action/detail — the /assign path logs `request.assigned` with the assignee.
+  auditAction = 'request.status_changed',
+  auditDetail = null,
 }) {
   const client = await pool.connect();
   try {
@@ -254,6 +260,11 @@ async function executeTransition({
        VALUES ($1, $2, $3, $4)`,
       [request.id, transition.to, user.id, note || null]
     );
+
+    // Operational audit row, same transaction (I9). `request.status` here is
+    // still the pre-transition value (the JS var, not re-read after the UPDATE).
+    await logAudit(client, user.id, auditAction, 'request', request.id,
+      auditDetail || { from: request.status, to: transition.to, transition: transition.key });
 
     const newStatus = statusOf(request.statuses, transition.to);
 

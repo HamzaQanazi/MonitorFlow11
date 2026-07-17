@@ -7,18 +7,21 @@ import './RequestsPage.css'
 import './EmployeesPage.css'
 
 // Audit Log (spec v4 Sections C/D, admin-only). Read-only, filterable table
-// over GET /audit-events. Account/configuration events only — request
-// lifecycle lives in each request's timeline.
+// over GET /audit-events. Covers account/configuration events AND operational
+// events (§6 re-scope: status changes, assignments, priority changes) — the
+// per-request timeline still lives in each request's detail.
 
 const PAGE_SIZE = 20
 
 // The known audit actions (lib/audit.js writers). The select is a closed
-// list so a typo can't silently filter to nothing. All account writes now
-// target employees (leads and field techs); the monitor.* actions retired
-// with the monitor role.
-const ACTIONS = ['created', 'updated', 'activated', 'deactivated', 'password_reset'].map(
-  (what) => `employee.${what}`,
-)
+// list so a typo can't silently filter to nothing. Account writes target
+// employees (leads and field techs); operational writes target requests.
+const ACTIONS = [
+  ...['created', 'updated', 'activated', 'deactivated', 'password_reset'].map((w) => `employee.${w}`),
+  'request.status_changed',
+  'request.assigned',
+  'request.priority_changed',
+]
 
 interface AuditEvent {
   id: number
@@ -32,6 +35,7 @@ interface AuditEvent {
 }
 interface ListResponse {
   events: AuditEvent[]
+  actors: { id: number; name: string }[]
   page: number
   pageSize: number
   total: number
@@ -44,6 +48,13 @@ function actionLabel(action: string, t: (k: string) => string) {
   const key = `audit_act_${what}`
   const label = t(key)
   return label === key ? action : label
+}
+
+// Entity type ('user' | 'request') → localized noun; falls back to the raw key.
+function entityTypeLabel(entityType: string, t: (k: string) => string) {
+  const key = `audit_entity_${entityType}`
+  const label = t(key)
+  return label === key ? entityType : label
 }
 
 function detailText(detail: AuditEvent['detail']) {
@@ -141,11 +152,12 @@ export default function AuditPage() {
             onChange={(e) => setFilter('actorId', e.target.value)}
           >
             <option value="">{t('audit_all_actors')}</option>
-            {user && (
-              <option value={user.id}>
-                {user.name} ({t('audit_you')})
+            {(data?.actors ?? []).map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+                {user && a.id === user.id ? ` (${t('audit_you')})` : ''}
               </option>
-            )}
+            ))}
           </select>
           <input
             type="date"
@@ -221,7 +233,7 @@ export default function AuditPage() {
                     <td>{new Date(e.createdAt).toLocaleString()}</td>
                     <td className="req-service">{e.actor.name}</td>
                     <td>{actionLabel(e.action, t)}</td>
-                    <td>{e.entityName ?? `${e.entityType} #${e.entityId}`}</td>
+                    <td>{e.entityName ?? `${entityTypeLabel(e.entityType, t)} #${e.entityId}`}</td>
                     <td className="emp-email">{detailText(e.detail)}</td>
                   </tr>
                 ))}

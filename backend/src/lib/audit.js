@@ -1,8 +1,12 @@
-// Account/configuration audit trail (spec v4 Section C —
-// docs/spec_v4_amendment.md). Request lifecycle is NOT audited here; that
-// stays in request_status_history. One logAudit INSERT per mutating
-// admin/monitor handler, inside the same transaction as the write it records
-// (withTx), so an audit row can't outlive a rolled-back change.
+// Audit trail. Two families of audit_event rows, all written via logAudit
+// inside the SAME transaction as the change they record (so an audit row can't
+// outlive a rolled-back change, I9):
+//   • account/configuration — employee.* and service.created (admin/monitor
+//     handlers), the original spec v4 Section C surface.
+//   • operational (§6 re-scope) — request.status_changed / request.assigned /
+//     request.priority_changed, written by the workflow engine and the
+//     assign/priority handlers. This deliberately duplicates the operational
+//     timeline in request_status_history so the admin audit page shows one feed.
 const pool = require('../db');
 
 async function withTx(fn) {

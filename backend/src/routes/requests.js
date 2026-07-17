@@ -19,6 +19,7 @@ const { isOversight } = require('../lib/capabilities');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
 const { pick } = require('../lib/i18nLabel');
 const { fireWebhook } = require('../lib/webhooks');
+const { logAudit } = require('../lib/audit');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -745,6 +746,11 @@ router.patch('/:id/priority', requireCapability('set_priority'), async (req, res
          VALUES ($1, $2, $3, $4)`,
         [id, request.status, req.user.id, `Priority changed from ${request.priority} to ${priority}`]
       );
+      // Operational audit, same transaction (§6 re-scope, I9).
+      await logAudit(client, req.user.id, 'request.priority_changed', 'request', id, {
+        from: request.priority,
+        to: priority,
+      });
     }
     await client.query('COMMIT');
 
@@ -837,6 +843,10 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
         user: req.user,
         transitionKey: assignTransition.key,
         note,
+        // Audit this as an assignment (not a bare status change), with the
+        // assignee — written in executeTransition's transaction.
+        auditAction: 'request.assigned',
+        auditDetail: { assigneeId: employee.id, assignee: employee.name, to: assignTransition.to },
         beforeCommit: async (tx, ctx) => {
           const upsert = ctx.task
             ? await tx.query(
@@ -889,6 +899,14 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
        VALUES ($1, $2, $3, $4)`,
       [request.id, request.status, req.user.id, `Reassigned from ${prevRows[0].name} to ${employee.name}`]
     );
+    // Operational audit, same transaction (§6 re-scope, I9). The engine-path
+    // (first) assignment is audited inside executeTransition below; this covers
+    // in-place reassignment, which never enters the engine.
+    await logAudit(client, req.user.id, 'request.assigned', 'request', request.id, {
+      assigneeId: employee.id,
+      assignee: employee.name,
+      previous: prevRows[0].name,
+    });
     // In-place reassignment is not a transition, so no notify data fires —
     // insert the `assigned` notification directly (bilingual, Phase 5).
     await client.query(

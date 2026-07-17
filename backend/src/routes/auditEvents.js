@@ -50,6 +50,16 @@ router.get('/', async (req, res, next) => {
       params
     );
 
+    // Distinct actors present in the log, for the actor filter dropdown. Now
+    // that operational events are audited, actors include managers/field staff,
+    // not just the admin — so the client can't build this from the current user.
+    // Unfiltered (whole table) so every actor is always selectable.
+    const { rows: actors } = await pool.query(
+      `SELECT DISTINCT u.id, u.name
+       FROM audit_event a JOIN users u ON u.id = a.actor_id
+       ORDER BY u.name`
+    );
+
     res.json({
       events: rows.map((r) => ({
         id: r.id,
@@ -61,6 +71,7 @@ router.get('/', async (req, res, next) => {
         createdAt: r.created_at,
         actor: { id: r.actor_id, name: r.actor_name },
       })),
+      actors: actors.map((a) => ({ id: a.id, name: a.name })),
       page,
       pageSize,
       total: rows.length ? rows[0].total : 0,
