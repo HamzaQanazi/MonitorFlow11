@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
+import Donut from '../components/Donut'
+import { formatDuration } from '../lib/format'
 import './DashboardPage.css'
 
 // Phase 4: category is gone — the cross-service grouping is open vs closed
@@ -11,10 +13,13 @@ type State = (typeof STATES)[number]
 
 interface Stats {
   total: number
+  // Weighted mean minutes to resolution across the board; null = nothing resolved.
+  avgResolutionMinutes: number | null
   byState: { state: State; count: number }[]
   // Service names arrive bilingual ({en,ar}) — the dashboard picks with L().
   byService: { serviceTypeId: number; name: Loc; count: number }[]
   byPriority: { priority: string; count: number }[]
+  byDepartment: { departmentId: number; name: Loc; count: number; avgResolutionMinutes: number | null }[]
 }
 
 interface Chart {
@@ -129,6 +134,12 @@ export default function DashboardPage() {
         <h1>{t('dash_overview')}</h1>
         <p className="dash-meta">
           {stats.total} {stats.total === 1 ? t('request_word') : t('requests_word')} {t('dash_on_board')}
+          {stats.avgResolutionMinutes != null && (
+            <>
+              {' '}
+              · {t('dash_avg_resolution')} {formatDuration(stats.avgResolutionMinutes, t)}
+            </>
+          )}
           {updatedAt && (
             <>
               {' '}
@@ -239,15 +250,39 @@ export default function DashboardPage() {
               <div className="panel-head">
                 <h2 id="service-heading">{t('dash_by_service')}</h2>
               </div>
-              {stats.byService.map((s) => (
-                <div className="break-row" key={s.serviceTypeId}>
-                  <span className="break-label">{L(s.name)}</span>
-                  <span className="break-count">{s.count}</span>
-                  <div className="break-bar" aria-hidden="true">
-                    <div style={{ width: `${stats.total ? (s.count / stats.total) * 100 : 0}%` }} />
+              <Donut
+                title={t('dash_by_service')}
+                slices={stats.byService.map((s) => ({ key: String(s.serviceTypeId), label: L(s.name), value: s.count }))}
+              />
+            </section>
+
+            <section className="dash-panel" aria-labelledby="department-heading">
+              <div className="panel-head">
+                <h2 id="department-heading">{t('dash_by_department')}</h2>
+              </div>
+              <Donut
+                title={t('dash_by_department')}
+                slices={stats.byDepartment.map((d) => ({ key: String(d.departmentId), label: L(d.name), value: d.count }))}
+              />
+            </section>
+
+            <section className="dash-panel" aria-labelledby="resolution-heading">
+              <div className="panel-head">
+                <h2 id="resolution-heading">{t('dash_resolution')}</h2>
+                <span className="panel-meta">
+                  {t('dash_overall')}: {formatDuration(stats.avgResolutionMinutes, t)}
+                </span>
+              </div>
+              {stats.byDepartment.some((d) => d.avgResolutionMinutes != null) ? (
+                stats.byDepartment.map((d) => (
+                  <div className="break-row" key={d.departmentId}>
+                    <span className="break-label">{L(d.name)}</span>
+                    <span className="break-count">{formatDuration(d.avgResolutionMinutes, t)}</span>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="panel-meta">{t('dash_no_resolved')}</p>
+              )}
             </section>
 
             <section className="dash-panel" aria-labelledby="priority-heading">

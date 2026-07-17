@@ -42,6 +42,10 @@ const dict: Record<string, Loc> = {
   matching: { en: 'matching', ar: 'مطابقة' },
   updated: { en: 'updated', ar: 'حُدّث' },
   pagination: { en: 'Pagination', ar: 'ترقيم الصفحات' },
+  // compact duration units (resolution-time formatting)
+  dur_min: { en: 'min', ar: 'د' },
+  dur_hr: { en: 'h', ar: 'س' },
+  dur_day: { en: 'd', ar: 'ي' },
 
   // request state (Phase 4: open/closed from is_terminal — category is gone)
   state_open: { en: 'Open', ar: 'مفتوح' },
@@ -119,6 +123,12 @@ const dict: Record<string, Loc> = {
   dash_on: { en: 'on', ar: 'في' },
   dash_by_service: { en: 'By service', ar: 'حسب الخدمة' },
   dash_by_priority: { en: 'By priority', ar: 'حسب الأولوية' },
+  dash_by_department: { en: 'By department', ar: 'حسب الدائرة' },
+  dash_distribution: { en: 'Distribution', ar: 'التوزيع' },
+  dash_resolution: { en: 'Resolution time', ar: 'زمن الحل' },
+  dash_avg_resolution: { en: 'Avg. resolution', ar: 'متوسط زمن الحل' },
+  dash_overall: { en: 'Overall', ar: 'الإجمالي' },
+  dash_no_resolved: { en: 'Nothing resolved yet', ar: 'لا شيء محلول بعد' },
   dash_loading: { en: 'Loading dashboard…', ar: 'جارٍ تحميل لوحة القيادة…' },
 
   // requests

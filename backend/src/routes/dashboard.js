@@ -14,7 +14,7 @@ router.use(requireAuth, requireCapability('view_all'));
 router.get('/stats', async (req, res, next) => {
   try {
     const dept = [await subtreeIds(req.user.id)];
-    const [byState, byService, byPriority] = await Promise.all([
+    const [byState, byService, byPriority, byDepartment] = await Promise.all([
       pool.query(
         `SELECT (s->>'is_terminal')::bool AS is_terminal, COUNT(*)::int AS count
          FROM request r
@@ -41,6 +41,36 @@ router.get('/stats', async (req, res, next) => {
          GROUP BY priority`,
         dept
       ),
+      // Per-department request counts (for the distribution pie) + resolution
+      // time. "Resolved" = the request reached its completion-form transition's
+      // target status (same definition as the CSV export's completed_at, §7);
+      // requests that never got there (e.g. rejected) are excluded from the
+      // average, not counted as instant. completed_count carries the weight so
+      // the overall average can be re-derived without unweighting per-dept means.
+      pool.query(
+        `SELECT d.id AS department_id, d.name AS department_name,
+                COUNT(r.id)::int AS count,
+                COUNT(comp.completed_at)::int AS completed_count,
+                COALESCE(SUM(EXTRACT(EPOCH FROM (comp.completed_at - r.created_at)) / 60), 0) AS total_minutes
+         FROM service_type st
+         JOIN department d ON d.id = st.department_id
+         LEFT JOIN request r ON r.service_type_id = st.id
+         LEFT JOIN workflow_definition w ON w.service_type_id = st.id
+         LEFT JOIN LATERAL (
+           SELECT MIN(h.changed_at) AS completed_at
+           FROM request_status_history h
+           WHERE h.request_id = r.id
+             AND h.status = (
+               SELECT tr->>'to' FROM jsonb_array_elements(w.transitions) tr
+               WHERE tr->>'required_form_key' IS NOT NULL
+               LIMIT 1
+             )
+         ) comp ON TRUE
+         WHERE st.enabled AND st.owner_id = ANY($1)
+         GROUP BY d.id, d.name
+         ORDER BY d.id`,
+        dept
+      ),
     ]);
 
     // Open vs closed replaces the old six-way category breakdown (§10 dropped
@@ -54,14 +84,33 @@ router.get('/stats', async (req, res, next) => {
     const priorityCounts = Object.fromEntries(byPriority.rows.map((r) => [r.priority, r.count]));
     const priorities = ['high', 'medium', 'low'];
 
+    // Weighted overall average = total resolved minutes / total resolved count,
+    // so it isn't skewed by departments with few resolutions. null when nothing
+    // has been resolved yet (the client renders "—", not "0 min").
+    let totalMinutes = 0;
+    let resolvedCount = 0;
+    for (const r of byDepartment.rows) {
+      totalMinutes += Number(r.total_minutes);
+      resolvedCount += r.completed_count;
+    }
+
     res.json({
       total: open + closed,
+      avgResolutionMinutes: resolvedCount ? Math.round(totalMinutes / resolvedCount) : null,
       byState: [
         { state: 'open', count: open },
         { state: 'closed', count: closed },
       ],
       byService: byService.rows.map((r) => ({ serviceTypeId: r.id, name: r.name, count: r.count })),
       byPriority: priorities.map((p) => ({ priority: p, count: priorityCounts[p] || 0 })),
+      byDepartment: byDepartment.rows.map((r) => ({
+        departmentId: r.department_id,
+        name: r.department_name,
+        count: r.count,
+        avgResolutionMinutes: r.completed_count
+          ? Math.round(Number(r.total_minutes) / r.completed_count)
+          : null,
+      })),
     });
   } catch (err) {
     next(err);
