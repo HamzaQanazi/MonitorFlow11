@@ -283,7 +283,12 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
   non-null), original_filename, mime_type, size_bytes, storage_path (never
   exposed), uploaded_by (FK), uploaded_at.
 - **audit_event** — actor_id, action, entity_type, entity_id, detail (JSONB),
-  created_at. Config/admin actions (service.created, employee.created, …).
+  created_at. Two families, both written via `logAudit` in the same transaction
+  as the change (I9): config/admin actions (service.created, employee.created, …)
+  and operational actions (request.status_changed, request.assigned,
+  request.priority_changed) written by the workflow engine and the
+  assign/priority handlers. The operational family deliberately duplicates the
+  `request_status_history` timeline so the admin audit page is one feed.
 - **webhook_subscription** — id, url, secret, events (TEXT[]), is_active,
   created_at (§9).
 
@@ -475,9 +480,10 @@ ratings · multi-organization / true multi-tenancy (single-org per deployment;
 "many companies" = one deployment each) · payments · advanced BI · **named vendor
 integrations** (MonitorFlow emits webhooks; the deployer wires them) ·
 self-service forgot/reset password · request deadlines · form/workflow versioning
-· refresh tokens / server-side logout · per-assignment task audit rows (history
-notes suffice). The interactive **map pin picker is IN** (v5 amendment); GPS
-tracking stays out.
+· refresh tokens / server-side logout. The interactive **map pin picker is IN**
+(v5 amendment) and **operational audit rows are IN** (status/assign/priority
+actions now write `audit_event`, superseding the earlier "history notes suffice"
+decision); GPS tracking stays out.
 
 ---
 
