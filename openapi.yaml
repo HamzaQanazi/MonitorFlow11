@@ -237,6 +237,15 @@ paths:
     get:
       tags: [services]
       summary: Enabled services the caller may submit to (respects accepts_external_users)
+      parameters:
+        - name: owned
+          in: query
+          required: false
+          schema: { type: boolean }
+          description: >
+            When true, restrict to services the caller oversees — owner_id in
+            their subtree (Gate 2). Powers the monitor Requests/Reports filter
+            dropdowns so they never offer a service the caller can't see rows for.
       responses:
         '200':
           description: OK

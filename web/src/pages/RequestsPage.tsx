@@ -165,9 +165,11 @@ export default function RequestsPage() {
   }, [load])
 
   // Service names for the filter dropdown; if this fails the dropdown just
-  // stays at "All services" — the list itself is unaffected.
+  // stays at "All services" — the list itself is unaffected. owned=true scopes
+  // it to services the monitor oversees (Gate 2) — the same set the request
+  // list is already scoped to, so the filter never offers an empty option.
   useEffect(() => {
-    apiFetch<{ services: Service[] }>('/services')
+    apiFetch<{ services: Service[] }>('/services?owned=true')
       .then((res) => setServices(res.services))
       .catch(() => {})
     // Employee filter options (ReportsPage pattern); pageSize 100 = API max,

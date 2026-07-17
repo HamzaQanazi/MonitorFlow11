@@ -3,6 +3,7 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { subtreeIds } = require('../lib/scope');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -17,13 +18,24 @@ router.get('/', async (req, res, next) => {
     // external users; staff (employees/admins) reading config see all enabled
     // services. Paired with the POST /requests 403 guard — never UI-only.
     const externalOnly = req.user.role === 'user';
+    // `?owned=true` scopes the list to services the caller oversees — owner_id
+    // in their subtree (Gate 2), i.e. exactly the services whose requests they
+    // can see. Used by the monitor Requests/Reports filter dropdowns so the
+    // filter never offers a service that returns no rows.
+    const params = [];
+    let ownedClause = '';
+    if (req.query.owned === 'true' && !externalOnly) {
+      params.push(await subtreeIds(req.user.id));
+      ownedClause = `AND st.owner_id = ANY($${params.length})`;
+    }
     const { rows } = await pool.query(
       `SELECT st.id, st.name, st.department_id, d.name AS department_name,
               st.default_priority, st.accepts_external_users
        FROM service_type st
        JOIN department d ON d.id = st.department_id
-       WHERE st.enabled ${externalOnly ? 'AND st.accepts_external_users' : ''}
-       ORDER BY st.id`
+       WHERE st.enabled ${externalOnly ? 'AND st.accepts_external_users' : ''} ${ownedClause}
+       ORDER BY st.id`,
+      params
     );
     res.json({
       services: rows.map((r) => ({

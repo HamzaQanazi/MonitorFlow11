@@ -122,7 +122,9 @@ export default function ReportsPage() {
   }, [load])
 
   useEffect(() => {
-    apiFetch<{ services: Service[] }>('/services')
+    // owned=true → only services the signed-in monitor oversees (Gate 2), so the
+    // filter never offers a service whose requests they can't see.
+    apiFetch<{ services: Service[] }>('/services?owned=true')
       .then((res) => setServices(res.services))
       .catch(() => {})
     // pageSize 100 = the API max; fine at this project's employee count.
