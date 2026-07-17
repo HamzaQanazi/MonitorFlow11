@@ -15,7 +15,7 @@ const ACTORS = ['requester', 'assignee'];
 
 // Phase 5: notification targets are relationships resolved at fire time,
 // never user ids or roles — this is what keeps notifications generic across
-// every sector (combineidea.md).
+// every sector (CLAUDE.md §8).
 const NOTIFY_TARGETS = ['created_by', 'assigned_to', 'assignee_manager'];
 
 // Returns an array of human-readable problems; empty array means valid.

@@ -1,7 +1,7 @@
 -- Phase 6 (CLAUDE.md §10): PostGIS. The denormalized request pin becomes a
 -- real GEOGRAPHY(Point,4326) column + GIST index — map pins work the same
 -- today; genuine spatial analysis later needs new queries, not a migration
--- (combineidea.md). API shape is unchanged: reads alias ST_Y/ST_X back to
+-- (CLAUDE.md §6). API shape is unchanged: reads alias ST_Y/ST_X back to
 -- lat/lng, so no client changes.
 CREATE EXTENSION IF NOT EXISTS postgis;
 

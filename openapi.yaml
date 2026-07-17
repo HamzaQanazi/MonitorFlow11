@@ -3,7 +3,7 @@ openapi: 3.0.3
 # ─────────────────────────────────────────────────────────────────────────────
 # Operiva / MonitorFlow — FROZEN API CONTRACT (skeleton, step-1 of migration)
 #
-# This file is the source of truth (combineidea.md invariant 7). Two developers
+# This file is the source of truth (CLAUDE.md invariant I7). Two developers
 # build against it in parallel; a unilateral change silently breaks the other
 # half. Changes require BOTH developers to agree.
 #
