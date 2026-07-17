@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, getToken } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
+import Donut from '../components/Donut'
 import './RequestsPage.css'
 import './ReportsPage.css'
 
@@ -170,6 +171,19 @@ export default function ReportsPage() {
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
   const agg = data?.aggregates
 
+  // Human-readable summary of the active filters, printed in the PDF header.
+  const filterSummary = [
+    state && `${t('req_filter_state')}: ${t(`state_${state}`)}`,
+    serviceTypeId && `${t('col_service')}: ${L(services.find((s) => String(s.id) === serviceTypeId)?.name)}`,
+    employeeId && `${t('rep_filter_employee')}: ${employees.find((e) => String(e.id) === employeeId)?.name ?? ''}`,
+    priority && `${t('col_priority')}: ${t(`pri_${priority}`)}`,
+    dateFrom && `${t('rep_from')} ${dateFrom}`,
+    dateTo && `${t('rep_to')} ${dateTo}`,
+    q && `“${q}”`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
   return (
     <div className="req">
       <header className="req-head">
@@ -180,15 +194,37 @@ export default function ReportsPage() {
             {hasFilters && ` ${t('matching')}`}
           </p>
         )}
-        <button
-          type="button"
-          className="req-retry emp-add"
-          onClick={exportCsv}
-          disabled={exporting || !data || data.total === 0}
-        >
-          {exporting ? t('rep_exporting') : t('rep_export')}
-        </button>
+        <div className="rep-actions">
+          <button
+            type="button"
+            className="req-retry emp-add rep-print-btn"
+            onClick={() => window.print()}
+            disabled={!data || data.total === 0}
+          >
+            {t('rep_export_pdf')}
+          </button>
+          <button
+            type="button"
+            className="req-retry emp-add"
+            onClick={exportCsv}
+            disabled={exporting || !data || data.total === 0}
+          >
+            {exporting ? t('rep_exporting') : t('rep_export')}
+          </button>
+        </div>
       </header>
+
+      {/* Print-only header — the browser's Print → Save as PDF (feature 8) uses
+          the on-screen charts + summary + table (feature 9). Chrome, filters and
+          buttons are hidden by the @media print rules in ReportsPage.css. */}
+      <div className="rep-print-head" aria-hidden="true">
+        <h2>{t('rep_title')}</h2>
+        <p>
+          {t('rep_generated')}: {new Date().toLocaleString()}
+          {' · '}
+          {t('rep_filters_applied')}: {hasFilters ? filterSummary : t('rep_filters_none')}
+        </p>
+      </div>
 
       <div className="req-filters">
         <div className="chip-row" role="group" aria-label={t('req_filter_state')}>
@@ -328,6 +364,32 @@ export default function ReportsPage() {
               </ul>
             </div>
           </section>
+
+          {agg.total > 0 && (
+            <section className="rep-charts" aria-label={t('rep_summary')}>
+              <div className="rep-chart-card">
+                <h3>{t('rep_by_state')}</h3>
+                <Donut
+                  title={t('rep_by_state')}
+                  slices={STATES.map((s) => ({ key: s, label: t(`state_${s}`), value: agg.byState[s] || 0 }))}
+                />
+              </div>
+              <div className="rep-chart-card">
+                <h3>{t('rep_by_priority')}</h3>
+                <Donut
+                  title={t('rep_by_priority')}
+                  slices={PRIORITIES.map((p) => ({ key: p, label: t(`pri_${p}`), value: agg.byPriority[p] || 0 }))}
+                />
+              </div>
+              <div className="rep-chart-card">
+                <h3>{t('rep_by_service')}</h3>
+                <Donut
+                  title={t('rep_by_service')}
+                  slices={Object.entries(agg.byService).map(([name, n]) => ({ key: name, label: name, value: n }))}
+                />
+              </div>
+            </section>
+          )}
 
           {data.requests.length === 0 ? (
             <div className="req-empty">

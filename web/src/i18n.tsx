@@ -295,7 +295,11 @@ const dict: Record<string, Loc> = {
   // reports
   rep_title: { en: 'Reports', ar: 'التقارير' },
   rep_export: { en: 'Export CSV', ar: 'تصدير CSV' },
+  rep_export_pdf: { en: 'Export PDF', ar: 'تصدير PDF' },
   rep_exporting: { en: 'Exporting…', ar: 'جارٍ التصدير…' },
+  rep_generated: { en: 'Generated', ar: 'أُنشئ في' },
+  rep_filters_applied: { en: 'Filters', ar: 'عوامل التصفية' },
+  rep_filters_none: { en: 'None', ar: 'لا شيء' },
   rep_from: { en: 'From', ar: 'من' },
   rep_to: { en: 'To', ar: 'إلى' },
   rep_filter_employee: { en: 'Filter by employee', ar: 'تصفية حسب الموظف' },
