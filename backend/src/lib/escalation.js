@@ -10,6 +10,7 @@
 // notification newer than its updated_at exists — one alert per stagnation
 // period; any status change re-arms the rule.
 const pool = require('../db');
+const { fireWebhook } = require('./webhooks');
 
 const NOT_ALREADY_ESCALATED = `NOT EXISTS (
          SELECT 1 FROM notification n
@@ -49,8 +50,23 @@ async function runEscalationSweep() {
        AND r.status <> ${COMPLETION_TARGET}
        AND r.updated_at < now() - (s->>'sla_minutes')::int * INTERVAL '1 minute'
        AND COALESCE(mgr.id, own.id) IS NOT NULL
-       AND ${NOT_ALREADY_ESCALATED}`
+       AND ${NOT_ALREADY_ESCALATED}
+     RETURNING request_id`
   );
+
+  // Phase 7: an SLA breach fires the sla_breached webhook, once per newly
+  // escalated request (the query's dedup guarantees no repeats within a
+  // stagnation period). After the notification INSERT, fire-and-forget.
+  if (tree.rowCount) {
+    const ids = tree.rows.map((r) => r.request_id);
+    const { rows: hooks } = await pool.query(
+      `SELECT r.id AS request_id, st.key AS service_key, r.status
+       FROM request r JOIN service_type st ON st.id = r.service_type_id
+       WHERE r.id = ANY($1)`,
+      [ids]
+    );
+    for (const h of hooks) fireWebhook('sla_breached', h);
+  }
 
   // Rule 2: completion-target status breached → nudge the requester
   // (created_by) to confirm or dispute.

@@ -227,6 +227,12 @@ const homeCleaningWorkflow = {
 
 const services = [
   {
+    // Phase 7: `key` is the stable string handle (config dedup / webhook payloads
+    // / GET /config/services); `accepts_external_users` gates the public
+    // catalogue + submission for self-registered users. Both seeded services are
+    // public.
+    key: 'equipment_repair',
+    accepts_external_users: true,
     name: L('Equipment Repair', 'إصلاح المعدات'),
     department: 'IT',
     default_priority: 'medium',
@@ -235,6 +241,8 @@ const services = [
     workflow: equipmentRepairWorkflow,
   },
   {
+    key: 'home_cleaning',
+    accepts_external_users: true,
     name: L('Home Cleaning Visit', 'زيارة تنظيف منزلي'),
     department: 'Facilities',
     default_priority: 'low',

@@ -19,7 +19,9 @@ Two amendments are **approved but not yet built:**
 - **Crew & internal chat (spec v7 — proposed):** more than one employee per request (one task, a lead + a crew set) plus a request-scoped internal monitor↔crew chat thread. See the Crew & internal chat section under Features.
 - **Ops analytics + PDF report (spec v8 — proposed):** mine the existing `REQUEST_STATUS_HISTORY` audit trail for cycle time, time-in-category, and per-employee throughput — cards on the existing Dashboard, plus a branded PDF export (charts + KPIs) on Basic Reports alongside the existing CSV. See the Ops analytics section under Features.
 
-Backend `node --test` at 38/38; Flutter `flutter test` at 26/26; web builds/lints green. The two seeded services flow end-to-end (submit → assign → complete → confirm) on both apps.
+Backend `node --test` at 44/44; Flutter `flutter test` at 26/26; web builds/lints green. The two seeded services flow end-to-end (submit → assign → complete → confirm) on both apps.
+
+The **Operiva migration is complete** — Phases 1–7 shipped. Phase 7 (config API + signed webhooks + optional external users) is backend-only and additive; clients needed no changes.
 
 ---
 
@@ -112,6 +114,15 @@ Same engine, same code, different JSON — the structural differences are what t
 ### Per-company config & handover
 - **`backend/src/company-config.js`** is the single file edited per deployment: the company's departments + services (form fields, workflows, escalation thresholds). `seed.js` imports `{ services }` from it and validates everything before writing. There is no write API — config enters only through the seed path.
 - **`SEED_DEMO_DATA=false`** seeds only departments + services + the admin account (clean client handover); the admin then creates monitors → employees in-app. Unset/default seeds the full demo state (accounts + demo request queue). Verified on a scratch DB (see below).
+
+### Config API, webhooks & external users (Phase 7 — Operiva)
+
+The seed path is no longer the *only* way a sector enters — but it's still the primary one, and both paths share the same validators.
+
+- **`POST /config/services` (admin)** onboards a brand-new sector as one JSON body: `{service{key, name, accepts_external_users, department, owner?}, workflow{initial_status, statuses, transitions}, forms{request, completion}}`. It reuses the seed-time validators **verbatim** (`validateFieldSchema` + `validateWorkflowDefinition`) — the config-driven engine is clean enough that the API and the seed feed the same tables. Zero code change per sector (the thesis gate). `GET /config/services` lists all. `service_type.key` (migration 010) is the stable string handle; a duplicate key → 409; department is create-or-reuse; optional `owner` (an oversight employee's login) drops the sector into a subtree so oversight can see it. Admin-only via `requireRole('admin')` — the openapi's "`configure` capability" wording was corrected (admins hold no capabilities; they configure by role).
+- **Outbound signed webhooks** — admin-managed subscriptions (`webhook_subscription` table, CRUD at `/config/webhooks`). Four events: `request_created` (POST /requests), `status_changed` + `assigned` (workflow engine, after commit; `assigned` derived from the transition's `notify: assigned_to` — no status key hardcoded), `sla_breached` (escalation sweep). Each active subscriber for an event gets one POST with `X-MonitorFlow-Signature` = HMAC-SHA256 of the exact body. Fired **after commit**, fire-and-forget (a down subscriber never rolls back a state change). Secrets are write-only (never returned). *ponytail: at-most-once, no retry/delivery-log — the dispatch seam in `lib/webhooks.js` is where a retry worker would go.*
+- **`accepts_external_users` per service** (migration 010, default TRUE) — a service that doesn't accept external users is hidden from the `user` catalogue (`GET /services` filters) and rejects a `user` submission (`POST /requests` → 403). Enforced server-side, never UI-only. Both seeded services are public.
+- **Gate verified** (scratchpad `smoke_p7.js`, 14/14): a config-created sector accepts a real user request and fires a signed `status_changed` webhook on the cancel transition; internal-only sector hidden + submission blocked; duplicate key 409; non-admin 403; invalid workflow 422 through the shared validator. `webhooks.test.js` unit-guards the signing (44/44 total).
 
 ### AI layer (spec v6 — proposed, not yet built)
 

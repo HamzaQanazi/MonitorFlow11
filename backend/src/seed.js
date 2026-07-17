@@ -248,9 +248,10 @@ async function seed() {
 
     for (const svc of services) {
       const { rows } = await client.query(
-        `INSERT INTO service_type (name, department_id, default_priority, enabled)
-         VALUES ($1, $2, $3, TRUE) RETURNING id`,
-        [JSON.stringify(svc.name), departmentIds[svc.department], svc.default_priority]
+        `INSERT INTO service_type (key, name, department_id, default_priority, enabled, accepts_external_users)
+         VALUES ($1, $2, $3, $4, TRUE, $5) RETURNING id`,
+        [svc.key, JSON.stringify(svc.name), departmentIds[svc.department], svc.default_priority,
+         svc.accepts_external_users !== false]
       );
       const serviceTypeId = rows[0].id;
       svc.id = serviceTypeId;

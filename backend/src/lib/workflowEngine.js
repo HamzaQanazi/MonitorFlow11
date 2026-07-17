@@ -20,6 +20,7 @@ const pool = require('../db');
 const { ownerInScope } = require('./scope');
 const { isOversight } = require('./capabilities');
 const { pick } = require('./i18nLabel');
+const { fireWebhook } = require('./webhooks');
 
 class WorkflowError extends Error {
   constructor(status, message) {
@@ -186,7 +187,7 @@ async function executeTransition({
     // Lock the request row before any validation (Section 5 locking rule).
     const { rows } = await client.query(
       `SELECT r.id, r.user_id, r.status, r.service_type_id, st.name AS service_name,
-              st.department_id, st.owner_id, w.statuses, w.transitions
+              st.key AS service_key, st.department_id, st.owner_id, w.statuses, w.transitions
        FROM request r
        JOIN service_type st ON st.id = r.service_type_id
        JOIN workflow_definition w ON w.service_type_id = r.service_type_id
@@ -324,6 +325,16 @@ async function executeTransition({
     }
 
     await client.query('COMMIT');
+
+    // Phase 7: outbound webhooks fire AFTER commit — a subscriber being down
+    // must never roll back the transition. Fire-and-forget (fireWebhook never
+    // throws). `assigned` is data-driven off the transition's notify targets
+    // (the assign transition notifies assigned_to), so no status/transition key
+    // is hardcoded here.
+    const hook = { request_id: request.id, service_key: request.service_key, status: transition.to };
+    fireWebhook('status_changed', hook);
+    if ((transition.notify || []).includes('assigned_to')) fireWebhook('assigned', hook);
+
     return { request, task, transition, status: newStatus, extra };
   } catch (err) {
     await client.query('ROLLBACK');

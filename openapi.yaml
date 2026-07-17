@@ -39,8 +39,18 @@ openapi: 3.0.3
 #   • statuses carry `sla_minutes` (null = no SLA); a breach escalates to the
 #     assignee's manager (fallback: service owner); the completion-target
 #     status nudges the requester. Service-level escalate_* columns dropped.
-#   • notification `message` is bilingual {en, ar}. Webhook post_actions
-#     remain Phase 7.
+#   • notification `message` is bilingual {en, ar}.
+#
+# PHASE 7 SHIPPED (2026-07-17) — config API + signed webhooks + external users:
+#   • POST/GET /config/services onboard/list a sector as JSON (admin role, not a
+#     capability — admins hold none). service.key is a new stable handle;
+#     service.department (create-or-reuse) + optional service.owner make the
+#     sector oversight-visible. Reuses the seed-time validators verbatim.
+#   • Outbound signed webhooks (admin-managed subscriptions, /config/webhooks):
+#     request_created / status_changed / assigned / sla_breached, HMAC-SHA256 in
+#     X-MonitorFlow-Signature, fired after commit.
+#   • service.accepts_external_users gates the public catalogue + submission for
+#     self-registered `user` accounts (GET /services filters, POST /requests 403).
 #
 # PHASE 6 SHIPPED (2026-07-16) — PostGIS: request.location is
 # GEOGRAPHY(Point,4326) + GIST (migration 009); the wire shape is unchanged —
@@ -144,7 +154,8 @@ paths:
       summary: >
         Onboard a sector. The single call that proves the thesis: service +
         workflow (statuses, one-way transitions) + forms, all as JSON. No code
-        change. Requires the `configure` capability.
+        change. Requires the admin role (admins configure by role — they hold no
+        capabilities).
       requestBody:
         required: true
         content:
@@ -172,6 +183,54 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/ServiceSummary' }
+
+  # ── Webhooks (admin) — outbound signed notifications ─────────────────────────
+  /config/webhooks:
+    post:
+      tags: [config]
+      summary: Register an outbound webhook subscription (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, secret, events]
+              properties:
+                url: { type: string, description: "http(s) endpoint POSTed on each event" }
+                secret: { type: string, description: "HMAC-SHA256 key; never returned after create" }
+                events:
+                  type: array
+                  items: { type: string, enum: [request_created, status_changed, assigned, sla_breached] }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { type: object, properties: { id: { type: integer } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+    get:
+      tags: [config]
+      summary: List webhook subscriptions (admin; secrets omitted)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WebhookSubscription' }
+  /config/webhooks/{id}:
+    delete:
+      tags: [config]
+      summary: Delete a webhook subscription (admin)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ── Services (read, for rendering) ───────────────────────────────────────────
   /services:
@@ -470,6 +529,18 @@ components:
         name: { $ref: '#/components/schemas/LocalizedText' }
         accepts_external_users: { type: boolean }
 
+    WebhookSubscription:
+      type: object
+      description: Secret is write-only — set on create, never returned.
+      properties:
+        id: { type: integer }
+        url: { type: string }
+        events:
+          type: array
+          items: { type: string, enum: [request_created, status_changed, assigned, sla_breached] }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
     ServiceConfig:
       type: object
       description: POST this and a sector exists. The engine reads it; no code knows the sector.
@@ -477,11 +548,25 @@ components:
       properties:
         service:
           type: object
-          required: [key, name, accepts_external_users]
+          required: [key, name, accepts_external_users, department]
           properties:
-            key: { type: string }
+            key: { type: string, description: "stable handle; dedup 409 if taken" }
             name: { $ref: '#/components/schemas/LocalizedText' }
             accepts_external_users: { type: boolean }
+            default_priority: { type: string, enum: [low, medium, high], default: medium }
+            department:
+              type: object
+              required: [name]
+              description: "reused if an existing department's English name matches, else created"
+              properties:
+                name: { $ref: '#/components/schemas/LocalizedText' }
+            owner:
+              type: string
+              nullable: true
+              description: >
+                login_identifier of an existing oversight employee — makes the
+                sector's requests fall in their subtree. Omitted → no oversight
+                view until wired (documented limitation).
         workflow:
           type: object
           required: [initial_status, statuses, transitions]

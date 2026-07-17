@@ -18,6 +18,7 @@ const { buildRequestFilter, PRIORITIES } = require('../lib/requestQuery');
 const { isOversight } = require('../lib/capabilities');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
 const { pick } = require('../lib/i18nLabel');
+const { fireWebhook } = require('../lib/webhooks');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -57,7 +58,8 @@ router.post('/', async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT st.id, st.default_priority, fd.field_schema, w.statuses
+      `SELECT st.id, st.key, st.default_priority, st.accepts_external_users,
+              fd.field_schema, w.statuses
        FROM service_type st
        JOIN form_definition fd ON fd.service_type_id = st.id AND fd.form_type = 'request'
        JOIN workflow_definition w ON w.service_type_id = st.id
@@ -66,6 +68,11 @@ router.post('/', async (req, res, next) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     const service = rows[0];
+
+    // Phase 7: a service that doesn't accept external users is not submittable
+    // by self-registered `user` accounts (it's also hidden from their catalogue
+    // — GET /services). Enforced server-side, not just in the UI.
+    if (!service.accepts_external_users) return res.status(403).json({ error: 'Forbidden' });
 
     const errors = await validateFormResponse(service.field_schema, formResponse, {
       db: pool,
@@ -135,6 +142,13 @@ router.post('/', async (req, res, next) => {
     } finally {
       client.release();
     }
+
+    // Phase 7: request_created webhook, after commit, fire-and-forget.
+    fireWebhook('request_created', {
+      request_id: created.id,
+      service_key: service.key,
+      status: created.status,
+    });
 
     res.status(201).json({
       request: {

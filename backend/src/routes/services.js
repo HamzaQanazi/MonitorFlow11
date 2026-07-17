@@ -13,11 +13,16 @@ router.use(requireAuth);
 
 router.get('/', async (req, res, next) => {
   try {
+    // Phase 7: self-registered `user` accounts only see services that accept
+    // external users; staff (employees/admins) reading config see all enabled
+    // services. Paired with the POST /requests 403 guard — never UI-only.
+    const externalOnly = req.user.role === 'user';
     const { rows } = await pool.query(
-      `SELECT st.id, st.name, st.department_id, d.name AS department_name, st.default_priority
+      `SELECT st.id, st.name, st.department_id, d.name AS department_name,
+              st.default_priority, st.accepts_external_users
        FROM service_type st
        JOIN department d ON d.id = st.department_id
-       WHERE st.enabled
+       WHERE st.enabled ${externalOnly ? 'AND st.accepts_external_users' : ''}
        ORDER BY st.id`
     );
     res.json({
@@ -27,6 +32,7 @@ router.get('/', async (req, res, next) => {
         departmentId: r.department_id,
         departmentName: r.department_name,
         defaultPriority: r.default_priority,
+        acceptsExternalUsers: r.accepts_external_users,
       })),
     });
   } catch (err) {
