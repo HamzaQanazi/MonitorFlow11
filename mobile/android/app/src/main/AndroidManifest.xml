@@ -2,6 +2,11 @@
     <!-- Release builds need INTERNET here; debug/profile get it from their
          manifest overlays, which release does not inherit. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- One-shot current-location detection for the request map pin (geolocator).
+         No background/continuous location — MonitorFlow measures outcomes, not
+         whereabouts (I10). -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="MonitorFlow"
         android:name="${applicationName}"

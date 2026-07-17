@@ -268,6 +268,8 @@ const Map<String, Map<String, String>> _dict = {
   'lp_title': {'en': 'Pick a location', 'ar': 'اختر موقعًا'},
   'lp_use': {'en': 'Use this location', 'ar': 'استخدم هذا الموقع'},
   'lp_tap': {'en': 'Tap the map to drop a pin', 'ar': 'انقر على الخريطة لوضع دبوس'},
+  'lp_locating': {'en': 'Finding your location…', 'ar': 'جارٍ تحديد موقعك…'},
+  'lp_my_location': {'en': 'Use my location', 'ar': 'استخدم موقعي'},
 
   // dynamic form
   'df_photo_unavailable': {'en': 'Photo upload is not available here yet', 'ar': 'رفع الصور غير متاح هنا بعد'},
