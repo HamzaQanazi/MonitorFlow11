@@ -88,6 +88,30 @@ router.get('/', async (req, res, next) => {
                JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = t.status
                WHERE t.employee_id = u.id AND (s->>'is_terminal')::boolean = FALSE
               ) AS open_task_count,
+              -- Avg minutes from request creation to its completion-form target
+              -- status (§7, same "resolved" definition as the CSV export), over
+              -- the requests this employee currently holds. Attribution follows
+              -- task.employee_id, so a reassigned request counts for its final
+              -- assignee (the documented reassignment limitation, §15). null
+              -- when they've resolved nothing yet.
+              -- ponytail: correlated per employee row — fine for a page of 20;
+              -- push into a GROUP BY join if the employee list ever gets large.
+              (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (comp.completed_at - r.created_at)) / 60))
+               FROM task t
+               JOIN request r ON r.id = t.request_id
+               JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+               CROSS JOIN LATERAL (
+                 SELECT MIN(h.changed_at) AS completed_at
+                 FROM request_status_history h
+                 WHERE h.request_id = r.id
+                   AND h.status = (
+                     SELECT tr->>'to' FROM jsonb_array_elements(w.transitions) tr
+                     WHERE tr->>'required_form_key' IS NOT NULL
+                     LIMIT 1
+                   )
+               ) comp
+               WHERE t.employee_id = u.id AND comp.completed_at IS NOT NULL
+              )::int AS avg_resolution_minutes,
               COUNT(*) OVER()::int AS total
        FROM users u
        JOIN department d ON d.id = u.department_id
@@ -107,6 +131,7 @@ router.get('/', async (req, res, next) => {
         departmentId: r.department_id,
         departmentName: r.department_name,
         openTaskCount: r.open_task_count,
+        avgResolutionMinutes: r.avg_resolution_minutes,
       })),
       page,
       pageSize,

@@ -301,6 +301,8 @@ const dict: Record<string, Loc> = {
   emp_no_tasks: { en: 'No tasks have been assigned to this employee yet.', ar: 'لم تُسنَد أي مهمة إلى هذا الموظف بعد.' },
   col_request: { en: 'Request', ar: 'الطلب' },
   col_assigned: { en: 'Assigned', ar: 'مُسنَد' },
+  col_avg_resolution: { en: 'Avg. resolution', ar: 'متوسط زمن الحل' },
+  emp_no_resolved: { en: '—', ar: '—' },
 
   // reports
   rep_title: { en: 'Reports', ar: 'التقارير' },

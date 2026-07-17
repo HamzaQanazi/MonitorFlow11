@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
+import { formatDuration } from '../lib/format'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 
@@ -19,6 +20,8 @@ interface Employee {
   isActive: boolean
   departmentId: number
   departmentName: Loc
+  // Avg minutes to resolve the requests this employee holds; null = none yet.
+  avgResolutionMinutes: number | null
 }
 interface ListResponse {
   employees: Employee[]
@@ -212,6 +215,7 @@ export default function EmployeesPage() {
                   <th scope="col">{t('col_name')}</th>
                   <th scope="col">{t('col_email')}</th>
                   <th scope="col">{t('col_department')}</th>
+                  <th scope="col">{t('col_avg_resolution')}</th>
                   <th scope="col">{t('col_status')}</th>
                   <th scope="col" className="emp-actions-col">
                     {t('col_actions')}
@@ -232,6 +236,7 @@ export default function EmployeesPage() {
                     </td>
                     <td className="emp-email">{e.email}</td>
                     <td>{L(e.departmentName)}</td>
+                    <td>{formatDuration(e.avgResolutionMinutes, t)}</td>
                     <td>
                       <span className={`emp-badge${e.isActive ? ' is-active' : ' is-inactive'}`}>
                         {e.isActive ? t('emp_active') : t('emp_inactive')}
