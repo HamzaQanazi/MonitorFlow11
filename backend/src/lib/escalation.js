@@ -12,6 +12,32 @@
 const pool = require('../db');
 const { fireWebhook } = require('./webhooks');
 
+// Human-readable SLA duration, built as a SQL CASE so the sweep keeps composing
+// its bilingual messages inside the one INSERT…SELECT. `m` is a SQL int
+// expression (minutes). English gets correct singular/plural; Arabic uses the
+// singular noun for 1 and the plural for the rest — right for 1 and the common
+// 3–10 range, informal for the dual (2) and 11+ edge cases (ponytail: full
+// Arabic number agreement isn't worth a grammar table for an SLA nudge).
+function durationSql(m, lang) {
+  const u =
+    lang === 'en'
+      ? { day: ['day', 'days'], hour: ['hour', 'hours'], min: ['minute', 'minutes'], and: ' ' }
+      : { day: ['يوم', 'أيام'], hour: ['ساعة', 'ساعات'], min: ['دقيقة', 'دقائق'], and: ' و' };
+  const unit = (val, pair) =>
+    `${val} || ' ' || CASE WHEN ${val} = 1 THEN '${pair[0]}' ELSE '${pair[1]}' END`;
+  const days = `(${m} / 1440)`;
+  const hours = `(${m} / 60)`;
+  const remMin = `(${m} % 60)`;
+  return `CASE
+            WHEN ${m} % 1440 = 0 THEN ${unit(days, u.day)}
+            WHEN ${m} % 60 = 0 THEN ${unit(hours, u.hour)}
+            WHEN ${m} >= 60 THEN ${unit(hours, u.hour)} || '${u.and}' || ${unit(remMin, u.min)}
+            ELSE ${unit(m, u.min)}
+          END`;
+}
+
+const SLA_MIN = "(s->>'sla_minutes')::int";
+
 const NOT_ALREADY_ESCALATED = `NOT EXISTS (
          SELECT 1 FROM notification n
          WHERE n.request_id = r.id AND n.type = 'escalation'
@@ -32,10 +58,12 @@ async function runEscalationSweep() {
     `INSERT INTO notification (user_id, request_id, type, message)
      SELECT COALESCE(mgr.id, own.id), r.id, 'escalation',
             jsonb_build_object(
-              'en', 'Request #' || r.id || ' (' || (st.name->>'en') || ') has exceeded its ' ||
-                    (s->>'sla_minutes') || '-minute SLA in status “' || (s->'label'->>'en') || '”.',
-              'ar', 'الطلب رقم ' || r.id || ' (' || (st.name->>'ar') || ') تجاوز مهلته البالغة ' ||
-                    (s->>'sla_minutes') || ' دقيقة في الحالة «' || (s->'label'->>'ar') || '».'
+              'en', 'Request #' || r.id || ' (' || (st.name->>'en') || ') has been in “' ||
+                    (s->'label'->>'en') || '” for over ' || (${durationSql(SLA_MIN, 'en')}) ||
+                    ', past its SLA.',
+              'ar', 'الطلب رقم ' || r.id || ' (' || (st.name->>'ar') || ') بقي في الحالة «' ||
+                    (s->'label'->>'ar') || '» لأكثر من ' || (${durationSql(SLA_MIN, 'ar')}) ||
+                    '، متجاوزًا مهلته.'
             )
      FROM request r
      JOIN service_type st ON st.id = r.service_type_id
