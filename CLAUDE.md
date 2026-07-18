@@ -445,6 +445,15 @@ priority, status override, map view) · Employees Management · Reports + CSV ex
 
 **Shared component:** Notifications + Profile, reused by both mobile apps.
 
+**Branding is build-time, per deployment** (`web/src/brand.ts`, `web/.env.example`):
+the company name `{en,ar}` and an optional logo come from `VITE_BRAND_*` at build
+time, rendered by the one `<Wordmark>` component (shell + login) and used for the
+tab title. Consistent with one organisation per deployment (§13) — there is no
+branding API and no runtime lookup. Mobile app name and icon are build-time too,
+in `pubspec.yaml` / `AndroidManifest.xml` / `Info.plist`. **Never rebrand
+`X-MonitorFlow-Signature`** — that is a wire protocol subscribers verify, not a
+company name.
+
 **UI-state rule (every page):** loading + empty states on every list; a
 confirmation dialog on every destructive/terminal action, with a note field where
 the workflow requires one; 401 → login; 403/404 → inline error. No page is "done"

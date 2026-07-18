@@ -4,6 +4,7 @@
 // The provider stamps <html lang/dir> so CSS logical properties flip the whole
 // console between LTR and RTL. Language choice persists in localStorage.
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { brand } from './brand'
 
 export type Lang = 'en' | 'ar'
 // A bilingual label as stored in the DB / returned by the API.
@@ -15,8 +16,9 @@ const KEY = 'mf.lang'
 // labels (service names, status labels, form field labels, department names)
 // are NOT here — they come from the API as Loc and go through L().
 const dict: Record<string, Loc> = {
-  // shell
-  wordmark: { en: 'MonitorFlow', ar: 'مونيتر فلو' },
+  // shell — the company name is NOT here: it is per-deployment branding, so it
+  // lives in brand.ts and renders through <Wordmark>.
+  console_suffix: { en: 'Monitor', ar: 'المراقبة' },
   nav_dashboard: { en: 'Dashboard', ar: 'لوحة القيادة' },
   nav_requests: { en: 'Requests', ar: 'الطلبات' },
   nav_employees: { en: 'Employees', ar: 'الموظفون' },
@@ -81,7 +83,8 @@ const dict: Record<string, Loc> = {
     en: 'Oversee requests, assignments, and field work.',
     ar: 'أشرف على الطلبات والإسنادات والعمل الميداني.',
   },
-  login_email: { en: 'Email', ar: 'البريد الإلكتروني' },
+  // Employees sign in with their 4-digit number, admins with an email.
+  login_identifier: { en: 'Employee no. or email', ar: 'الرقم الوظيفي أو البريد الإلكتروني' },
   login_password: { en: 'Password', ar: 'كلمة المرور' },
   login_signing_in: { en: 'Signing in…', ar: 'جارٍ تسجيل الدخول…' },
   login_note: {
@@ -90,7 +93,7 @@ const dict: Record<string, Loc> = {
   },
   login_show_password: { en: 'Show password', ar: 'إظهار كلمة المرور' },
   login_hide_password: { en: 'Hide password', ar: 'إخفاء كلمة المرور' },
-  login_err_email: { en: 'Enter your email address.', ar: 'أدخل بريدك الإلكتروني.' },
+  login_err_email: { en: 'Enter your employee number or email.', ar: 'أدخل رقمك الوظيفي أو بريدك الإلكتروني.' },
   login_err_password: { en: 'Enter your password.', ar: 'أدخل كلمة المرور.' },
   login_err_not_console: {
     en: 'This dashboard is for oversight and admin accounts. Requesters and field staff sign in from the mobile apps.',
@@ -554,6 +557,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.lang = lang
     document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr'
+    // The tab title carries the deployment's branding too, and follows the
+    // language. Set here rather than in index.html because .env is gitignored
+    // repo-wide, so Vite's %VITE_*% HTML substitution has nothing to read.
+    document.title = `${brand.name[lang] ?? brand.name.en} · ${dict.console_suffix[lang]}`
     localStorage.setItem(KEY, lang)
   }, [lang])
 

@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import NotificationBell from '../components/NotificationBell'
+import { Wordmark } from '../components/Wordmark'
 import './DashboardShell.css'
 
 // Oversight nav, each item gated by the capability its page needs (Gate 1).
@@ -33,10 +34,7 @@ export default function DashboardShell() {
   return (
     <div className="shell">
       <header className="shell-bar">
-        <p className="shell-wordmark">
-          <span className="shell-pip" aria-hidden="true" />
-          {t('wordmark')}
-        </p>
+        <Wordmark variant="shell" />
         <nav className="shell-nav" aria-label="Primary">
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end}>

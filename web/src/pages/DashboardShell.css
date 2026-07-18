@@ -21,6 +21,15 @@
   letter-spacing: -0.01em;
 }
 
+/* Shown instead of the pip when the deployment configures VITE_BRAND_LOGO.
+   Height-constrained so any aspect ratio fits the bar without reflowing it. */
+.shell-logo {
+  block-size: 20px;
+  inline-size: auto;
+  max-inline-size: 120px;
+  object-fit: contain;
+}
+
 .shell-pip {
   width: 10px;
   height: 10px;

@@ -24,6 +24,14 @@
   letter-spacing: -0.01em;
 }
 
+/* Shown instead of the pip when the deployment configures VITE_BRAND_LOGO. */
+.login-logo {
+  block-size: 24px;
+  inline-size: auto;
+  max-inline-size: 140px;
+  object-fit: contain;
+}
+
 .login-pip {
   width: 12px;
   height: 12px;

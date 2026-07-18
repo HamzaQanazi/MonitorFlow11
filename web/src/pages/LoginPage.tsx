@@ -3,6 +3,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import { ApiError } from '../lib/api'
+import { Wordmark } from '../components/Wordmark'
 import './LoginPage.css'
 
 interface FieldErrors {
@@ -69,10 +70,7 @@ export default function LoginPage() {
   return (
     <main className="login">
       <section className="login-pane">
-        <p className="login-wordmark">
-          <span className="login-pip" aria-hidden="true" />
-          {t('wordmark')}
-        </p>
+        <Wordmark variant="login" />
         <div className="login-pane-foot">
           <p className="login-tagline">{t('login_tagline')}</p>
           <p className="login-console">{t('login_console')}</p>
@@ -100,13 +98,15 @@ export default function LoginPage() {
           )}
 
           <div className="login-field">
-            <label htmlFor="email">{t('login_email')}</label>
+            <label htmlFor="email">{t('login_identifier')}</label>
             <input
               id="email"
               ref={emailRef}
-              type="email"
-              name="email"
-              autoComplete="email"
+              // NOT type="email": employees sign in with a 4-digit number, which
+              // the browser's email validation would reject outright.
+              type="text"
+              name="identifier"
+              autoComplete="username"
               disabled={submitting}
               aria-invalid={fieldErrors.email ? true : undefined}
               aria-describedby={fieldErrors.email ? 'email-error' : undefined}
