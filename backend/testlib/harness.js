@@ -182,4 +182,8 @@ async function loginAll() {
   return tokens;
 }
 
-module.exports = { setup, stopServer, api, login, loginAll, WHO, SEED_PASSWORD, BASE, testDbUrl };
+// BASE is rebound by useSuite() during setup(), so it can only be read through
+// a function — a destructured copy taken at require time is the stale default.
+const apiUrl = (pathname) => `${BASE}${pathname}`;
+
+module.exports = { setup, stopServer, api, apiUrl, login, loginAll, WHO, SEED_PASSWORD, testDbUrl };
