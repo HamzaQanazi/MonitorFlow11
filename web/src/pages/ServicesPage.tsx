@@ -89,6 +89,8 @@ const EXAMPLE = {
 
 interface Service {
   id: number
+  ownerLogin: string | null
+  ownerName: string | null
   key: string
   name: Loc
   departmentName: Loc
@@ -103,10 +105,20 @@ export default function ServicesPage() {
   const [open, setOpen] = useState(false)
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [inspecting, setInspecting] = useState<Service | null>(null)
+  const [ownerOptions, setOwnerOptions] = useState<
+    { id: number; name: string; loginIdentifier: string }[]
+  >([])
 
+  // The owner picker needs employees; /config/org already returns them all,
+  // so no extra endpoint. loginIdentifier isn't in that payload, so the picker
+  // is keyed by it via a second lookup below — see ownerOptions.
   const load = useCallback(async () => {
-    const res = await apiFetch<{ services: Service[] }>('/config/services')
+    const [res, org] = await Promise.all([
+      apiFetch<{ services: Service[] }>('/config/services'),
+      apiFetch<{ employees: { id: number; name: string; loginIdentifier: string }[] }>('/config/org'),
+    ])
     setServices(res.services)
+    setOwnerOptions(org.employees)
     setError(null)
   }, [])
 
@@ -128,6 +140,25 @@ export default function ServicesPage() {
       await load()
     } catch (err) {
       setError((err as Error).message)
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  // The owner is the Gate 2 visibility anchor: employees see a service's
+  // requests when its owner sits in their subtree. A service with no owner is
+  // invisible to everyone, which is the normal state right after onboarding.
+  async function setOwner(s: Service, login: string | null) {
+    setBusyKey(s.key)
+    try {
+      await apiFetch(`/config/services/${encodeURIComponent(s.key)}`, {
+        method: 'PATCH',
+        body: { owner: login },
+      })
+      await load()
+    } catch (err) {
+      const b = err instanceof ApiError ? (err.body as { errors?: string[] } | null) : null
+      setError(b?.errors?.join(' · ') ?? (err as Error).message)
     } finally {
       setBusyKey(null)
     }
@@ -184,6 +215,7 @@ export default function ServicesPage() {
                 <th scope="col">{t('svc_col_key')}</th>
                 <th scope="col">{t('svc_col_name')}</th>
                 <th scope="col">{t('svc_col_department')}</th>
+                <th scope="col">{t('svc_col_owner')}</th>
                 <th scope="col">{t('svc_col_enabled')}</th>
                 <th scope="col">{t('svc_col_external')}</th>
                 <th scope="col">{t('col_actions')}</th>
@@ -199,6 +231,22 @@ export default function ServicesPage() {
                   </td>
                   <td className="req-service">{L(s.name)}</td>
                   <td>{L(s.departmentName)}</td>
+                  <td>
+                    <select
+                      className="req-select"
+                      disabled={busyKey === s.key}
+                      value={s.ownerLogin ?? ''}
+                      aria-label={`${s.key} — ${t('svc_col_owner')}`}
+                      onChange={(e) => void setOwner(s, e.target.value || null)}
+                    >
+                      <option value="">{t('svc_no_owner')}</option>
+                      {ownerOptions.map((o) => (
+                        <option key={o.id} value={o.loginIdentifier}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td>{s.enabled ? t('svc_yes') : t('svc_no')}</td>
                   <td>{s.acceptsExternalUsers ? t('svc_yes') : t('svc_no')}</td>
                   <td>

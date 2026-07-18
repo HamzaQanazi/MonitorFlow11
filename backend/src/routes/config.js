@@ -179,13 +179,18 @@ router.get('/services', async (req, res, next) => {
       // id is returned so the admin UI can read the stored definition back via
       // the existing GET /services/{id}/workflow and /forms/{formType}.
       `SELECT st.id, st.key, st.name, st.enabled, st.accepts_external_users,
-              d.name AS department_name
-       FROM service_type st JOIN department d ON d.id = st.department_id
+              d.name AS department_name,
+              o.login_identifier AS owner_login, o.name AS owner_name
+       FROM service_type st
+       JOIN department d ON d.id = st.department_id
+       LEFT JOIN users o ON o.id = st.owner_id
        ORDER BY st.id`
     );
     res.json({
       services: rows.map((r) => ({
         id: r.id,
+        ownerLogin: r.owner_login,
+        ownerName: r.owner_name,
         key: r.key,
         name: r.name,
         departmentName: r.department_name,
@@ -204,26 +209,65 @@ router.get('/services', async (req, res, next) => {
 // request_status_history with them (I9 — the audit trail is never deleted).
 // Disabling is the documented way to retire a definition (§3): it drops out of
 // the public catalogue while in-flight requests keep running their workflow.
+// Accepts `enabled` and/or `owner` — at least one. `owner` is an employee's
+// login_identifier (null clears it). Owner matters because it is the Gate 2
+// visibility anchor: an employee sees a service's requests when the service's
+// owner_id is inside their subtree. A sector onboarded before any staff exist
+// has owner_id NULL and is therefore invisible to everyone, so this has to be
+// settable after the fact — otherwise the install order (services before
+// employees) silently produces an unusable service.
 router.patch('/services/:key', async (req, res, next) => {
   try {
-    const { enabled } = req.body || {};
-    if (typeof enabled !== 'boolean') {
-      return res.status(422).json({ errors: ['enabled: required boolean'] });
+    const body = req.body || {};
+    const hasEnabled = body.enabled !== undefined;
+    const hasOwner = body.owner !== undefined;
+    const errors = [];
+    if (!hasEnabled && !hasOwner) errors.push('body: provide enabled and/or owner');
+    if (hasEnabled && typeof body.enabled !== 'boolean') errors.push('enabled: must be boolean');
+    if (hasOwner && body.owner !== null && typeof body.owner !== 'string') {
+      errors.push('owner: must be a login_identifier string or null');
     }
-    const updated = await withTx(async (client) => {
-      const { rows } = await client.query(
-        'UPDATE service_type SET enabled = $1 WHERE key = $2 RETURNING id, enabled',
-        [enabled, req.params.key]
+    if (errors.length) return res.status(422).json({ errors });
+
+    const result = await withTx(async (client) => {
+      const svc = await client.query(
+        'SELECT id FROM service_type WHERE key = $1 FOR UPDATE',
+        [req.params.key]
       );
-      if (!rows.length) return null;
-      await logAudit(client, req.user.id, 'service.updated', 'service_type', rows[0].id, {
-        key: req.params.key,
-        enabled,
-      });
+      if (!svc.rowCount) return null;
+      const id = svc.rows[0].id;
+      const detail = { key: req.params.key };
+
+      if (hasEnabled) {
+        await client.query('UPDATE service_type SET enabled = $1 WHERE id = $2', [body.enabled, id]);
+        detail.enabled = body.enabled;
+      }
+      if (hasOwner) {
+        let ownerId = null;
+        if (body.owner !== null) {
+          const owner = await client.query(
+            `SELECT id FROM users WHERE login_identifier = $1 AND role = 'employee'`,
+            [body.owner]
+          );
+          if (!owner.rowCount) return 'bad_owner';
+          ownerId = owner.rows[0].id;
+        }
+        await client.query('UPDATE service_type SET owner_id = $1 WHERE id = $2', [ownerId, id]);
+        detail.owner = body.owner;
+      }
+
+      await logAudit(client, req.user.id, 'service.updated', 'service_type', id, detail);
+      const { rows } = await client.query(
+        'SELECT enabled, owner_id FROM service_type WHERE id = $1',
+        [id]
+      );
       return rows[0];
     });
-    if (!updated) return res.status(404).json({ error: 'Not found' });
-    res.json({ key: req.params.key, enabled: updated.enabled });
+    if (result === 'bad_owner') {
+      return res.status(422).json({ errors: [`owner: no employee "${body.owner}"`] });
+    }
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    res.json({ key: req.params.key, enabled: result.enabled, ownerId: result.owner_id });
   } catch (err) {
     next(err);
   }
@@ -237,7 +281,7 @@ router.patch('/services/:key', async (req, res, next) => {
 router.get('/org', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT u.id, u.name, u.manager_id, u.is_active,
+      `SELECT u.id, u.name, u.manager_id, u.is_active, u.login_identifier,
               d.name AS department_name,
               el.id AS level_id, el.name AS level_name,
               COALESCE(
@@ -251,11 +295,14 @@ router.get('/org', async (req, res, next) => {
        WHERE u.role = 'employee'
        GROUP BY u.id, d.name, el.id, el.name
        ORDER BY u.name`
+      // login_identifier is returned so the Services owner picker can send it
+      // to PATCH /config/services/{key}, which resolves owners by that handle.
     );
     res.json({
       employees: rows.map((r) => ({
         id: r.id,
         name: r.name,
+        loginIdentifier: r.login_identifier,
         managerId: r.manager_id,
         isActive: r.is_active,
         departmentName: r.department_name,

@@ -402,6 +402,8 @@ const dict: Record<string, Loc> = {
   svc_col_key: { en: 'Key', ar: 'المفتاح' },
   svc_col_name: { en: 'Service', ar: 'الخدمة' },
   svc_col_department: { en: 'Department', ar: 'القسم' },
+  svc_col_owner: { en: 'Owner', ar: 'المسؤول' },
+  svc_no_owner: { en: 'No owner (not visible)', ar: 'بلا مسؤول (غير مرئية)' },
   svc_col_enabled: { en: 'Enabled', ar: 'مفعّلة' },
   svc_col_external: { en: 'Public', ar: 'عامة' },
   svc_def_loading: { en: 'Loading definition…', ar: 'جارٍ تحميل التعريف…' },

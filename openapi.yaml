@@ -202,9 +202,15 @@ paths:
           application/json:
             schema:
               type: object
-              required: [enabled]
+              description: >
+                Provide enabled and/or owner (at least one). owner is an
+                employee's login_identifier, or null to clear it. Owner is the
+                Gate 2 visibility anchor — a service with no owner is invisible
+                to every employee, which is the state right after onboarding a
+                sector before staff exist, so it must be settable after the fact.
               properties:
                 enabled: { type: boolean }
+                owner: { type: string, nullable: true }
       responses:
         '200':
           description: Updated
@@ -215,6 +221,7 @@ paths:
                 properties:
                   key: { type: string }
                   enabled: { type: boolean }
+                  ownerId: { type: integer, nullable: true }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Validation' }
@@ -782,6 +789,8 @@ components:
         key: { type: string }
         name: { $ref: '#/components/schemas/LocalizedText' }
         departmentName: { $ref: '#/components/schemas/LocalizedText' }
+        ownerLogin: { type: string, nullable: true }
+        ownerName: { type: string, nullable: true }
         enabled: { type: boolean }
         acceptsExternalUsers: { type: boolean }
 
