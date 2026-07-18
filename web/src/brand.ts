@@ -16,14 +16,19 @@ import type { Loc } from './i18n'
 
 const env = import.meta.env
 
+// The defaults below brand THIS deployment, matching the municipality the seed
+// script sets up (company-config.js). They are deployment data in exactly the
+// same sense the seeded services are — the engine itself stays sector-agnostic
+// (I1). Another customer overrides all three via .env; nothing here is
+// referenced by name anywhere else in the codebase.
 export const brand: { name: Loc; logo: string | null } = {
   // Both languages required (I5). A deployment that sets only one falls back to
   // the default for the other rather than rendering an empty wordmark.
   name: {
-    en: env.VITE_BRAND_NAME_EN || 'MonitorFlow',
-    ar: env.VITE_BRAND_NAME_AR || 'مونيتر فلو',
+    en: env.VITE_BRAND_NAME_EN || 'Municipality of Nablus',
+    ar: env.VITE_BRAND_NAME_AR || 'بلدية نابلس',
   },
-  // Path to a logo under web/public, e.g. '/logo.svg'. Unset → the wordmark
-  // renders its accent pip instead, which is the shipped look.
-  logo: env.VITE_BRAND_LOGO || null,
+  // Path to a logo under web/public. Set to '' in .env to fall back to the
+  // accent pip instead.
+  logo: env.VITE_BRAND_LOGO ?? '/logo.png',
 }

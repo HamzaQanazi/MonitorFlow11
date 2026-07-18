@@ -561,6 +561,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     // language. Set here rather than in index.html because .env is gitignored
     // repo-wide, so Vite's %VITE_*% HTML substitution has nothing to read.
     document.title = `${brand.name[lang] ?? brand.name.en} · ${dict.console_suffix[lang]}`
+    // Tab icon follows the configured logo, so the two can't drift apart. No
+    // logo configured → the shipped favicon.svg in index.html stays.
+    const icon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    if (icon && brand.logo) {
+      icon.href = brand.logo
+      icon.type = brand.logo.endsWith('.svg') ? 'image/svg+xml' : ''
+    }
     localStorage.setItem(KEY, lang)
   }, [lang])
 
