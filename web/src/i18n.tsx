@@ -24,6 +24,7 @@ const dict: Record<string, Loc> = {
   nav_audit: { en: 'Audit Log', ar: 'سجل التدقيق' },
   nav_services: { en: 'Services', ar: 'الخدمات' },
   nav_org: { en: 'Organisation', ar: 'الهيكل التنظيمي' },
+  nav_levels: { en: 'Levels', ar: 'المستويات' },
   nav_webhooks: { en: 'Webhooks', ar: 'الويب هوك' },
   sign_out: { en: 'Sign out', ar: 'تسجيل الخروج' },
   lang_toggle: { en: 'العربية', ar: 'English' }, // shows the OTHER language
@@ -331,6 +332,32 @@ const dict: Record<string, Loc> = {
   rep_no_match_h: { en: 'No matching requests', ar: 'لا طلبات مطابقة' },
   rep_no_match_p: { en: 'Nothing matches these filters. Loosen or clear them to see more.', ar: 'لا شيء يطابق عوامل التصفية هذه. خفّفها أو امسحها لعرض المزيد.' },
 
+  // levels & capabilities (Gate 1 configuration — admin only)
+  lvl_title: { en: 'Levels & Capabilities', ar: 'المستويات والصلاحيات' },
+  lvl_sub: {
+    en: 'What each level is allowed to do, and which level each employee holds.',
+    ar: 'ما المسموح به لكل مستوى، وأي مستوى يشغله كل موظف.',
+  },
+  lvl_legend: {
+    en: 'A capability is granted by a level, never by a person or a job title. Ticking a box changes what every employee at that level may do, on their next request — no sign-out needed. The holder count is the blast radius.',
+    ar: 'تُمنح الصلاحية عبر المستوى، لا عبر شخص أو مسمّى وظيفي. تغيير الخانة يغيّر ما يستطيع فعله كل موظف في ذلك المستوى، اعتبارًا من طلبه التالي — دون تسجيل خروج. وعدد الأفراد يبيّن حجم الأثر.',
+  },
+  lvl_loading: { en: 'Loading levels…', ar: 'جارٍ تحميل المستويات…' },
+  lvl_add: { en: 'Add level', ar: 'إضافة مستوى' },
+  lvl_create: { en: 'Create level', ar: 'إنشاء المستوى' },
+  lvl_name_en: { en: 'Name (English)', ar: 'الاسم (إنجليزي)' },
+  lvl_name_ar: { en: 'Name (Arabic)', ar: 'الاسم (عربي)' },
+  lvl_grants: { en: 'Capabilities', ar: 'الصلاحيات' },
+  lvl_col_level: { en: 'Level', ar: 'المستوى' },
+  lvl_col_holders: { en: 'Employees', ar: 'الموظفون' },
+  lvl_col_employee: { en: 'Employee', ar: 'الموظف' },
+  lvl_col_grants: { en: 'Effective capabilities', ar: 'الصلاحيات الفعلية' },
+  lvl_assign_h: { en: 'Employee levels', ar: 'مستويات الموظفين' },
+  lvl_assign_p: {
+    en: 'Moving an employee to a level changes what they may do. Their position in the reporting tree — who they can reach — is set elsewhere and is not affected.',
+    ar: 'نقل الموظف إلى مستوى يغيّر ما يُسمح له بفعله. أما موقعه في الهيكل الإداري — ومن يمكنه الوصول إليهم — فيُحدَّد في مكان آخر ولا يتأثر.',
+  },
+
   // organisation (reporting tree + capability grants; two gates, not a ladder)
   org_title: { en: 'Organisation', ar: 'الهيكل التنظيمي' },
   org_sub: {
@@ -466,11 +493,15 @@ const dict: Record<string, Loc> = {
   audit_act_request_status_changed: { en: 'Status changed', ar: 'تغيير الحالة' },
   audit_act_request_assigned: { en: 'Request assigned', ar: 'إسناد الطلب' },
   audit_act_request_priority_changed: { en: 'Priority changed', ar: 'تغيير الأولوية' },
+  audit_act_level_created: { en: 'Level created', ar: 'إنشاء مستوى' },
+  audit_act_level_updated: { en: 'Level capabilities changed', ar: 'تغيير صلاحيات المستوى' },
+  audit_act_employee_level_changed: { en: 'Employee level changed', ar: 'تغيير مستوى الموظف' },
   audit_act_service_created: { en: 'Service created', ar: 'إنشاء خدمة' },
   audit_act_service_updated: { en: 'Service updated', ar: 'تعديل خدمة' },
   audit_entity_user: { en: 'Employee', ar: 'موظف' },
   audit_entity_request: { en: 'Request', ar: 'طلب' },
   audit_entity_service_type: { en: 'Service', ar: 'خدمة' },
+  audit_entity_employee_level: { en: 'Level', ar: 'مستوى' },
   col_when: { en: 'When', ar: 'الوقت' },
   col_actor: { en: 'Actor', ar: 'المنفّذ' },
   col_action: { en: 'Action', ar: 'الإجراء' },

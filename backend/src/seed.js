@@ -24,6 +24,18 @@ const SEED_DEMO_DATA = process.env.SEED_DEMO_DATA !== 'false';
 // and demo starts from identical state (Section 15).
 const DEV_PASSWORD = 'Password123!';
 
+// The admin password on a real handover. Demo/dev accounts keep DEV_PASSWORD so
+// every developer starts identical; the ADMIN account — the only one that ships
+// to a client — takes SEED_ADMIN_PASSWORD when set, so the literal above can't
+// reach production. There is no self-service reset (§15), so a wrong password
+// here means a manual DB fix.
+const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || DEV_PASSWORD;
+
+// This script TRUNCATEs every table. That is correct for a first install and
+// catastrophic on a running system, so it refuses to touch a database that
+// already has users unless SEED_FORCE=true is passed explicitly.
+const SEED_FORCE = process.env.SEED_FORCE === 'true';
+
 // Two levels: a Manager (every capability — oversight) and a Field Officer
 // (none). The City Manager and the three department heads are all Managers;
 // what differentiates who-sees-what is the reporting TREE (Gate 2), not the
@@ -231,6 +243,20 @@ async function seed() {
     process.exit(1);
   }
 
+  // Refuse to wipe a database that is already in use. Checked before BEGIN so
+  // the message is the whole story: nothing was touched.
+  if (!SEED_FORCE) {
+    const { rows } = await pool.query('SELECT COUNT(*)::int AS n FROM users');
+    if (rows[0].n > 0) {
+      console.error(
+        `Refusing to seed: this database already has ${rows[0].n} user(s).\n` +
+          'Seeding TRUNCATEs every table — all requests, history and audit rows would be lost.\n' +
+          'If you really mean it, re-run with SEED_FORCE=true.'
+      );
+      process.exit(1);
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -298,13 +324,16 @@ async function seed() {
     }
 
     const passwordHash = await bcrypt.hash(DEV_PASSWORD, 10);
+    // The admin is the one account that ships to a client, so it gets
+    // ADMIN_PASSWORD; demo accounts stay on DEV_PASSWORD.
+    const adminPasswordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
     const accountIds = {};
     for (const acc of [adminAccount, ...(SEED_DEMO_DATA ? demoAccounts : [])]) {
       const { rows } = await client.query(
         `INSERT INTO users (name, email, password_hash, role, department_id, phone,
            login_identifier, manager_id, level_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-        [acc.name, acc.email, passwordHash, acc.role,
+        [acc.name, acc.email, acc.role === 'admin' ? adminPasswordHash : passwordHash, acc.role,
          acc.department ? departmentIds[acc.department] : null, acc.phone || null,
          acc.login, acc.manager ? accountIds[acc.manager] : null,
          acc.level ? levelIds[acc.level] : null]
@@ -413,7 +442,11 @@ async function seed() {
     } // ponytail: inner block kept at its original indent — gate is a wrapper, not a rewrite
 
     await client.query('COMMIT');
-    const note = SEED_DEMO_DATA ? `All seeded accounts use password: ${DEV_PASSWORD}` : 'Admin account seeded; add staff via the app.';
+    const note = SEED_DEMO_DATA
+      ? `All seeded accounts use password: ${DEV_PASSWORD}`
+      : process.env.SEED_ADMIN_PASSWORD
+        ? 'Admin account seeded with SEED_ADMIN_PASSWORD. Create the first employee via POST /config/employees, then build the tree from the Employees page.'
+        : `WARNING: admin seeded with the built-in dev password (${DEV_PASSWORD}). Set SEED_ADMIN_PASSWORD before a real handover — there is no self-service reset.`;
     console.log(`\nDone. ${note}`);
   } catch (err) {
     await client.query('ROLLBACK');

@@ -10,6 +10,7 @@
 // (validateFieldSchema + validateWorkflowDefinition) — the whole thesis is that
 // the same validators guard both the seed path and the API path.
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { validateFieldSchema } = require('../lib/formSchema');
@@ -17,6 +18,7 @@ const { validateWorkflowDefinition } = require('../lib/workflowSchema');
 const { isBilingual } = require('../lib/i18nLabel');
 const { EVENTS } = require('../lib/webhooks');
 const { withTx, logAudit } = require('../lib/audit');
+const { CAPABILITIES } = require('../lib/capabilities');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -237,7 +239,7 @@ router.get('/org', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT u.id, u.name, u.manager_id, u.is_active,
               d.name AS department_name,
-              el.name AS level_name,
+              el.id AS level_id, el.name AS level_name,
               COALESCE(
                 ARRAY_AGG(lc.capability_key) FILTER (WHERE lc.capability_key IS NOT NULL),
                 '{}'
@@ -247,7 +249,7 @@ router.get('/org', async (req, res, next) => {
        LEFT JOIN employee_level el ON el.id = u.level_id
        LEFT JOIN level_capability lc ON lc.level_id = u.level_id
        WHERE u.role = 'employee'
-       GROUP BY u.id, d.name, el.name
+       GROUP BY u.id, d.name, el.id, el.name
        ORDER BY u.name`
     );
     res.json({
@@ -257,10 +259,248 @@ router.get('/org', async (req, res, next) => {
         managerId: r.manager_id,
         isActive: r.is_active,
         departmentName: r.department_name,
+        levelId: r.level_id,
         levelName: r.level_name,
         capabilities: r.capabilities,
       })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Levels & capability grants (admin only) ─────────────────────────────────
+// Gate 1 is configured here and NOWHERE else. Deliberately admin-only, not
+// manage_employees: if a manager could set levels they could grant a
+// subordinate a capability they don't hold themselves — escalation by proxy —
+// which would need a "may only grant what you hold" subset check on a hot
+// path. Admin is outside the reporting tree and holds no capabilities (I2), so
+// granting one gains them nothing and the subset rule isn't needed at all.
+//
+// Reporting lines (users.manager_id) are NOT editable here: both subtree CTEs
+// use UNION ALL with no cycle detection (lib/scope.js), so a reorg that made
+// two employees each other's manager would recurse forever on every scoped
+// query. Reorg stays a seed-time concern (documented limitation).
+
+// GET /config/capabilities — the fixed catalogue. It lives in code, not data.
+router.get('/capabilities', (req, res) => {
+  res.json({ capabilities: CAPABILITIES });
+});
+
+// GET /config/levels — levels, their grants, and how many employees sit at
+// each (the blast radius of changing a grant, shown before you change it).
+router.get('/levels', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT el.id, el.name,
+              COALESCE(
+                ARRAY_AGG(DISTINCT lc.capability_key)
+                  FILTER (WHERE lc.capability_key IS NOT NULL),
+                '{}'
+              ) AS capabilities,
+              COUNT(DISTINCT u.id)::int AS employee_count
+       FROM employee_level el
+       LEFT JOIN level_capability lc ON lc.level_id = el.id
+       LEFT JOIN users u ON u.level_id = el.id AND u.role = 'employee'
+       GROUP BY el.id, el.name
+       ORDER BY el.id`
+    );
+    res.json({
+      levels: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        capabilities: r.capabilities,
+        employeeCount: r.employee_count,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Shared validation for a grant set: unknown keys are rejected rather than
+// silently dropped, so a typo can't quietly create a powerless level.
+function badCapabilities(capabilities) {
+  if (!Array.isArray(capabilities)) return ['capabilities: required array'];
+  return capabilities
+    .filter((c) => !CAPABILITIES.includes(c))
+    .map((c) => `capabilities: unknown capability "${c}"`);
+}
+
+router.post('/levels', async (req, res, next) => {
+  try {
+    const { name, capabilities } = req.body || {};
+    const errors = [];
+    if (!isBilingual(name)) errors.push('name: must be a {en, ar} object');
+    errors.push(...badCapabilities(capabilities));
+    if (errors.length) return res.status(422).json({ errors });
+
+    const level = await withTx(async (client) => {
+      const { rows } = await client.query(
+        'INSERT INTO employee_level (name) VALUES ($1) RETURNING id',
+        [JSON.stringify(name)]
+      );
+      const id = rows[0].id;
+      for (const key of capabilities) {
+        await client.query(
+          'INSERT INTO level_capability (level_id, capability_key) VALUES ($1, $2)',
+          [id, key]
+        );
+      }
+      await logAudit(client, req.user.id, 'level.created', 'employee_level', id, {
+        name: name.en,
+        capabilities,
+      });
+      return id;
+    });
+    res.status(201).json({ id: level });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /config/levels/:id — replace the grant set. Takes effect on the NEXT
+// request for everyone at this level: capabilities are read from the DB per
+// request (middleware/auth.js), never baked into the JWT. The audit detail
+// records before AND after, since a grant change is invisible in the timeline.
+router.patch('/levels/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const { capabilities } = req.body || {};
+    const errors = badCapabilities(capabilities);
+    if (errors.length) return res.status(422).json({ errors });
+
+    const result = await withTx(async (client) => {
+      const level = await client.query('SELECT id FROM employee_level WHERE id = $1 FOR UPDATE', [id]);
+      if (!level.rowCount) return null;
+      const before = await client.query(
+        'SELECT capability_key FROM level_capability WHERE level_id = $1 ORDER BY capability_key',
+        [id]
+      );
+      await client.query('DELETE FROM level_capability WHERE level_id = $1', [id]);
+      for (const key of capabilities) {
+        await client.query(
+          'INSERT INTO level_capability (level_id, capability_key) VALUES ($1, $2)',
+          [id, key]
+        );
+      }
+      await logAudit(client, req.user.id, 'level.updated', 'employee_level', id, {
+        before: before.rows.map((r) => r.capability_key),
+        after: capabilities,
+      });
+      return true;
+    });
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    res.json({ id, capabilities });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /config/employees/:id/level — put an employee at a level (or null to
+// strip them back to no capabilities). This is the only way to grow an
+// oversight tier without re-seeding. Not on PATCH /employees/{id}: that route
+// is gated by manage_employees, which an admin does not hold — they would 403
+// on their own feature.
+router.patch('/employees/:id/level', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    const { levelId } = req.body || {};
+    if (levelId !== null && !Number.isInteger(levelId)) {
+      return res.status(422).json({ errors: ['levelId: required integer or null'] });
+    }
+
+    const result = await withTx(async (client) => {
+      if (levelId !== null) {
+        const level = await client.query('SELECT 1 FROM employee_level WHERE id = $1', [levelId]);
+        if (!level.rowCount) return 'bad_level';
+      }
+      const { rows } = await client.query(
+        `UPDATE users SET level_id = $1 WHERE id = $2 AND role = 'employee'
+         RETURNING id, name, level_id`,
+        [levelId, id]
+      );
+      if (!rows.length) return null;
+      await logAudit(client, req.user.id, 'employee.level_changed', 'user', id, {
+        name: rows[0].name,
+        levelId,
+      });
+      return rows[0];
+    });
+    if (result === 'bad_level') {
+      return res.status(422).json({ errors: [`levelId: no level ${levelId}`] });
+    }
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    res.json({ id: result.id, levelId: result.level_id });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /config/employees — create a ROOT employee (manager_id NULL).
+//
+// This exists to break a bootstrap deadlock. POST /employees is gated by
+// manage_employees, admins hold no capabilities (I2), and a clean handover
+// (SEED_DEMO_DATA=false) seeds only the admin — so on a fresh deployment
+// nobody could create the first member of staff at all. The admin creates one
+// root employee here; that person logs in and builds the rest of the tree
+// through the normal Employees page, where Gate 2 applies as usual.
+//
+// Deliberately root-only: this is not a general employee CRUD back door. Every
+// subsequent hire goes through the capability- and subtree-gated route.
+router.post('/employees', async (req, res, next) => {
+  try {
+    const { name, email, password, phone, departmentId, levelId } = req.body || {};
+    const errors = [];
+    if (!name || typeof name !== 'string' || !name.trim()) errors.push('name: required');
+    if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.push('email: valid email required');
+    }
+    if (!password || typeof password !== 'string' || password.length < 8) {
+      errors.push('password: at least 8 characters');
+    }
+    if (levelId !== undefined && levelId !== null && !Number.isInteger(levelId)) {
+      errors.push('levelId: integer or null');
+    }
+    if (departmentId !== undefined && departmentId !== null && !Number.isInteger(departmentId)) {
+      errors.push('departmentId: integer or null');
+    }
+    if (errors.length) return res.status(422).json({ errors });
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    let created;
+    try {
+      created = await withTx(async (client) => {
+        if (levelId) {
+          const lv = await client.query('SELECT 1 FROM employee_level WHERE id = $1', [levelId]);
+          if (!lv.rowCount) return 'bad_level';
+        }
+        const { rows } = await client.query(
+          `INSERT INTO users (name, email, password_hash, role, phone, department_id,
+                              manager_id, level_id, login_identifier)
+           VALUES ($1, $2, $3, 'employee', $4, $5, NULL, $6, $2)
+           RETURNING id, name, email`,
+          [name.trim(), email.toLowerCase(), passwordHash, phone || null,
+           departmentId ?? null, levelId ?? null]
+        );
+        await logAudit(client, req.user.id, 'employee.created', 'user', rows[0].id, {
+          email: rows[0].email,
+          root: true,
+        });
+        return rows[0];
+      });
+    } catch (err) {
+      if (err.code === '23505') {
+        return res.status(422).json({ errors: ['email: already registered'] });
+      }
+      throw err;
+    }
+    if (created === 'bad_level') {
+      return res.status(422).json({ errors: [`levelId: no level ${levelId}`] });
+    }
+    res.status(201).json({ id: created.id, name: created.name, email: created.email });
   } catch (err) {
     next(err);
   }

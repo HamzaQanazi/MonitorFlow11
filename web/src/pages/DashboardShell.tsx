@@ -17,6 +17,7 @@ const oversightNav = [
 const adminNav = [
   { to: '/services', labelKey: 'nav_services', end: false },
   { to: '/org', labelKey: 'nav_org', end: false },
+  { to: '/levels', labelKey: 'nav_levels', end: false },
   { to: '/audit', labelKey: 'nav_audit', end: false },
   { to: '/webhooks', labelKey: 'nav_webhooks', end: false },
 ]

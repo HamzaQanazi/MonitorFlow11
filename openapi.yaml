@@ -245,11 +245,184 @@ paths:
                         managerId: { type: integer, nullable: true }
                         isActive: { type: boolean }
                         departmentName: { $ref: '#/components/schemas/LocalizedText' }
+                        levelId: { type: integer, nullable: true }
                         levelName: { $ref: '#/components/schemas/LocalizedText' }
                         capabilities:
                           type: array
                           items: { type: string }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ── Levels & capability grants (admin) — Gate 1 configuration ────────────────
+  # Admin-only, not manage_employees: a manager who could set levels could grant
+  # a subordinate a capability they don't hold themselves. An admin is outside
+  # the reporting tree and holds no capabilities, so granting one gains them
+  # nothing. Reporting lines (manager_id) are deliberately NOT editable — the
+  # subtree CTEs have no cycle detection, so reorg stays a seed-time concern.
+  /config/capabilities:
+    get:
+      tags: [config]
+      summary: The fixed capability catalogue (admin). Lives in code, not data.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  capabilities:
+                    type: array
+                    items: { type: string, enum: [view_all, assign, set_priority, override, manage_employees, export] }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /config/levels:
+    get:
+      tags: [config]
+      summary: >
+        Levels with their grants and holder counts (admin). employeeCount is the
+        blast radius of changing a grant.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  levels:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { $ref: '#/components/schemas/LocalizedText' }
+                        capabilities: { type: array, items: { type: string } }
+                        employeeCount: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [config]
+      summary: Create a level with an initial grant set (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, capabilities]
+              properties:
+                name: { $ref: '#/components/schemas/LocalizedText' }
+                capabilities: { type: array, items: { type: string } }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { type: object, properties: { id: { type: integer } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /config/levels/{id}:
+    patch:
+      tags: [config]
+      summary: >
+        Replace a level's capability grants (admin). Takes effect on the next
+        request for every employee at that level — capabilities are read from
+        the database per request, never carried in the JWT. Unknown capability
+        keys are rejected, not dropped.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [capabilities]
+              properties:
+                capabilities: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  capabilities: { type: array, items: { type: string } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /config/employees/{id}/level:
+    patch:
+      tags: [config]
+      summary: >
+        Put an employee at a level, or null to strip them back to no
+        capabilities (admin). Not on PATCH /employees/{id}: that route is gated
+        by manage_employees, which an admin does not hold.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [levelId]
+              properties:
+                levelId: { type: integer, nullable: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  levelId: { type: integer, nullable: true }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /config/employees:
+    post:
+      tags: [config]
+      summary: >
+        Create a ROOT employee — manager_id NULL (admin). Breaks a bootstrap
+        deadlock: POST /employees requires manage_employees, admins hold no
+        capabilities, and a clean handover seeds only the admin, so otherwise a
+        fresh deployment could never create its first member of staff. Every
+        subsequent hire goes through the capability- and subtree-gated
+        POST /employees.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                phone: { type: string, nullable: true }
+                departmentId: { type: integer, nullable: true }
+                levelId: { type: integer, nullable: true }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  name: { type: string }
+                  email: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
 
   # ── Webhooks (admin) — outbound signed notifications ─────────────────────────
   /config/webhooks:

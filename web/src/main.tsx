@@ -15,6 +15,7 @@ import AuditPage from './pages/AuditPage'
 import WebhooksPage from './pages/WebhooksPage'
 import ServicesPage from './pages/ServicesPage'
 import OrgPage from './pages/OrgPage'
+import LevelsPage from './pages/LevelsPage'
 
 // Two-gate routing: oversight employees and the admin share the shell but not
 // the pages. Each page needs a capability (Gate 1) — or the admin kind for the
@@ -56,6 +57,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="webhooks" element={<Guard need="admin"><WebhooksPage /></Guard>} />
             <Route path="services" element={<Guard need="admin"><ServicesPage /></Guard>} />
             <Route path="org" element={<Guard need="admin"><OrgPage /></Guard>} />
+            <Route path="levels" element={<Guard need="admin"><LevelsPage /></Guard>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

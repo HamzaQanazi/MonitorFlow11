@@ -23,6 +23,9 @@ const ACTIONS = [
   'request.priority_changed',
   'service.created',
   'service.updated',
+  'level.created',
+  'level.updated',
+  'employee.level_changed',
 ]
 
 interface AuditEvent {

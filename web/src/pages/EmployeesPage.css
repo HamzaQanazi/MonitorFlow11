@@ -125,6 +125,12 @@
   margin-bottom: 4px;
 }
 
+/* Levels page section heading. */
+.lvl-h2 {
+  margin: 28px 0 4px;
+  font-size: 18px;
+}
+
 /* Service definition drawer (ServicesPage) — read-only view of the stored
    workflow and form schemas. */
 .linkish {
