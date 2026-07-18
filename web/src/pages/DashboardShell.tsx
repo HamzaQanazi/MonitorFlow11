@@ -13,9 +13,13 @@ const oversightNav = [
   { to: '/employees', labelKey: 'nav_employees', end: false, need: 'manage_employees' },
   { to: '/reports', labelKey: 'nav_reports', end: false, need: 'view_all' },
 ]
-// Admin manages accounts/configuration only. The Services page joins this list
-// once the JSON-import slice lands.
-const adminNav = [{ to: '/audit', labelKey: 'nav_audit', end: false }]
+// Admin manages accounts/configuration only.
+const adminNav = [
+  { to: '/services', labelKey: 'nav_services', end: false },
+  { to: '/org', labelKey: 'nav_org', end: false },
+  { to: '/audit', labelKey: 'nav_audit', end: false },
+  { to: '/webhooks', labelKey: 'nav_webhooks', end: false },
+]
 
 export default function DashboardShell() {
   const { user, logout } = useAuth()

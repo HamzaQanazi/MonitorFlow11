@@ -21,6 +21,8 @@ const ACTIONS = [
   'request.status_changed',
   'request.assigned',
   'request.priority_changed',
+  'service.created',
+  'service.updated',
 ]
 
 interface AuditEvent {
@@ -41,11 +43,12 @@ interface ListResponse {
   total: number
 }
 
-// Action labels are a closed set (all employee.*), translated via t(); an
-// unknown action falls back to its raw key.
+// Action labels are a closed set, translated via t(); an unknown action falls
+// back to its raw key. Keyed on the FULL action — `employee.created` and
+// `service.created` share a verb, so keying on the verb alone showed one of
+// them under the other's label.
 function actionLabel(action: string, t: (k: string) => string) {
-  const what = action.split('.')[1]
-  const key = `audit_act_${what}`
+  const key = `audit_act_${action.replaceAll('.', '_')}`
   const label = t(key)
   return label === key ? action : label
 }

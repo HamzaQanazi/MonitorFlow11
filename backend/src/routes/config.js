@@ -16,6 +16,7 @@ const { validateFieldSchema } = require('../lib/formSchema');
 const { validateWorkflowDefinition } = require('../lib/workflowSchema');
 const { isBilingual } = require('../lib/i18nLabel');
 const { EVENTS } = require('../lib/webhooks');
+const { withTx, logAudit } = require('../lib/audit');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -173,18 +174,91 @@ router.post('/services', async (req, res, next) => {
 router.get('/services', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT st.key, st.name, st.enabled, st.accepts_external_users,
+      // id is returned so the admin UI can read the stored definition back via
+      // the existing GET /services/{id}/workflow and /forms/{formType}.
+      `SELECT st.id, st.key, st.name, st.enabled, st.accepts_external_users,
               d.name AS department_name
        FROM service_type st JOIN department d ON d.id = st.department_id
        ORDER BY st.id`
     );
     res.json({
       services: rows.map((r) => ({
+        id: r.id,
         key: r.key,
         name: r.name,
         departmentName: r.department_name,
         enabled: r.enabled,
         acceptsExternalUsers: r.accepts_external_users,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /config/services/:key — enable/disable a service. There is deliberately
+// NO delete: service_type anchors request / form_definition / workflow_definition,
+// so removing one would orphan or cascade away historical requests and take
+// request_status_history with them (I9 — the audit trail is never deleted).
+// Disabling is the documented way to retire a definition (§3): it drops out of
+// the public catalogue while in-flight requests keep running their workflow.
+router.patch('/services/:key', async (req, res, next) => {
+  try {
+    const { enabled } = req.body || {};
+    if (typeof enabled !== 'boolean') {
+      return res.status(422).json({ errors: ['enabled: required boolean'] });
+    }
+    const updated = await withTx(async (client) => {
+      const { rows } = await client.query(
+        'UPDATE service_type SET enabled = $1 WHERE key = $2 RETURNING id, enabled',
+        [enabled, req.params.key]
+      );
+      if (!rows.length) return null;
+      await logAudit(client, req.user.id, 'service.updated', 'service_type', rows[0].id, {
+        key: req.params.key,
+        enabled,
+      });
+      return rows[0];
+    });
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json({ key: req.params.key, enabled: updated.enabled });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /config/org — the reporting tree plus each employee's capability grant.
+// Two ORTHOGONAL axes, not a role ladder (I2): `managerId` is Gate 2 (subtree
+// scope) and `capabilities` is Gate 1 (what the level grants). Someone deep in
+// the tree may hold view_all; a root employee may hold almost nothing. Returned
+// flat — the client nests it — so this stays one query with no recursion.
+router.get('/org', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.id, u.name, u.manager_id, u.is_active,
+              d.name AS department_name,
+              el.name AS level_name,
+              COALESCE(
+                ARRAY_AGG(lc.capability_key) FILTER (WHERE lc.capability_key IS NOT NULL),
+                '{}'
+              ) AS capabilities
+       FROM users u
+       LEFT JOIN department d ON d.id = u.department_id
+       LEFT JOIN employee_level el ON el.id = u.level_id
+       LEFT JOIN level_capability lc ON lc.level_id = u.level_id
+       WHERE u.role = 'employee'
+       GROUP BY u.id, d.name, el.name
+       ORDER BY u.name`
+    );
+    res.json({
+      employees: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        managerId: r.manager_id,
+        isActive: r.is_active,
+        departmentName: r.department_name,
+        levelName: r.level_name,
+        capabilities: r.capabilities,
       })),
     });
   } catch (err) {

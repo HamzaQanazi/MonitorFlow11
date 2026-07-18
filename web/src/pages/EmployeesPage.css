@@ -124,3 +124,154 @@
   overflow-y: auto;
   margin-bottom: 4px;
 }
+
+/* Service definition drawer (ServicesPage) — read-only view of the stored
+   workflow and form schemas. */
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.svc-def {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.svc-def h5 {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.svc-def-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+}
+
+.svc-def-list li {
+  padding: 5px 0;
+  border-block-end: 1px solid var(--border, #eee);
+}
+
+.svc-def-list code {
+  font-size: 12px;
+  /* Machine keys stay LTR even in an RTL layout. */
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Org tree (OrgPage). Logical properties throughout so the indent and the
+   connector line flip with the document direction (I6). */
+.org-legend {
+  max-width: 70ch;
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.org-tree,
+.org-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.org-children {
+  padding-inline-start: 24px;
+  border-inline-start: 1px solid var(--border, #d8d8d8);
+  margin-inline-start: 12px;
+}
+
+.org-node {
+  margin: 8px 0;
+}
+
+.org-card {
+  display: inline-block;
+  min-width: 240px;
+  padding: 10px 14px;
+  border: 1px solid var(--border, #d8d8d8);
+  border-radius: 8px;
+}
+
+.org-name {
+  margin: 0;
+  font-weight: 600;
+}
+
+.org-inactive {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.org-meta {
+  margin: 2px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.org-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.org-cap {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--chip-bg, #eef1f5);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.org-cap.is-none {
+  background: transparent;
+  border: 1px dashed var(--border, #d8d8d8);
+  color: var(--muted);
+  font-family: inherit;
+  font-style: italic;
+}
+
+/* Service definition paste box (ServicesPage). JSON is always LTR, even in AR. */
+.svc-dialog {
+  max-width: 980px;
+  width: 100%;
+}
+
+.svc-textarea {
+  /* Tall enough to read a whole workflow without scrolling; capped to the
+     viewport so the dialog's buttons never get pushed off-screen. */
+  min-height: min(60vh, 560px);
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+/* Webhook event picker (WebhooksPage) — the only checkbox list in the console. */
+.wh-events {
+  border: 0;
+  padding: 0;
+}
+
+.wh-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 14px;
+}
