@@ -24,11 +24,13 @@
   letter-spacing: -0.01em;
 }
 
-/* Shown instead of the pip when the deployment configures VITE_BRAND_LOGO. */
+/* Shown instead of the pip when the deployment configures VITE_BRAND_LOGO.
+   No plaque: the shipped crest is transparent, so it sits on the dark pane
+   directly. A white-backed mark would need one. */
 .login-logo {
-  block-size: 24px;
+  block-size: 64px;
   inline-size: auto;
-  max-inline-size: 140px;
+  max-inline-size: 180px;
   object-fit: contain;
 }
 
