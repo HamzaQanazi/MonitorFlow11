@@ -6,7 +6,9 @@
 // tests hold for any seeded sector.
 const { test, before, after, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { setup, stopServer, api, apiUrl, login, loginAll, SEED_PASSWORD } = require('../testlib/harness');
+const {
+  setup, stopServer, api, apiUrl, login, loginAll, formPayload, SEED_PASSWORD,
+} = require('../testlib/harness');
 
 let tok;
 let svc;        // a service the resident may submit to
@@ -35,25 +37,9 @@ async function upload(token, filename, bytes, type = 'image/jpeg') {
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
 const EXE = Buffer.from('MZ\x90\x00\x03\x00\x00\x00', 'latin1'); // a real PE header
 
-// The smallest payload that satisfies every required field, so a negative test
-// changes exactly one thing and the 422 can only come from that change.
-function validResponse() {
-  const out = {};
-  for (const f of fields) {
-    if (!f.required) continue;
-    switch (f.type) {
-      case 'number': out[f.id] = f.min ?? 1; break;
-      case 'date': out[f.id] = '2026-07-18'; break;
-      case 'checkbox': out[f.id] = true; break;
-      case 'dropdown':
-      case 'radio': out[f.id] = f.options[0].value; break;
-      case 'location': out[f.id] = { lat: 32.22, lng: 35.26 }; break;
-      case 'photo': out[f.id] = null; break; // filled per-test where it matters
-      default: out[f.id] = 'x'.repeat(Math.max(f.min ?? 1, 1));
-    }
-  }
-  return out;
-}
+// The baseline payload comes from the harness (shared with the workflow
+// suite); each negative below changes exactly one thing in it.
+const validResponse = () => formPayload(fields);
 
 before(async () => {
   await setup('submission');

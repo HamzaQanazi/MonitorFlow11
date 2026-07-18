@@ -9,7 +9,7 @@
 // against any seeded sector, not just this one.
 const { test, before, after, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { setup, stopServer, api, login, loginAll, SEED_PASSWORD } = require('../testlib/harness');
+const { setup, stopServer, api, login, loginAll, submitRequest, SEED_PASSWORD } = require('../testlib/harness');
 
 let tok;
 let requests = [];        // every request, as the org root sees them
@@ -258,6 +258,60 @@ describe('assignment', () => {
 
     const off = await api('PATCH', `/employees/${target}/deactivate`, { token: tok.root });
     assert.equal(off.status, 409, 'reassign first, then deactivate');
+  });
+});
+
+describe('cancel racing assign', () => {
+  test('one wins, the other gets 409 — never both', async () => {
+    // The dangerous interleave: the requester cancels while an overseer is
+    // dispatching the same request. Both paths go through executeTransition,
+    // which locks the REQUEST row first, so the loser re-reads a status its
+    // transition no longer starts from.
+    const staff = await api('GET', '/employees?pageSize=100', { token: tok.root });
+    const assignee = staff.body.employees.find((e) => e.loginIdentifier === '1101');
+
+    // Needs a status offering BOTH a requester-actor transition and an
+    // assign-capability one — otherwise there is no race to lose. A fresh
+    // submission puts the request in a known initial status; the seeded queue
+    // has been moved on by the tests above.
+    let target = null;
+    for (const [serviceTypeId, wf] of Object.entries(workflows)) {
+      const initial = wf.statuses.find((s) => s.is_initial);
+      const here = wf.transitions.filter((t) => t.from === initial.key);
+      const cancel = here.find((t) => t.actor === 'requester');
+      if (cancel && here.some((t) => t.required_capability === 'assign')) {
+        target = { cancel, r: await submitRequest(tok.resident, Number(serviceTypeId)) };
+        break;
+      }
+    }
+    assert.ok(target, 'a seeded workflow is both cancellable and assignable at its start');
+
+    const [cancelled, assigned] = await Promise.all([
+      api('POST', `/requests/${target.r.id}/transitions`, {
+        token: tok.resident,
+        body: { transition_key: target.cancel.key, note: 'race' },
+      }),
+      api('PATCH', `/requests/${target.r.id}/assign`, {
+        token: tok.root,
+        body: { employeeId: assignee.id },
+      }),
+    ]);
+
+    const codes = [cancelled.status, assigned.status];
+    assert.equal(codes.filter((c) => c === 200).length, 1, `exactly one winner, got ${codes}`);
+    assert.equal(codes.filter((c) => c === 409).length, 1, `the loser must be 409, got ${codes}`);
+
+    // Whoever won, the stored status is one of the two targets and nothing in
+    // between — the row lock left no torn state.
+    const after = await api('GET', `/requests/${target.r.id}`, { token: tok.root });
+    assert.equal(after.status, 200);
+    const reachable = wfOf(target.r)
+      .transitions.filter((t) => t.from === target.r.status.key)
+      .map((t) => t.to);
+    assert.ok(
+      reachable.includes(after.body.request.status.key),
+      'status moved exactly one legal step'
+    );
   });
 });
 

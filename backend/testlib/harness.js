@@ -182,8 +182,47 @@ async function loginAll() {
   return tokens;
 }
 
+// The smallest form_response that satisfies every required field of a stored
+// field_schema. Derived from the schema at runtime — no field id is ever named
+// here, so it works for any seeded sector. A negative test starts from this and
+// changes exactly one thing, so its 422 can only come from that change.
+function formPayload(fields) {
+  const out = {};
+  for (const f of fields) {
+    if (!f.required) continue;
+    switch (f.type) {
+      case 'number': out[f.id] = f.min ?? 1; break;
+      case 'date': out[f.id] = '2026-07-18'; break;
+      case 'checkbox': out[f.id] = true; break;
+      case 'dropdown':
+      case 'radio': out[f.id] = f.options[0].value; break;
+      case 'location': out[f.id] = { lat: 32.22, lng: 35.26 }; break;
+      case 'photo': out[f.id] = null; break; // a test that needs a real one sets it
+      default: out[f.id] = 'x'.repeat(Math.max(f.min ?? 1, 1));
+    }
+  }
+  return out;
+}
+
+// Submit a request as a user and return it. Tests that need a request in a
+// KNOWN starting status make one rather than hunting the seeded queue, whose
+// statuses earlier tests have already moved on.
+async function submitRequest(token, serviceTypeId) {
+  const form = await api('GET', `/services/${serviceTypeId}/forms/request`, { token });
+  if (form.status !== 200) throw new Error(`form ${serviceTypeId}: ${form.status}`);
+  const res = await api('POST', '/requests', {
+    token,
+    body: { serviceTypeId, formResponse: formPayload(form.body.fields) },
+  });
+  if (res.status !== 201) throw new Error(`submit ${serviceTypeId}: ${res.status}`);
+  return res.body.request;
+}
+
 // BASE is rebound by useSuite() during setup(), so it can only be read through
 // a function — a destructured copy taken at require time is the stale default.
 const apiUrl = (pathname) => `${BASE}${pathname}`;
 
-module.exports = { setup, stopServer, api, apiUrl, login, loginAll, WHO, SEED_PASSWORD, testDbUrl };
+module.exports = {
+  setup, stopServer, api, apiUrl, login, loginAll, WHO, SEED_PASSWORD, testDbUrl,
+  formPayload, submitRequest,
+};
