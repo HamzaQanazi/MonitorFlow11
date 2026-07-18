@@ -265,6 +265,7 @@ const dict: Record<string, Loc> = {
   },
   emp_loosen_p: { en: 'Loosen or clear the filters to see more.', ar: 'خفّف عوامل التصفية أو امسحها لعرض المزيد.' },
   col_name: { en: 'Name', ar: 'الاسم' },
+  col_login: { en: 'Employee no.', ar: 'الرقم الوظيفي' },
   col_email: { en: 'Email', ar: 'البريد الإلكتروني' },
   col_department: { en: 'Department', ar: 'الدائرة' },
   col_actions: { en: 'Actions', ar: 'الإجراءات' },

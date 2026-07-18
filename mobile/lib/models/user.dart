@@ -7,7 +7,7 @@ class AppUser {
   final String role; // 'user' | 'employee' | 'admin'
   final String? phone;
   final int? departmentId;
-  // What this account logs in with: an email (users) or an EMP-xxxx id.
+  // What this account logs in with: an email (users) or a 4-digit number.
   final String loginIdentifier;
 
   const AppUser({

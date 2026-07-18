@@ -8,6 +8,7 @@ const { validateFieldSchema } = require('./lib/formSchema');
 const { validateWorkflowDefinition } = require('./lib/workflowSchema');
 const { validateFormResponse } = require('./lib/validateFormResponse');
 const { CAPABILITIES } = require('./lib/capabilities');
+const { allocateEmployeeNumber } = require('./lib/employeeNumber');
 // Departments + services live in company-config.js — the one file edited per
 // deployment (Section 15: config only ever enters via the seed path).
 const { services } = require('./company-config');
@@ -69,8 +70,11 @@ const adminAccount = {
 // Order matters: a manager must be inserted before its reports (manager_id FK).
 // The City Manager is the root (no manager) and sees every request; each
 // department head reports to her and owns that department's services; the field
-// staff report to their head. Heads log in by email (web dashboard), field
-// staff by EMP-id (mobile app).
+// staff report to their head.
+//
+// `login` is a fixture key only — the demo requests below reference their
+// assignee by it. Every employee's REAL sign-in handle is a 4-digit number
+// allocated at insert time (lib/employeeNumber.js); the seed prints it.
 const demoAccounts = [
   { name: 'Maya Manager', login: 'manager@city.gov', email: 'manager@city.gov',
     role: 'employee', department: null, level: 'Manager' },
@@ -81,13 +85,13 @@ const demoAccounts = [
   { name: 'Peter Permits', login: 'permits@city.gov', email: 'permits@city.gov',
     role: 'employee', department: 'Licensing', level: 'Manager', manager: 'manager@city.gov' },
   // Two Public Works crew so reassignment can be exercised and demoed.
-  { name: 'Ziad Field', login: 'EMP-2001', email: null, role: 'employee', department: 'Public Works',
+  { name: 'Ziad Field', login: 'ziad', email: null, role: 'employee', department: 'Public Works',
     level: 'Field Officer', manager: 'roads@city.gov', phone: '+970 59 200 2001' },
-  { name: 'Zaid Field', login: 'EMP-2002', email: null, role: 'employee', department: 'Public Works',
+  { name: 'Zaid Field', login: 'zaid', email: null, role: 'employee', department: 'Public Works',
     level: 'Field Officer', manager: 'roads@city.gov', phone: '+970 59 200 2002' },
-  { name: 'Sami Collector', login: 'EMP-2003', email: null, role: 'employee', department: 'Sanitation',
+  { name: 'Sami Collector', login: 'sami', email: null, role: 'employee', department: 'Sanitation',
     level: 'Field Officer', manager: 'waste@city.gov', phone: '+970 59 200 2003' },
-  { name: 'Lina Inspector', login: 'EMP-2004', email: null, role: 'employee', department: 'Licensing',
+  { name: 'Lina Inspector', login: 'lina', email: null, role: 'employee', department: 'Licensing',
     level: 'Field Officer', manager: 'permits@city.gov', phone: '+970 59 200 2004' },
   { name: 'Rania Resident', login: 'resident@city.gov', email: 'resident@city.gov',
     role: 'user', department: null, phone: '+970 59 100 3000' },
@@ -127,9 +131,9 @@ const demoRequests = [
   // --- Public Works: Pothole (svc 0) ---
   { svc: 0, priority: 'high', daysAgo: 0, path: walkTo(DISPATCH_WALK, 'reported'),
     form: potholeForm('severe', 'Rafidia Street', 'Deep pothole across the right lane near the pharmacy.', { lat: 32.2222, lng: 35.2450 }, true) },
-  { svc: 0, priority: 'medium', daysAgo: 3, path: walkTo(DISPATCH_WALK, 'assigned'), employee: 'EMP-2001',
+  { svc: 0, priority: 'medium', daysAgo: 3, path: walkTo(DISPATCH_WALK, 'assigned'), employee: 'ziad',
     form: potholeForm('moderate', 'Faisal Street', 'Cracked asphalt forming a shallow hole.', { lat: 32.2205, lng: 35.2600 }) },
-  { svc: 0, priority: 'high', daysAgo: 5, path: walkTo(DISPATCH_WALK, 'in_progress'), employee: 'EMP-2002',
+  { svc: 0, priority: 'high', daysAgo: 5, path: walkTo(DISPATCH_WALK, 'in_progress'), employee: 'zaid',
     form: potholeForm('severe', 'Old City junction', 'Sinkhole widening after the rains.', { lat: 32.2211, lng: 35.2620 }, true) },
   { svc: 0, priority: 'low', daysAgo: 6, path: ['reported', 'cancelled'],
     form: potholeForm('minor', 'Tunis Street', 'Small dip, reported twice by mistake.', { lat: 32.2180, lng: 35.2555 }) },
@@ -137,45 +141,45 @@ const demoRequests = [
   // --- Public Works: Streetlight (svc 1) ---
   { svc: 1, priority: 'low', daysAgo: 1, path: walkTo(DISPATCH_WALK, 'reported'),
     form: lightForm('off', 'Two poles dark in front of the school.', { lat: 32.2300, lng: 35.2480 }, 'PL-114') },
-  { svc: 1, priority: 'medium', daysAgo: 4, path: walkTo(DISPATCH_WALK, 'accepted'), employee: 'EMP-2001',
+  { svc: 1, priority: 'medium', daysAgo: 4, path: walkTo(DISPATCH_WALK, 'accepted'), employee: 'ziad',
     form: lightForm('flickering', 'Flickers all night.', { lat: 32.2255, lng: 35.2705 }) },
-  { svc: 1, priority: 'low', daysAgo: 9, path: [...walkTo(DISPATCH_WALK, 'in_progress'), 'awaiting_materials'], employee: 'EMP-2002',
+  { svc: 1, priority: 'low', daysAgo: 9, path: [...walkTo(DISPATCH_WALK, 'in_progress'), 'awaiting_materials'], employee: 'zaid',
     form: lightForm('damaged', 'Pole leaning after a car hit it; fixture cracked.', { lat: 32.2150, lng: 35.2790 }, 'PL-207') },
 
   // --- Public Works: Water leak (svc 2) ---
-  { svc: 2, priority: 'high', daysAgo: 0, path: walkTo(DISPATCH_WALK, 'en_route'), employee: 'EMP-2001',
+  { svc: 2, priority: 'high', daysAgo: 0, path: walkTo(DISPATCH_WALK, 'en_route'), employee: 'ziad',
     form: leakForm('burst', 'Main burst flooding the street, water rising fast.', { lat: 32.2410, lng: 35.2360 }) },
-  { svc: 2, priority: 'medium', daysAgo: 8, path: walkTo(DISPATCH_WALK, 'completed'), employee: 'EMP-2002',
+  { svc: 2, priority: 'medium', daysAgo: 8, path: walkTo(DISPATCH_WALK, 'completed'), employee: 'zaid',
     form: leakForm('moderate', 'Steady leak from a valve box on the sidewalk.', { lat: 32.2088, lng: 35.2465 }),
     completion: { work_performed: 'Replaced the corroded valve and resealed the box.', materials_used: 'Gate valve, sealant' } },
-  { svc: 2, priority: 'low', daysAgo: 15, path: walkTo(DISPATCH_WALK, 'confirmed'), employee: 'EMP-2001',
+  { svc: 2, priority: 'low', daysAgo: 15, path: walkTo(DISPATCH_WALK, 'confirmed'), employee: 'ziad',
     form: leakForm('minor', 'Slow drip at a hydrant base.', { lat: 32.2550, lng: 35.2630 }),
     completion: { work_performed: 'Tightened the hydrant flange and tested pressure.', materials_used: 'None' } },
 
   // --- Sanitation: Bulky waste (svc 3) ---
   { svc: 3, priority: 'low', daysAgo: 0, path: walkTo(PICKUP_WALK, 'requested'),
     form: bulkyForm('furniture', 3, '2026-07-20', '12 Amman Street, Apt 4', { lat: 32.2121, lng: 35.2698 }, 'Two sofas and a table.') },
-  { svc: 3, priority: 'medium', daysAgo: 3, path: walkTo(PICKUP_WALK, 'scheduled'), employee: 'EMP-2003',
+  { svc: 3, priority: 'medium', daysAgo: 3, path: walkTo(PICKUP_WALK, 'scheduled'), employee: 'sami',
     form: bulkyForm('appliance', 1, '2026-07-19', '9 Cedar Lane', { lat: 32.2460, lng: 35.1952 }) },
-  { svc: 3, priority: 'low', daysAgo: 7, path: walkTo(PICKUP_WALK, 'completed'), employee: 'EMP-2003',
+  { svc: 3, priority: 'low', daysAgo: 7, path: walkTo(PICKUP_WALK, 'completed'), employee: 'sami',
     form: bulkyForm('garden_waste', 5, '2026-07-12', '31 Harbor Road', { lat: 32.1758, lng: 35.2810 }, 'Branches by the gate.'),
     completion: { items_collected: 5, notes: 'All bags and branches removed.' } },
   { svc: 3, priority: 'low', daysAgo: 20, path: ['requested', 'cancelled'],
     form: bulkyForm('other', 2, '2026-06-30', '3 Fig Tree Lane', { lat: 32.1695, lng: 35.2545 }) },
 
   // --- Sanitation: Missed collection (svc 4) ---
-  { svc: 4, priority: 'medium', daysAgo: 1, path: walkTo(PICKUP_WALK, 'accepted'), employee: 'EMP-2003',
+  { svc: 4, priority: 'medium', daysAgo: 1, path: walkTo(PICKUP_WALK, 'accepted'), employee: 'sami',
     form: missedForm('household', '2026-07-15', '22 Palm Avenue', 'Bin left out, not collected.') },
-  { svc: 4, priority: 'low', daysAgo: 12, path: walkTo(PICKUP_WALK, 'confirmed'), employee: 'EMP-2003',
+  { svc: 4, priority: 'low', daysAgo: 12, path: walkTo(PICKUP_WALK, 'confirmed'), employee: 'sami',
     form: missedForm('recycling', '2026-07-04', '7 Birch Close'),
     completion: { resolution: 'Recycling collected same day and route note updated.' } },
 
   // --- Licensing: Building permit (svc 5) ---
   { svc: 5, priority: 'medium', daysAgo: 2, path: walkTo(APPROVAL_WALK, 'under_review'),
     form: permitForm('renovation', '5 Almond Court', 180, 'Interior renovation of a ground-floor shop into a cafe.') },
-  { svc: 5, priority: 'high', daysAgo: 6, path: walkTo(APPROVAL_WALK, 'assigned'), employee: 'EMP-2004',
+  { svc: 5, priority: 'high', daysAgo: 6, path: walkTo(APPROVAL_WALK, 'assigned'), employee: 'lina',
     form: permitForm('new_construction', 'North Ring Road, plot 42', 650, 'New two-storey retail building with basement parking.') },
-  { svc: 5, priority: 'medium', daysAgo: 10, path: walkTo(APPROVAL_WALK, 'confirmed'), employee: 'EMP-2004',
+  { svc: 5, priority: 'medium', daysAgo: 10, path: walkTo(APPROVAL_WALK, 'confirmed'), employee: 'lina',
     form: permitForm('extension', '18 Maple Walk', 95, 'Rear kitchen extension for a residence.'),
     completion: { permit_number: 'BP-2026-0142', conditions: 'Setback of 2m from the rear boundary.' } },
   { svc: 5, priority: 'low', daysAgo: 8, path: ['submitted', 'under_review', 'rejected'],
@@ -184,7 +188,7 @@ const demoRequests = [
   // --- Licensing: Business license (svc 6) ---
   { svc: 6, priority: 'low', daysAgo: 4, path: walkTo(APPROVAL_WALK, 'approved'),
     form: licenseForm('Olive Grove Cafe', 'food', '9-1122334', '14 Rafidia Street', 'Small cafe, 20 seats.') },
-  { svc: 6, priority: 'medium', daysAgo: 14, path: walkTo(APPROVAL_WALK, 'completed'), employee: 'EMP-2004',
+  { svc: 6, priority: 'medium', daysAgo: 14, path: walkTo(APPROVAL_WALK, 'completed'), employee: 'lina',
     form: licenseForm('Cedar Hardware', 'retail', '9-5566778', '2 Faisal Street'),
     completion: { license_number: 'BL-2026-0311', valid_until: '2027-07-01' } },
   { svc: 6, priority: 'low', daysAgo: 18, path: ['submitted', 'cancelled'],
@@ -329,17 +333,24 @@ async function seed() {
     const adminPasswordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
     const accountIds = {};
     for (const acc of [adminAccount, ...(SEED_DEMO_DATA ? demoAccounts : [])]) {
+      const departmentId = acc.department ? departmentIds[acc.department] : null;
+      // Employees sign in with an allocated 4-digit number; the admin and the
+      // external resident keep their email. Allocated rather than hardcoded so
+      // the fixtures stay correct whatever ids the departments end up with.
+      const loginIdentifier = acc.role === 'employee'
+        ? await allocateEmployeeNumber(client, departmentId)
+        : acc.login;
       const { rows } = await client.query(
         `INSERT INTO users (name, email, password_hash, role, department_id, phone,
            login_identifier, manager_id, level_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
         [acc.name, acc.email, acc.role === 'admin' ? adminPasswordHash : passwordHash, acc.role,
-         acc.department ? departmentIds[acc.department] : null, acc.phone || null,
-         acc.login, acc.manager ? accountIds[acc.manager] : null,
+         departmentId, acc.phone || null,
+         loginIdentifier, acc.manager ? accountIds[acc.manager] : null,
          acc.level ? levelIds[acc.level] : null]
       );
       accountIds[acc.login] = rows[0].id;
-      console.log(`seeded ${acc.role} account ${acc.login}`);
+      console.log(`seeded ${acc.role} account ${acc.name} — signs in as ${loginIdentifier}`);
     }
 
     // Demo fixtures (accounts + request queue) only — real handovers stop at

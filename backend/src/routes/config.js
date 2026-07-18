@@ -19,6 +19,7 @@ const { isBilingual } = require('../lib/i18nLabel');
 const { EVENTS } = require('../lib/webhooks');
 const { withTx, logAudit } = require('../lib/audit');
 const { CAPABILITIES } = require('../lib/capabilities');
+const { allocateEmployeeNumber } = require('../lib/employeeNumber');
 
 const router = express.Router();
 router.use(requireAuth, requireRole('admin'));
@@ -571,13 +572,17 @@ router.post('/employees', async (req, res, next) => {
           const lv = await client.query('SELECT 1 FROM employee_level WHERE id = $1', [levelId]);
           if (!lv.rowCount) return 'bad_level';
         }
+        // Like every employee, the bootstrap root signs in with a 4-digit number
+        // from its department's block (no department → the 1000-1099 root block).
+        const loginNumber = await allocateEmployeeNumber(client, departmentId ?? null);
+        if (!loginNumber) return 'block_full';
         const { rows } = await client.query(
           `INSERT INTO users (name, email, password_hash, role, phone, department_id,
                               manager_id, level_id, login_identifier)
-           VALUES ($1, $2, $3, 'employee', $4, $5, NULL, $6, $2)
-           RETURNING id, name, email`,
+           VALUES ($1, $2, $3, 'employee', $4, $5, NULL, $6, $7)
+           RETURNING id, name, email, login_identifier`,
           [name.trim(), email.toLowerCase(), passwordHash, phone || null,
-           departmentId ?? null, levelId ?? null]
+           departmentId ?? null, levelId ?? null, loginNumber]
         );
         await logAudit(client, req.user.id, 'employee.created', 'user', rows[0].id, {
           email: rows[0].email,
@@ -594,7 +599,15 @@ router.post('/employees', async (req, res, next) => {
     if (created === 'bad_level') {
       return res.status(422).json({ errors: [`levelId: no level ${levelId}`] });
     }
-    res.status(201).json({ id: created.id, name: created.name, email: created.email });
+    if (created === 'block_full') {
+      return res.status(409).json({ error: 'This department has no free employee numbers left' });
+    }
+    res.status(201).json({
+      id: created.id,
+      name: created.name,
+      email: created.email,
+      loginIdentifier: created.login_identifier,
+    });
   } catch (err) {
     next(err);
   }

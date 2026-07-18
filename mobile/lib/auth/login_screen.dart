@@ -154,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 : i18n.tr('login_err_id');
                           }
                           // Only registration (users) must be a valid email;
-                          // sign-in also accepts an EMP-xxxx employee id.
+                          // sign-in also accepts a 4-digit employee number.
                           if (_registering &&
                               !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value)) {
                             return i18n.tr('login_err_email_valid');

@@ -200,9 +200,12 @@ surveillance tool. Do not add behavioural tracking, even if asked casually.
   data).
 - Deactivated accounts (`is_active = false`) are rejected at JWT validation, not
   only at login.
-- `login_identifier` is deliberately generic: employees log in with an employee
-  number (`EMP-2001`), users with an email. One column, one lookup, one flow — do
-  not split into two auth paths. Monitor/admin accounts are seed- or admin-
+- `login_identifier` is deliberately generic: employees log in with a 4-digit
+  employee number, users with an email. One column, one lookup, one flow — do
+  not split into two auth paths. The number is `1000 + department_id × 100` plus
+  the lowest free offset, giving each department a block of 100 (no department →
+  `1000–1099`); the server allocates it (`lib/employeeNumber.js`), a client never
+  supplies one, and an exhausted block is a 409. Monitor/admin accounts are seed- or admin-
   created; `POST /auth/register` creates `user` role only.
 
 ---
@@ -251,7 +254,8 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 - **department** — id, name `{en,ar}`.
 - **users** — id, name, email (nullable, unique), password_hash, role
   (`admin`/`employee`/`user`), phone (nullable), department_id (FK, nullable),
-  **login_identifier** (unique — email or `EMP-xxxx`), **manager_id** (self-FK,
+  **login_identifier** (unique — an email, or a 4-digit employee number),
+  **manager_id** (self-FK,
   nullable — the reporting tree), **level_id** (FK → employee_level, nullable),
   is_active (default true), created_at.
 - **capability** — key (PK; the fixed catalogue).

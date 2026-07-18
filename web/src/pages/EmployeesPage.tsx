@@ -16,6 +16,9 @@ interface Employee {
   id: number
   name: string
   email: string
+  // The 4-digit number this employee signs in with — server-allocated, and this
+  // list is the only place it is ever shown.
+  loginIdentifier: string
   phone: string | null
   isActive: boolean
   departmentId: number
@@ -213,6 +216,7 @@ export default function EmployeesPage() {
               <thead>
                 <tr>
                   <th scope="col">{t('col_name')}</th>
+                  <th scope="col">{t('col_login')}</th>
                   <th scope="col">{t('col_email')}</th>
                   <th scope="col">{t('col_department')}</th>
                   <th scope="col">{t('col_avg_resolution')}</th>
@@ -234,6 +238,7 @@ export default function EmployeesPage() {
                         {e.name}
                       </button>
                     </td>
+                    <td className="emp-login">{e.loginIdentifier}</td>
                     <td className="emp-email">{e.email}</td>
                     <td>{L(e.departmentName)}</td>
                     <td>{formatDuration(e.avgResolutionMinutes, t)}</td>
@@ -576,7 +581,8 @@ function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onCl
       >
         <h4>{employee.name}</h4>
         <p className="emp-summary-meta">
-          {employee.email} · {L(employee.departmentName)} ·{' '}
+          <span className="emp-login">{employee.loginIdentifier}</span> · {employee.email} ·{' '}
+          {L(employee.departmentName)} ·{' '}
           <span className={`emp-badge${employee.isActive ? ' is-active' : ' is-inactive'}`}>
             {employee.isActive ? t('emp_active') : t('emp_inactive')}
           </span>

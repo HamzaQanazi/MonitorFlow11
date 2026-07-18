@@ -9,6 +9,7 @@ const { requireAuth, requireCapability } = require('../middleware/auth');
 const { statusOf } = require('../lib/workflowEngine');
 const { subtreeIds } = require('../lib/scope');
 const { withTx, logAudit } = require('../lib/audit');
+const { allocateEmployeeNumber } = require('../lib/employeeNumber');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -20,6 +21,9 @@ function publicEmployee(r) {
     name: r.name,
     email: r.email,
     phone: r.phone,
+    // The 4-digit number this employee signs in with — returned so whoever
+    // created them can hand it over (there is no other way to look it up).
+    loginIdentifier: r.login_identifier,
     isActive: r.is_active,
     departmentId: r.department_id,
     departmentName: r.department_name,
@@ -38,8 +42,8 @@ async function loadEmployee(id, actorId) {
        UNION ALL
        SELECT u.id FROM users u JOIN sub ON u.manager_id = sub.id
      )
-     SELECT u.id, u.name, u.email, u.phone, u.is_active, u.department_id,
-            d.name AS department_name
+     SELECT u.id, u.name, u.email, u.phone, u.login_identifier, u.is_active,
+            u.department_id, d.name AS department_name
      FROM users u
      LEFT JOIN department d ON d.id = u.department_id
      WHERE u.id = $1 AND u.role = 'employee'
@@ -79,7 +83,7 @@ router.get('/', async (req, res, next) => {
     // status is non-final — finality read from the workflow data, no status
     // key in code (same mechanism as the deactivate guard below).
     const { rows } = await pool.query(
-      `SELECT u.id, u.name, u.email, u.phone, u.is_active,
+      `SELECT u.id, u.name, u.email, u.phone, u.login_identifier, u.is_active,
               u.department_id, d.name AS department_name,
               (SELECT COUNT(*)::int
                FROM task t
@@ -127,6 +131,7 @@ router.get('/', async (req, res, next) => {
         name: r.name,
         email: r.email,
         phone: r.phone,
+        loginIdentifier: r.login_identifier,
         isActive: r.is_active,
         departmentId: r.department_id,
         departmentName: r.department_name,
@@ -161,14 +166,17 @@ router.post('/', async (req, res, next) => {
     try {
       // Gate 2: a new employee becomes a direct report of the creating oversight
       // actor (manager_id = actor) so it lands inside their subtree, and
-      // inherits the actor's department. login_identifier is the email here
-      // (seeded field techs get EMP-xxxx ids instead).
+      // inherits the actor's department. They log in with a 4-digit number from
+      // that department's block, not with the email.
       inserted = await withTx(async (tx) => {
+        const loginNumber = await allocateEmployeeNumber(tx, req.user.department_id);
+        if (!loginNumber) return 'block_full';
         const { rows } = await tx.query(
           `INSERT INTO users (name, email, password_hash, role, phone, department_id, manager_id, login_identifier)
-           VALUES ($1, $2, $3, 'employee', $4, $5, $6, $2)
+           VALUES ($1, $2, $3, 'employee', $4, $5, $6, $7)
            RETURNING id, name, email, phone, is_active, department_id`,
-          [name.trim(), email.toLowerCase(), password_hash, phone || null, req.user.department_id, req.user.id]
+          [name.trim(), email.toLowerCase(), password_hash, phone || null,
+           req.user.department_id, req.user.id, loginNumber]
         );
         await logAudit(tx, req.user.id, 'employee.created', 'user', rows[0].id, { email: rows[0].email });
         return rows[0];
@@ -176,6 +184,9 @@ router.post('/', async (req, res, next) => {
     } catch (err) {
       if (err.code === '23505') return res.status(422).json({ errors: { email: 'Email is already registered' } });
       throw err;
+    }
+    if (inserted === 'block_full') {
+      return res.status(409).json({ error: 'This department has no free employee numbers left' });
     }
     const created = await loadEmployee(inserted.id, req.user.id);
     res.status(201).json({ employee: publicEmployee(created) });

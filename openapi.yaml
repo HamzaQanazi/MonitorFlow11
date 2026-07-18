@@ -96,7 +96,7 @@ paths:
               type: object
               required: [login_identifier, password]
               properties:
-                login_identifier: { type: string, example: "EMP-4471" }
+                login_identifier: { type: string, example: "1101", description: "An employee's 4-digit number, or an external user's email." }
                 password: { type: string, format: password }
       responses:
         '200':
@@ -699,20 +699,23 @@ paths:
   /employees:
     post:
       tags: [people]
-      summary: Create an employee (admin). Sets login_identifier, level, and manager_id.
+      summary: >
+        Create an employee. login_identifier is NOT supplied by the client — the
+        server allocates the lowest free 4-digit number in the new employee's
+        department block (1000 + department * 100, 100 per department) and returns
+        it, since that is the only place the number is ever shown.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [login_identifier, name, level_id, manager_id]
+              required: [name, email, password]
               properties:
-                login_identifier: { type: string, example: "EMP-4471" }
                 name: { type: string }
-                level_id: { type: integer }
-                manager_id: { type: integer, nullable: true, description: "null = root of the tree" }
-                initial_password: { type: string, format: password }
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+                phone: { type: string, nullable: true }
       responses:
         '201':
           description: Created
@@ -720,6 +723,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Account' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: The department's block of 100 employee numbers is exhausted }
 
   # ── Notifications ────────────────────────────────────────────────────────────
   /notifications:

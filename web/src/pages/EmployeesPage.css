@@ -6,6 +6,15 @@
   height: 36px;
 }
 
+/* The sign-in number. Always Latin digits and always LTR, even in Arabic — it is
+   a machine handle the employee types verbatim, not localised text. */
+.emp-login {
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  text-align: start;
+  unicode-bidi: isolate;
+}
+
 .emp-email {
   color: var(--muted);
   overflow-wrap: anywhere;

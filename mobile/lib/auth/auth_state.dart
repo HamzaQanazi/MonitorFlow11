@@ -47,7 +47,7 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// `identifier` is an email (users) or an EMP-xxxx id (field employees).
+  /// `identifier` is an email (users) or a 4-digit number (field employees).
   Future<void> login(String identifier, String password) async {
     final json =
         await api.post('/auth/login', body: {'identifier': identifier, 'password': password});

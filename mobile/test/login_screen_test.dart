@@ -23,7 +23,7 @@ Widget wrap() => MultiProvider(
 void main() {
   testWidgets('sign-in mode shows identifier + password only', (tester) async {
     await tester.pumpWidget(wrap());
-    // Two-gate login: sign-in accepts an email OR an EMP-xxxx employee id.
+    // Two-gate login: sign-in accepts an email OR a 4-digit employee number.
     expect(find.text('Email or employee ID'), findsOneWidget);
     expect(find.text('Password'), findsOneWidget);
     expect(find.text('Full name'), findsNothing);

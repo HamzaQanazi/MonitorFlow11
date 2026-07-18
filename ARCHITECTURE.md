@@ -353,7 +353,9 @@ hardcoded.
 `login_identifier` is a single unique column holding whichever identifier suits
 the account:
 
-- employees → an employee number (`EMP-4471`)
+- employees → a 4-digit employee number (`1101`), allocated by the server from
+  the employee's department block (`1000 + department_id × 100`, 100 per
+  department; no department → `1000–1099`)
 - users → an email (`citizen@example.com`)
 
 **Why not require email for everyone?** Many field and maintenance staff genuinely
