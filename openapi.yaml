@@ -375,6 +375,47 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: Level still held by employees }
 
+  /config/employees/{id}/activate:
+    patch:
+      tags: [config]
+      summary: >
+        Reactivate an employee (admin). Companion to the deactivate route below.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { id: { type: integer }, isActive: { type: boolean } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /config/employees/{id}/deactivate:
+    patch:
+      tags: [config]
+      summary: >
+        Deactivate an employee (admin). Exists because a ROOT employee has
+        manager_id NULL and so sits in nobody's subtree: every oversight actor
+        gets 404 from PATCH /employees/{id}/deactivate and the admin gets 403
+        there (no capabilities), leaving such an account impossible to disable.
+        Same open-tasks 409 guard as the capability-gated route.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { id: { type: integer }, isActive: { type: boolean } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Employee still holds open tasks }
+
   /config/employees/{id}/level:
     patch:
       tags: [config]

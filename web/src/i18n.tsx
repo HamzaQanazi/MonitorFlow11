@@ -377,6 +377,17 @@ const dict: Record<string, Loc> = {
   org_no_caps: { en: 'no capabilities', ar: 'بلا صلاحيات' },
   org_no_level: { en: 'no level', ar: 'بلا مستوى' },
   org_inactive: { en: 'deactivated', ar: 'معطّل' },
+  org_deactivate: { en: 'Deactivate', ar: 'إلغاء التفعيل' },
+  org_activate: { en: 'Reactivate', ar: 'إعادة التفعيل' },
+  org_deactivate_q: { en: 'Deactivate this account?', ar: 'إلغاء تفعيل هذا الحساب؟' },
+  org_deactivate_warn: {
+    en: 'They can no longer sign in, and their existing token stops working immediately. Their requests and history are kept. You can reactivate them later.',
+    ar: 'لن يتمكن من تسجيل الدخول، ويتوقف رمزه الحالي فورًا. تُحفظ طلباته وسجله. يمكنك إعادة تفعيله لاحقًا.',
+  },
+  org_open_tasks: {
+    en: 'This employee still holds open tasks — reassign them first.',
+    ar: 'لا يزال هذا الموظف يحمل مهامًا مفتوحة — أعد إسنادها أولًا.',
+  },
   org_load_err: { en: 'Couldn’t load the organisation:', ar: 'تعذّر تحميل الهيكل التنظيمي:' },
   org_loading: { en: 'Loading organisation…', ar: 'جارٍ تحميل الهيكل التنظيمي…' },
   org_none_h: { en: 'No employees yet', ar: 'لا موظفين بعد' },

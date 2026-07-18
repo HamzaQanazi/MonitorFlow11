@@ -600,6 +600,76 @@ router.post('/employees', async (req, res, next) => {
   }
 });
 
+// PATCH /config/employees/:id/activate | /deactivate — account lifecycle for
+// employees the reporting tree can't reach.
+//
+// The mirror of the root-creation deadlock above: a ROOT employee has
+// manager_id NULL, so it is in nobody's subtree — every oversight actor gets
+// 404 (Gate 2 doing its job) and the admin gets 403 (no capabilities). Nobody
+// could disable one, including the root itself (a manager may never edit their
+// own record). If a company's root employee left, the account stayed live.
+//
+// Scoped to any employee rather than roots only: "admin manages accounts and
+// configuration" is a simpler rule than "admin manages accounts the tree can't
+// reach", and a special case here would be one more thing to get wrong. The
+// open-tasks 409 from the capability-gated route applies identically — an
+// account holding live work is never silently disabled.
+async function hasOpenTasks(employeeId) {
+  const { rows } = await pool.query(
+    `SELECT 1
+     FROM task t
+     JOIN request r ON r.id = t.request_id
+     JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+     CROSS JOIN LATERAL jsonb_array_elements(w.statuses) s
+     WHERE t.employee_id = $1
+       AND s->>'key' = t.status
+       AND (s->>'is_terminal')::boolean = FALSE
+     LIMIT 1`,
+    [employeeId]
+  );
+  return rows.length > 0;
+}
+
+async function setEmployeeActive(req, res, next, isActive) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+
+    const { rows } = await pool.query(
+      `SELECT id FROM users WHERE id = $1 AND role = 'employee'`,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+
+    if (!isActive && (await hasOpenTasks(id))) {
+      return res
+        .status(409)
+        .json({ error: 'Employee has open tasks — reassign them before deactivating' });
+    }
+
+    await withTx(async (client) => {
+      await client.query('UPDATE users SET is_active = $1 WHERE id = $2', [isActive, id]);
+      await logAudit(
+        client,
+        req.user.id,
+        isActive ? 'employee.activated' : 'employee.deactivated',
+        'user',
+        id
+      );
+    });
+    res.json({ id, isActive });
+  } catch (err) {
+    next(err);
+  }
+}
+
+router.patch('/employees/:id/activate', (req, res, next) =>
+  setEmployeeActive(req, res, next, true)
+);
+router.patch('/employees/:id/deactivate', (req, res, next) =>
+  setEmployeeActive(req, res, next, false)
+);
+
 // ── Webhook subscriptions (admin CRUD) ──────────────────────────────────────
 router.post('/webhooks', async (req, res, next) => {
   try {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiFetch } from '../lib/api'
+import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
 import './RequestsPage.css'
 import './EmployeesPage.css'
@@ -41,7 +41,19 @@ function childrenOf(all: OrgNode[], parentId: number | null) {
   )
 }
 
-function Node({ node, all }: { node: OrgNode; all: OrgNode[] }) {
+function Node({
+  node,
+  all,
+  onDeactivate,
+  onActivate,
+  busyId,
+}: {
+  node: OrgNode
+  all: OrgNode[]
+  onDeactivate: (n: OrgNode) => void
+  onActivate: (n: OrgNode) => void
+  busyId: number | null
+}) {
   const { t, L } = useI18n()
   const kids = childrenOf(all, node.id)
   return (
@@ -66,11 +78,28 @@ function Node({ node, all }: { node: OrgNode; all: OrgNode[] }) {
             ))
           )}
         </p>
+        {/* Admin-side lifecycle: a root employee sits in nobody's subtree, so
+            the capability-gated route can't reach it (404). This can. */}
+        <button
+          type="button"
+          className={node.isActive ? 'action-btn is-danger' : 'action-btn'}
+          disabled={busyId === node.id}
+          onClick={() => (node.isActive ? onDeactivate(node) : onActivate(node))}
+        >
+          {node.isActive ? t('org_deactivate') : t('org_activate')}
+        </button>
       </div>
       {kids.length > 0 && (
         <ul className="org-children">
           {kids.map((k) => (
-            <Node key={k.id} node={k} all={all} />
+            <Node
+              key={k.id}
+              node={k}
+              all={all}
+              onDeactivate={onDeactivate}
+              onActivate={onActivate}
+              busyId={busyId}
+            />
           ))}
         </ul>
       )}
@@ -82,6 +111,8 @@ export default function OrgPage() {
   const { t } = useI18n()
   const [nodes, setNodes] = useState<OrgNode[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState<OrgNode | null>(null)
+  const [busyId, setBusyId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     const res = await apiFetch<{ employees: OrgNode[] }>('/config/org')
@@ -95,6 +126,26 @@ export default function OrgPage() {
   }, [load])
 
   const roots = nodes ? childrenOf(nodes, null) : []
+
+  async function setActive(node: OrgNode, isActive: boolean) {
+    setBusyId(node.id)
+    setError(null)
+    try {
+      await apiFetch(`/config/employees/${node.id}/${isActive ? 'activate' : 'deactivate'}`, {
+        method: 'PATCH',
+      })
+      await load()
+    } catch (err) {
+      // 409 = still holds live work; say what to do rather than echo the server.
+      setError(
+        err instanceof ApiError && err.status === 409
+          ? t('org_open_tasks')
+          : (err as Error).message,
+      )
+    } finally {
+      setBusyId(null)
+    }
+  }
 
   return (
     <div className="req">
@@ -136,10 +187,43 @@ export default function OrgPage() {
           <p className="org-legend">{t('org_legend')}</p>
           <ul className="org-tree">
             {roots.map((r) => (
-              <Node key={r.id} node={r} all={nodes} />
+              <Node
+                key={r.id}
+                node={r}
+                all={nodes}
+                busyId={busyId}
+                onDeactivate={setConfirming}
+                onActivate={(n) => void setActive(n, true)}
+              />
             ))}
           </ul>
         </>
+      )}
+
+      {confirming && (
+        <div className="dialog-backdrop" onClick={() => setConfirming(null)}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <h4>{t('org_deactivate_q')}</h4>
+            <p className="req-status-msg">{confirming.name}</p>
+            <p className="req-status-msg">{t('org_deactivate_warn')}</p>
+            <div className="dialog-actions">
+              <button type="button" className="detail-close-text" onClick={() => setConfirming(null)}>
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                className="req-retry is-danger"
+                onClick={() => {
+                  const n = confirming
+                  setConfirming(null)
+                  void setActive(n, false)
+                }}
+              >
+                {t('org_deactivate')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
