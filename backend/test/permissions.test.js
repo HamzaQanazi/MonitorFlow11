@@ -22,7 +22,7 @@ let ziadId;           // a Field Officer inside Rami's subtree
 let samiId;           // a Field Officer OUTSIDE Rami's subtree
 
 before(async () => {
-  await setup();
+  await setup('permissions');
   tok = await loginAll();
 
   const services = await api('GET', '/config/services', { token: tok.admin });
@@ -87,7 +87,7 @@ describe('Gate 1 — capability', () => {
 
     const override = await api('PATCH', `/requests/${worksRequestId}/status`, {
       token: tok.worksField,
-      body: { status: 'cancelled', note: 'test' },
+      body: { to: 'any_status', note: 'test' },
     });
     assert.equal(override.status, 403, 'override requires the override capability');
   });

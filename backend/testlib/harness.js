@@ -13,10 +13,24 @@ const { spawn } = require('child_process');
 const { Client } = require('pg');
 const path = require('path');
 
-const TEST_DB = 'monitorflow_test';
-const PORT = Number(process.env.TEST_PORT || 3101);
-const BASE = `http://127.0.0.1:${PORT}/api/v1`;
 const BACKEND = path.join(__dirname, '..');
+
+// `node --test` runs test FILES in parallel, so each suite needs its own
+// database and port or two suites would drop each other's data mid-run and
+// fight over the same listener. Both are derived from the suite name passed to
+// setup(), so adding a suite needs no bookkeeping here.
+let TEST_DB = 'monitorflow_test';
+let PORT = Number(process.env.TEST_PORT || 3101);
+let BASE = `http://127.0.0.1:${PORT}/api/v1`;
+
+function useSuite(name) {
+  if (!name) return;
+  TEST_DB = `monitorflow_test_${name}`;
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 100;
+  PORT = 3100 + h;
+  BASE = `http://127.0.0.1:${PORT}/api/v1`;
+}
 
 // The dev DATABASE_URL with the database swapped. Everything else (host, user,
 // password) is reused, so the suite needs no extra configuration.
@@ -106,7 +120,9 @@ function stopServer() {
 }
 
 // One-shot setup for a test file: canonical database + running server.
-async function setup() {
+// `name` isolates this suite's database and port from every other suite.
+async function setup(name) {
+  useSuite(name);
   await resetTestDb();
   await startServer();
 }
