@@ -25,21 +25,11 @@
 }
 
 /* Shown instead of the pip when the deployment configures VITE_BRAND_LOGO. */
-/* Sized for a square crest/emblem rather than a wide wordmark — a detailed mark
-   is unreadable at text height. A wide logo is held back by max-inline-size. */
 .login-logo {
-  block-size: 72px;
+  block-size: 24px;
   inline-size: auto;
-  max-inline-size: 200px;
+  max-inline-size: 140px;
   object-fit: contain;
-  /* This pane is --pane (dark). The supplied crest is white-backed, not
-     transparent, so it would otherwise read as a stray white rectangle here —
-     padding + radius turn that into a deliberate plaque. A transparent logo is
-     unaffected: it simply sits on a white tile, which suits a crest anyway.
-     The shell bar needs none of this; it is already white. */
-  background: #fff;
-  border-radius: 10px;
-  padding: 7px;
 }
 
 .login-pip {

@@ -23,11 +23,8 @@
 
 /* Shown instead of the pip when the deployment configures VITE_BRAND_LOGO.
    Height-constrained so any aspect ratio fits the bar without reflowing it. */
-/* Taller than the wordmark text so a square crest stays legible, but capped so
-   it cannot grow the bar. No plaque here, unlike the login page: this bar sits
-   on --bg (white), so a white-backed mark already blends into it. */
 .shell-logo {
-  block-size: 34px;
+  block-size: 20px;
   inline-size: auto;
   max-inline-size: 120px;
   object-fit: contain;

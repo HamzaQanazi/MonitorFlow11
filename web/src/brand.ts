@@ -28,7 +28,7 @@ export const brand: { name: Loc; logo: string | null } = {
     en: env.VITE_BRAND_NAME_EN || 'Municipality of Nablus',
     ar: env.VITE_BRAND_NAME_AR || 'بلدية نابلس',
   },
-  // Path to a logo under web/public. Set to '' in .env to fall back to the
-  // accent pip instead.
-  logo: env.VITE_BRAND_LOGO ?? '/logo.png',
+  // Path to a logo under web/public, e.g. '/logo.svg'. Unset → the wordmark
+  // renders its accent pip instead, which is the current look.
+  logo: env.VITE_BRAND_LOGO || null,
 }
