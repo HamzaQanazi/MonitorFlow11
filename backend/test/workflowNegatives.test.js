@@ -261,6 +261,49 @@ describe('assignment', () => {
   });
 });
 
+describe('confirming work that has not happened yet', () => {
+  test('the requester cannot confirm a request that is still at the start', async () => {
+    // "Confirm" without naming it: the requester-actor transition that CLOSES
+    // the request (its target is terminal) and does not start at the beginning
+    // — which is what separates it from cancel/withdraw.
+    let target = null;
+    for (const [serviceTypeId, wf] of Object.entries(workflows)) {
+      const initial = wf.statuses.find((s) => s.is_initial);
+      const confirm = wf.transitions.find(
+        (t) =>
+          t.actor === 'requester' &&
+          t.from !== initial.key &&
+          statusOf(wf, t.to)?.is_terminal
+      );
+      if (confirm) {
+        target = { confirm, r: await submitRequest(tok.resident, Number(serviceTypeId)) };
+        break;
+      }
+    }
+    assert.ok(target, 'a seeded workflow ends in a requester confirmation');
+
+    // The fresh request is sitting in the initial status, nowhere near done.
+    const offered = await api('GET', `/requests/${target.r.id}/transitions`, {
+      token: tok.resident,
+    });
+    assert.equal(offered.status, 200);
+    assert.ok(
+      !offered.body.transitions.some((t) => t.key === target.confirm.key),
+      'confirm is not even offered from here'
+    );
+
+    // And firing it anyway is refused by the engine, not just hidden.
+    const res = await api('POST', `/requests/${target.r.id}/transitions`, {
+      token: tok.resident,
+      body: { transition_key: target.confirm.key, note: 'looks done to me' },
+    });
+    assert.equal(res.status, 409, 'confirm before the work is done');
+
+    const after = await api('GET', `/requests/${target.r.id}`, { token: tok.root });
+    assert.equal(after.body.request.status.key, target.r.status.key, 'status did not move');
+  });
+});
+
 describe('cancel racing assign', () => {
   test('one wins, the other gets 409 — never both', async () => {
     // The dangerous interleave: the requester cancels while an overseer is
