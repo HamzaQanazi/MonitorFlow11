@@ -25,6 +25,7 @@ const ACTIONS = [
   'service.updated',
   'level.created',
   'level.updated',
+  'level.deleted',
   'employee.level_changed',
 ]
 

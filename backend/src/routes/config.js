@@ -445,6 +445,53 @@ router.patch('/levels/:id', async (req, res, next) => {
   }
 });
 
+// DELETE /config/levels/:id — remove a level nobody holds.
+//
+// users.level_id and level_capability.level_id are both RESTRICT foreign keys
+// (migration 006), so the database already refuses to delete a level that has
+// holders — but it surfaces as an opaque FK error. The holder check turns that
+// into a 409 that says what to do: move those employees first. Grants are
+// removed in the same transaction, since they'd otherwise block the delete.
+//
+// Audit rows referencing the level survive by design (audit_event has no FK —
+// the trail outlives what it describes, I9); they render as "Level #<id>".
+router.delete('/levels/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+
+    const result = await withTx(async (client) => {
+      const level = await client.query(
+        'SELECT id, name FROM employee_level WHERE id = $1 FOR UPDATE',
+        [id]
+      );
+      if (!level.rowCount) return null;
+      const held = await client.query(
+        `SELECT COUNT(*)::int AS n FROM users WHERE level_id = $1 AND role = 'employee'`,
+        [id]
+      );
+      if (held.rows[0].n > 0) return { conflict: held.rows[0].n };
+
+      await client.query('DELETE FROM level_capability WHERE level_id = $1', [id]);
+      await client.query('DELETE FROM employee_level WHERE id = $1', [id]);
+      await logAudit(client, req.user.id, 'level.deleted', 'employee_level', id, {
+        name: level.rows[0].name.en,
+      });
+      return { deleted: true };
+    });
+
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    if (result.conflict) {
+      return res.status(409).json({
+        error: `${result.conflict} employee(s) still hold this level — move them to another level first`,
+      });
+    }
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /config/employees/:id/level — put an employee at a level (or null to
 // strip them back to no capabilities). This is the only way to grow an
 // oversight tier without re-seeding. Not on PATCH /employees/{id}: that route

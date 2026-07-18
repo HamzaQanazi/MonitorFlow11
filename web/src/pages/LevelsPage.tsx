@@ -40,6 +40,7 @@ export default function LevelsPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [deleting, setDeleting] = useState<Level | null>(null)
 
   const load = useCallback(async () => {
     const [caps, lv, org] = await Promise.all([
@@ -131,6 +132,7 @@ export default function LevelsPage() {
                       <code>{c}</code>
                     </th>
                   ))}
+                  <th scope="col">{t('col_actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -151,6 +153,19 @@ export default function LevelsPage() {
                         </label>
                       </td>
                     ))}
+                    <td>
+                      {/* A level with holders can't be deleted (409); don't
+                          offer the button rather than explain the refusal. */}
+                      <button
+                        type="button"
+                        className="action-btn is-danger"
+                        disabled={busy || lv.employeeCount > 0}
+                        title={lv.employeeCount > 0 ? t('lvl_delete_warn') : undefined}
+                        onClick={() => setDeleting(lv)}
+                      >
+                        {t('lvl_delete')}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -211,6 +226,42 @@ export default function LevelsPage() {
             </table>
           </div>
         </>
+      )}
+
+      {deleting && (
+        <div className="dialog-backdrop" onClick={() => setDeleting(null)}>
+          <div
+            className="dialog"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <h4>{t('lvl_delete_q')}</h4>
+            <p className="req-status-msg">{L(deleting.name)}</p>
+            <p className="req-status-msg">{t('lvl_delete_warn')}</p>
+            <div className="dialog-actions">
+              <button type="button" className="detail-close-text" onClick={() => setDeleting(null)}>
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                className="req-retry is-danger"
+                disabled={busy}
+                onClick={() => {
+                  const id = deleting.id
+                  setDeleting(null)
+                  setBusy(true)
+                  apiFetch(`/config/levels/${id}`, { method: 'DELETE' })
+                    .then(load)
+                    .catch(fail)
+                    .finally(() => setBusy(false))
+                }}
+              >
+                {t('lvl_delete')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {creating && (

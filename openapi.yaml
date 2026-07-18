@@ -361,6 +361,20 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Validation' }
 
+    delete:
+      tags: [config]
+      summary: >
+        Delete a level nobody holds (admin). 409 when employees still hold it —
+        move them first. Grants are removed with it; audit rows referencing the
+        level survive by design and render as "Level #id".
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Level still held by employees }
+
   /config/employees/{id}/level:
     patch:
       tags: [config]
