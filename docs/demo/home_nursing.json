@@ -1,0 +1,87 @@
+{
+  "service": {
+    "key": "home_nursing",
+    "name": { "en": "Home Nursing Visit", "ar": "زيارة تمريض منزلي" },
+    "accepts_external_users": true,
+    "default_priority": "medium",
+    "department": { "name": { "en": "Home Healthcare", "ar": "الرعاية المنزلية" } },
+    "owner": "1100"
+  },
+  "workflow": {
+    "initial_status": "requested",
+    "statuses": [
+      { "key": "requested", "label": { "en": "Requested", "ar": "مطلوب" }, "sla_minutes": 240 },
+      { "key": "scheduled", "label": { "en": "Scheduled", "ar": "مجدول" }, "sla_minutes": 1440 },
+      { "key": "visited", "label": { "en": "Visit Complete", "ar": "اكتملت الزيارة" } },
+      { "key": "confirmed", "label": { "en": "Confirmed", "ar": "مؤكد" }, "is_terminal": true },
+      { "key": "cancelled", "label": { "en": "Cancelled", "ar": "ملغي" }, "is_terminal": true }
+    ],
+    "transitions": [
+      {
+        "key": "schedule",
+        "from": "requested",
+        "to": "scheduled",
+        "label": { "en": "Schedule Visit", "ar": "جدولة الزيارة" },
+        "required_capability": "assign",
+        "notify": ["created_by", "assigned_to"]
+      },
+      {
+        "key": "cancel",
+        "from": "requested",
+        "to": "cancelled",
+        "label": { "en": "Cancel", "ar": "إلغاء" },
+        "actor": "requester"
+      },
+      {
+        "key": "complete",
+        "from": "scheduled",
+        "to": "visited",
+        "label": { "en": "Complete Visit", "ar": "إنهاء الزيارة" },
+        "actor": "assignee",
+        "required_form_key": "completion",
+        "notify": ["created_by"]
+      },
+      {
+        "key": "confirm",
+        "from": "visited",
+        "to": "confirmed",
+        "label": { "en": "Confirm", "ar": "تأكيد" },
+        "actor": "requester"
+      }
+    ]
+  },
+  "forms": {
+    "request": [
+      {
+        "id": "patient_name",
+        "label": { "en": "Patient Name", "ar": "اسم المريض" },
+        "type": "text",
+        "required": true
+      },
+      {
+        "id": "care_type",
+        "label": { "en": "Care Needed", "ar": "نوع الرعاية المطلوبة" },
+        "type": "dropdown",
+        "required": true,
+        "options": [
+          { "value": "wound", "label": { "en": "Wound Care", "ar": "عناية بالجروح" } },
+          { "value": "vitals", "label": { "en": "Vitals Check", "ar": "فحص العلامات الحيوية" } }
+        ]
+      },
+      {
+        "id": "address",
+        "label": { "en": "Visit Address", "ar": "عنوان الزيارة" },
+        "type": "location",
+        "required": true
+      }
+    ],
+    "completion": [
+      {
+        "id": "notes",
+        "label": { "en": "Visit Notes", "ar": "ملاحظات الزيارة" },
+        "type": "multiline",
+        "required": true
+      }
+    ]
+  }
+}
