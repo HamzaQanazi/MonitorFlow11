@@ -12,17 +12,17 @@ Configuration-driven service-request and field-operations platform: two Flutter 
 
 **Feature-complete across all three surfaces.** The Operiva migration (Phases 1–7) is done, and the current model is the one described throughout this file: three account kinds, capability + subtree permissions, `is_terminal` instead of status categories.
 
-Automated checks, last run 2026-07-18:
+Automated checks, last run 2026-07-19:
 
 | Suite | Result |
 |---|---|
-| Backend, unit + API (`cd backend && npm test`) | 77/77 |
+| Backend, unit + API (`cd backend && npm test`) | 98/98 |
 | Flutter widget (`cd mobile && flutter test`) | 22/22 |
 | Web build (`cd web && npm run build`) | green |
 
 **Not done, and required before submission:**
 
-1. **The API suite is started but not finished.** CLAUDE.md §14 calls it the release gate — the permission model *is* the test plan, plus ~20 must-pass negatives. The two-gate matrix and the workflow-engine negatives are now covered (29 tests, see Testing below). What remains is the **dynamic-form negatives through the API** and the **file-upload guards** — unknown field id, out-of-range and invalid-option 422s, `.exe` renamed `.jpg`, uploads over 5 MB, and downloading another user's file. *Why this matters, concretely: on 2026-07-18 a change shipped that made the web console impossible to log into for every employee (`type="email"` rejecting a numeric login). Nothing caught it; it was found by eye during unrelated work.*
+1. **The automated release gate is closed.** Every §14 must-pass negative now has a test (98 backend, 22 Flutter). What remains is human: the web app has no automated coverage, so `docs/WEB_E2E_CHECKLIST.md` is its gate — run it in both languages, on the deployed build, by the student who did not build the page. *Why this matters, concretely: on 2026-07-18 a change shipped that made the web console impossible to log into for every employee (`type="email"` rejecting a numeric login). Nothing caught it; it was found by eye during unrelated work.*
 2. **Not deployed.** No host configuration exists (`render.yaml` / `Procfile` / `Dockerfile` — none). CLAUDE.md §4 asks for one free-tier cloud host; §14 wants manual acceptance run on the deployed build.
 3. **Manual acceptance not recorded.** §14 asks that the core flows be run on every seeded service by the student who did *not* write that layer. No record of that run exists.
 
@@ -175,14 +175,16 @@ Expected clean-handover state: 3 departments, 7 services (14 form definitions + 
 
 ## Testing
 
-- **Backend unit** (`npm test`, `node:test`): form validation, workflow transition resolution, form/workflow schema validation, webhook signing, employee-number allocation. **48/48.**
+- **Backend unit** (`npm test`, `node:test`): form validation, workflow transition resolution, form/workflow schema validation, webhook signing, employee-number allocation. Part of the **98/98** total.
 - **Flutter widget** (`flutter test`): the dynamic renderer (schema → widgets, required blocking, server-error application) and the login screen. **22/22.**
-- **Web:** build + lint only. No component or E2E tests at this scale.
+- **Web:** build + lint only — no component or E2E tests at this scale, so `docs/WEB_E2E_CHECKLIST.md` is the gate instead: a per-page pass/fail list covering the cross-cutting rules (RTL, bilingual, loading/empty/error, 401/403/404) and each page's own actions.
 - **API / permission suite** (`test/permissions.test.js`, harness in `testlib/harness.js`): **14/14, started 2026-07-18.** Runs against a spawned server on a throwaway `monitorflow_test` database — created, migrated and seeded per run, so the dev database is never touched. No new dependency: the server is spawned as a subprocess and driven with built-in `fetch`, which also exercises the real error middleware.
   - **Covered:** unauthenticated and malformed-token 401 · Gate 1 (a Field Officer inside the subtree is refused assign / priority / override / employee management / CSV export, with a positive control proving the endpoint works for a capable level) · Gate 2 (a fully capable head is 404 on another subtree's request for both read and write; each head sees only their own; the org root reaches every subtree; an out-of-subtree assignee is 422 while the same call with an in-subtree assignee is 200) · admins refused on every operational endpoint and the only kind allowed on config · cross-user request 404-not-403, and a fresh user's list scoped to them.
 - **Workflow-engine negatives** (`test/workflowNegatives.test.js`): **15/15, added 2026-07-18.** Every case is derived from the stored `workflow_definition` at runtime — no status key is hardcoded, so the suite works against any seeded sector, not just this one.
   - **Covered:** override to a status not in the workflow 422 · override with no note 422 · override to the status it already holds 409 · override back to the initial status 422 · a transition that exists but not from the current status 409 · unknown transition key · missing transition key 422 · wrong party on an assignee-gated transition · stale `expected_status` 409 · **two concurrent identical fires — exactly one 200 and one 409** · duplicate assign 409 · reassignment to a different employee 200 · deactivating an employee who holds an open task 409 · a terminal request offers no transitions and refuses one fired anyway 409 · a deactivated account's already-issued JWT 401.
-  - **Still to add:** dynamic-form negatives through the API (unknown field id, missing / out-of-range / invalid option, all 422 field-keyed) · `.exe` renamed `.jpg` rejected by magic bytes · upload >5 MB 422 · downloading another user's file 404 · external user submitting to an internal-only service 403 · the cancel-vs-assign race.
+  - Later additions to the same file: the cancel-vs-assign race (one wins, the other 409) and confirm-before-done 409.
+- **Submission, upload and file-access negatives** (`test/submissionNegatives.test.js`): **added 2026-07-19.** Dynamic-form negatives through the API (unknown field id, missing required, out-of-range — all 422 field-keyed, with a positive control) · an employee cannot submit · an internal-only service is hidden from the external catalogue and 403s a user submission · duplicate `service.key` 409 with no second row · `.exe` renamed `.jpg` rejected by magic bytes · upload >5 MB rejected · a genuine JPEG accepted · downloading another user's file 404, and a non-existent id the same 404 so ids cannot be probed · CSV export refused for a field employee and for a user, allowed for a capable head.
+- **Every §14 must-pass negative now has a test.** The automated gate is closed; what remains is manual.
 
   Suites get their own database and port (derived from the name passed to `setup()`), because `node --test` runs test files in parallel and they would otherwise drop each other's data mid-run.
 - **Manual acceptance: not recorded.** §14 asks for the core flows on every seeded service, on the deployed build, run by the student who did not write that layer.
