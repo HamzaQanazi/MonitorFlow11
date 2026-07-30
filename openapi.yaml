@@ -41,16 +41,17 @@ openapi: 3.0.3
 #     status nudges the requester. Service-level escalate_* columns dropped.
 #   • notification `message` is bilingual {en, ar}.
 #
-# PHASE 7 SHIPPED (2026-07-17) — config API + signed webhooks + external users:
-#   • POST/GET /config/services onboard/list a sector as JSON (admin role, not a
-#     capability — admins hold none). service.key is a new stable handle;
-#     service.department (create-or-reuse) + optional service.owner make the
-#     sector oversight-visible. Reuses the seed-time validators verbatim.
-#   • Outbound signed webhooks (admin-managed subscriptions, /config/webhooks):
-#     request_created / status_changed / assigned / sla_breached, HMAC-SHA256 in
-#     X-MonitorFlow-Signature, fired after commit.
-#   • service.accepts_external_users gates the public catalogue + submission for
-#     self-registered `user` accounts (GET /services filters, POST /requests 403).
+# PIVOT v7 (2026-07) — single-company workforce app + first-login onboarding:
+#   • REMOVED: the JSON config API (POST/GET /config/services) and outbound signed
+#     webhooks (/config/webhooks). Those path + schema blocks are stripped below.
+#   • ADDED: GET /onboarding/options (the wizard catalogue) and
+#     PATCH /company/onboarding (the Owner's one save; flips onboarding_completed).
+#     onboardingCompleted now rides on the /auth/login and /auth/me user payloads.
+#   • DRIFT: config-tagged admin endpoints for levels/org/employees below have NOT
+#     yet been reconciled to the live routes (employee mgmt is served at /employees,
+#     not /config/employees). backend/src/index.js mounts are ground truth.
+#
+# PHASE 7 (2026-07-17) — SUPERSEDED by the v7 pivot (config API + webhooks removed).
 #
 # PHASE 6 SHIPPED (2026-07-16) — PostGIS: request.location is
 # GEOGRAPHY(Point,4326) + GIST (migration 009); the wire shape is unchanged —
@@ -61,9 +62,11 @@ info:
   title: Operiva API
   version: 0.1.0-skeleton
   description: >
-    Configuration-driven service-request platform. A new sector is onboarded by
-    POST /config/services — never by code. Clients are thin renderers: forms come
-    from config, action buttons come from /requests/{id}/transitions (both
+    Single-company workforce and field-operations platform (pivot v7). The buyer
+    is provisioned an Owner at purchase and runs a first-login onboarding wizard
+    (GET /onboarding/options, PATCH /company/onboarding). The operational engine
+    stays configuration-driven: clients are thin renderers — forms come from the
+    stored definition, action buttons come from /requests/{id}/transitions (both
     permission gates already applied server-side).
 
 servers:
@@ -74,8 +77,9 @@ security:
 
 tags:
   - name: auth
-  - name: config          # admin-only: onboard a sector as data
-  - name: services        # read config for rendering
+  - name: onboarding      # v7: first-login wizard catalogue + company save
+  - name: config          # admin-only: levels/org/employees (drift — see header)
+  - name: services        # read the stored form/workflow definition for rendering
   - name: requests        # the generic lifecycle — one engine, every sector
   - name: people          # employees, the reporting tree
   - name: notifications
@@ -147,85 +151,105 @@ paths:
               schema: { $ref: '#/components/schemas/Account' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
-  # ── Configuration (admin) — a sector is data ────────────────────────────────
-  /config/services:
-    post:
-      tags: [config]
-      summary: >
-        Onboard a sector. The single call that proves the thesis: service +
-        workflow (statuses, one-way transitions) + forms, all as JSON. No code
-        change. Requires the admin role (admins configure by role — they hold no
-        capabilities).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ServiceConfig' }
-      responses:
-        '201':
-          description: Sector created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  service_key: { type: string }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Validation' }
+  # ── Onboarding wizard (v7) — first-login company setup ───────────────────────
+  /onboarding/options:
     get:
-      tags: [config]
-      summary: List configured services (admin)
+      tags: [onboarding]
+      summary: >
+        The static wizard catalogue (any authenticated caller): employee ranges,
+        industries + their sub-industries, and feature groups — all {en,ar}
+        labels. The thin client renders this; the save re-validates against it.
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: '#/components/schemas/ServiceSummary' }
+                type: object
+                properties:
+                  employeeRanges:
+                    type: array
+                    items: { type: string }
+                  industries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key: { type: string }
+                        label: { $ref: '#/components/schemas/LocalizedText' }
+                        subs:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              key: { type: string }
+                              label: { $ref: '#/components/schemas/LocalizedText' }
+                  featureGroups:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key: { type: string }
+                        label: { $ref: '#/components/schemas/LocalizedText' }
+                        features:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              key: { type: string }
+                              label: { $ref: '#/components/schemas/LocalizedText' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
-  /config/services/{key}:
+  /company/onboarding:
     patch:
-      tags: [config]
+      tags: [onboarding]
       summary: >
-        Enable or disable a service (admin). There is deliberately no DELETE:
-        service_type anchors requests, forms and workflows, so removing one would
-        orphan or cascade away historical requests and their status history
-        (the audit trail is never deleted). Disabling is how a definition is
-        retired — it leaves the public catalogue while in-flight requests keep
-        running.
-      parameters:
-        - { name: key, in: path, required: true, schema: { type: string } }
+        The wizard's one save (Owner/admin only). Validates every pick against the
+        catalogue server-side (I8), writes the single company row + its branches in
+        one transaction, then flips onboarding_completed. One-shot — a second call
+        after completion is 409. Optional logoFileId is a parentless file_attachment
+        the Owner POSTed to /files first.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              description: >
-                Provide enabled and/or owner (at least one). owner is an
-                employee's login_identifier, or null to clear it. Owner is the
-                Gate 2 visibility anchor — a service with no owner is invisible
-                to every employee, which is the state right after onboarding a
-                sector before staff exist, so it must be settable after the fact.
+              required: [name, address, ownerJobTitle, employeeRange, industry, subIndustry, branches, phone]
               properties:
-                enabled: { type: boolean }
-                owner: { type: string, nullable: true }
+                name: { type: string }
+                address: { type: string }
+                ownerJobTitle: { type: string }
+                employeeRange: { type: string, description: one of options.employeeRanges }
+                industry: { type: string, description: an industry key }
+                subIndustry: { type: string, description: a sub-industry key of the chosen industry }
+                branches:
+                  type: array
+                  minItems: 1
+                  items: { type: string }
+                features:
+                  type: array
+                  items: { type: string, description: a feature key }
+                logoFileId: { type: string, format: uuid, nullable: true }
+                website: { type: string, nullable: true }
+                phone: { type: string }
       responses:
         '200':
-          description: Updated
+          description: Onboarding complete
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  key: { type: string }
-                  enabled: { type: boolean }
-                  ownerId: { type: integer, nullable: true }
+                  onboardingCompleted: { type: boolean }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Validation' }
 
+  # ── Admin endpoints (levels/org/employees) — DRIFT: not yet reconciled to the
+  #    live routes after the v7 pivot. employee mgmt is served at /employees, not
+  #    /config/employees. Treat backend/src/index.js mounts as ground truth. ─────
   /config/org:
     get:
       tags: [config]
@@ -486,54 +510,6 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/Validation' }
 
-  # ── Webhooks (admin) — outbound signed notifications ─────────────────────────
-  /config/webhooks:
-    post:
-      tags: [config]
-      summary: Register an outbound webhook subscription (admin)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [url, secret, events]
-              properties:
-                url: { type: string, description: "http(s) endpoint POSTed on each event" }
-                secret: { type: string, description: "HMAC-SHA256 key; never returned after create" }
-                events:
-                  type: array
-                  items: { type: string, enum: [request_created, status_changed, assigned, sla_breached] }
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema: { type: object, properties: { id: { type: integer } } }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Validation' }
-    get:
-      tags: [config]
-      summary: List webhook subscriptions (admin; secrets omitted)
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/WebhookSubscription' }
-  /config/webhooks/{id}:
-    delete:
-      tags: [config]
-      summary: Delete a webhook subscription (admin)
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '204': { description: Deleted }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
   # ── Services (read, for rendering) ───────────────────────────────────────────
   /services:
     get:
@@ -788,6 +764,7 @@ components:
     Unauthorized: { description: Missing/invalid/expired JWT, or deactivated account }
     Forbidden: { description: Gate 1 (capability) or Gate 2 (scope) failed }
     NotFound: { description: Not found — also returned for out-of-scope resources (404-over-403) }
+    Conflict: { description: State conflict — e.g. duplicate handle, stale expected_status, or a one-shot action already done }
     Validation:
       description: Well-formed body failing validation — dynamic-form errors keyed by field id
       content:
@@ -840,9 +817,9 @@ components:
     ServiceSummary:
       type: object
       description: >
-        Admin listing row (GET /config/services). id is present so the console
-        can read the stored definition back through GET /services/{id}/workflow
-        and /services/{id}/forms/{formType}.
+        A service row (GET /services). id is present so the console can read the
+        stored definition back through GET /services/{id}/workflow and
+        /services/{id}/forms/{formType}.
       properties:
         id: { type: integer }
         key: { type: string }
@@ -852,68 +829,6 @@ components:
         ownerName: { type: string, nullable: true }
         enabled: { type: boolean }
         acceptsExternalUsers: { type: boolean }
-
-    WebhookSubscription:
-      type: object
-      description: Secret is write-only — set on create, never returned.
-      properties:
-        id: { type: integer }
-        url: { type: string }
-        events:
-          type: array
-          items: { type: string, enum: [request_created, status_changed, assigned, sla_breached] }
-        is_active: { type: boolean }
-        created_at: { type: string, format: date-time }
-
-    ServiceConfig:
-      type: object
-      description: POST this and a sector exists. The engine reads it; no code knows the sector.
-      required: [service, workflow, forms]
-      properties:
-        service:
-          type: object
-          required: [key, name, accepts_external_users, department]
-          properties:
-            key: { type: string, description: "stable handle; dedup 409 if taken" }
-            name: { $ref: '#/components/schemas/LocalizedText' }
-            accepts_external_users: { type: boolean }
-            default_priority: { type: string, enum: [low, medium, high], default: medium }
-            department:
-              type: object
-              required: [name]
-              description: "reused if an existing department's English name matches, else created"
-              properties:
-                name: { $ref: '#/components/schemas/LocalizedText' }
-            owner:
-              type: string
-              nullable: true
-              description: >
-                login_identifier of an existing oversight employee — makes the
-                sector's requests fall in their subtree. Omitted → no oversight
-                view until wired (documented limitation).
-        workflow:
-          type: object
-          required: [initial_status, statuses, transitions]
-          properties:
-            initial_status: { type: string }
-            statuses:
-              type: array
-              items:
-                type: object
-                required: [key, label, is_terminal]
-                properties:
-                  key: { type: string }
-                  label: { $ref: '#/components/schemas/LocalizedText' }
-                  is_terminal: { type: boolean }
-                  sla_minutes: { type: integer, nullable: true }
-            transitions:
-              type: array
-              items: { $ref: '#/components/schemas/TransitionDef' }
-        forms:
-          type: object
-          additionalProperties:
-            type: array
-            items: { $ref: '#/components/schemas/FieldDescriptor' }
 
     TransitionDef:
       type: object

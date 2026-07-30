@@ -1,22 +1,24 @@
 # MonitorFlow
 
-Configuration-driven service-request and field-operations platform: two Flutter mobile apps (User, Employee) and one React web console on one Node/Express + Postgres backend.
+Single-company workforce and field-operations platform: two Flutter mobile apps (User, Employee) and one React web console on one Node/Express + Postgres backend. One deployment = one company.
 
-**The thesis:** structurally different service sectors — different form fields, different workflow shapes, different approval rules — run through the *same* code via JSON configuration. Two engines make this true: a **dynamic form engine** (forms rendered and validated from a JSON `field_schema`) and a **dynamic workflow engine** (transitions validated against a JSON workflow). No status key is ever hardcoded in application code — code reasons only about `is_terminal`, capabilities, and actors.
+> **Pivot in progress (v7, 2026-07).** MonitorFlow is moving from a multi-sector, config-API-driven platform to a single-company workforce app. **Shipped in v7:** the JSON config API and outbound webhooks are **removed**; the municipality seed is replaced by an **Owner-provisioning seed**; a `company`/`branch` schema and a **first-login onboarding wizard** (backend + React) are in. The operational engine underneath is unchanged. See `CLAUDE.md` §1/§9/§13 for the current truth.
 
-`CLAUDE.md` is the authoritative spec. `openapi.yaml` is the frozen API contract. This file is the feature/status reference and operator guide, and is written against the **shipped code**, not the spec drafts.
+**The engine's thesis (still true):** structurally different service sectors — different form fields, different workflow shapes, different approval rules — run through the *same* code via JSON configuration. Two engines make this true: a **dynamic form engine** (forms rendered and validated from a JSON `field_schema`) and a **dynamic workflow engine** (transitions validated against a JSON workflow). No status key is ever hardcoded in application code — code reasons only about `is_terminal`, capabilities, and actors.
+
+`CLAUDE.md` is the authoritative spec. `openapi.yaml` is the API contract (v7 note: config paths stripped, onboarding added; full reconciliation to live routes pending). This file is the feature/status reference and operator guide, written against the **shipped code**.
 
 ---
 
 ## Status
 
-**Feature-complete across all three surfaces.** The Operiva migration (Phases 1–7) is done, and the current model is the one described throughout this file: three account kinds, capability + subtree permissions, `is_terminal` instead of status categories.
+**Operational engine feature-complete; v7 workforce pivot underway.** Three account kinds, capability + subtree permissions, `is_terminal` instead of status categories — all unchanged. The v7 pivot added first-login onboarding and removed the config API/webhooks (see the pivot note above).
 
-Automated checks, last run 2026-07-19:
+Automated checks (the 2026-07-19 run predates the pivot — the config/webhook/permission-negative suites were removed in v7 Phase A, so **re-run before quoting numbers**):
 
 | Suite | Result |
 |---|---|
-| Backend, unit + API (`cd backend && npm test`) | 98/98 |
+| Backend, unit + API (`cd backend && npm test`) | re-run (pre-pivot: 98/98) |
 | Flutter widget (`cd mobile && flutter test`) | 22/22 |
 | Web build (`cd web && npm run build`) | green |
 

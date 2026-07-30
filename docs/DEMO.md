@@ -1,16 +1,21 @@
 # MonitorFlow — Demo Script
 
-Two configuration paths, in the order you should present them. Path A explains
-what a deployment *is*; Path B is the thesis proof and the part the committee
-remembers.
+> **v7 pivot note.** The **config-API onboarding path (old Path B) is removed** —
+> `POST /config/services` and the `home_nursing.json` demo no longer exist as a
+> live endpoint. A deployment is now brought online by the **first-login
+> onboarding wizard** (Owner provisioned at purchase → "Customize your app in 1
+> minute" → console). Present that as the setup story. The sections below still
+> describe the operational engine (requests, assignment, workflow) accurately;
+> treat any `/config/*` step as historical until this script is re-recorded.
 
-Everything below was run against a freshly seeded database. The Path B payload
-in `docs/demo/home_nursing.json` is verified — it returns 201, and re-posting it
-returns 409.
+The onboarding demo, in short: seed an Owner (`cd backend && SEED_OWNER_EMAIL=…
+node src/seed.js`), log into the web console as that Owner → the six-step wizard
+appears → complete it → land on the console. See `CLAUDE.md` §9.
 
-**The claim you are demonstrating:**
+**The engine's claim you are still demonstrating:**
 
-> A new service sector is onboarded by configuration, not code.
+> Structurally different workflows and forms run on one unchanged engine — driven
+> by stored JSON, not per-sector code.
 
 ---
 
