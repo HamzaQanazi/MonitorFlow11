@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import { I18nProvider } from './i18n'
 import RequireAuth from './components/RequireAuth'
 import LoginPage from './pages/LoginPage'
+import OnboardingWizard from './pages/OnboardingWizard'
 import DashboardShell from './pages/DashboardShell'
 import DashboardPage from './pages/DashboardPage'
 import RequestsPage from './pages/RequestsPage'
@@ -29,6 +30,17 @@ function Guard({ need, children }: { need: 'view_all' | 'manage_employees' | 'ad
   return children
 }
 
+// First-login gate: an Owner (admin) whose company hasn't run the wizard yet
+// sees it instead of the console. markOnboarded() (called on save) flips the
+// flag and this stops intercepting. Only the admin kind is gated — oversight
+// employees and the seeded flow never hit onboardingCompleted === false.
+// eslint-disable-next-line react-refresh/only-export-components -- entrypoint file, fast refresh doesn't apply
+function OnboardingGate({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
+  if (user?.role === 'admin' && user.onboardingCompleted === false) return <OnboardingWizard />
+  return children
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
@@ -40,7 +52,9 @@ createRoot(document.getElementById('root')!).render(
             path="/"
             element={
               <RequireAuth>
-                <DashboardShell />
+                <OnboardingGate>
+                  <DashboardShell />
+                </OnboardingGate>
               </RequireAuth>
             }
           >

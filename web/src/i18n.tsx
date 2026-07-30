@@ -536,6 +536,47 @@ const dict: Record<string, Loc> = {
   notif_just_now: { en: 'just now', ar: 'الآن' },
   notif_m_ago: { en: 'm ago', ar: 'د مضت' },
   notif_h_ago: { en: 'h ago', ar: 'س مضت' },
+
+  // onboarding wizard (first-login, admin only)
+  ob_title: { en: 'Customize your app in 1 minute', ar: 'خصّص تطبيقك في دقيقة' },
+  ob_step_of: { en: 'Step', ar: 'خطوة' }, // "Step 2 of 6"
+  ob_finish: { en: 'Get started', ar: 'ابدأ الآن' },
+  ob_saving: { en: 'Saving…', ar: 'جارٍ الحفظ…' },
+  ob_err_required: { en: 'This field is required.', ar: 'هذا الحقل مطلوب.' },
+  ob_err_save: {
+    en: 'Couldn’t save your setup. Check your answers and try again.',
+    ar: 'تعذّر حفظ الإعداد. تحقّق من إجاباتك وحاول مجددًا.',
+  },
+  ob_err_logo: { en: 'Couldn’t upload the logo. Try a JPG, PNG, or PDF under 5 MB.', ar: 'تعذّر رفع الشعار. جرّب JPG أو PNG أو PDF أقل من 5 ميغابايت.' },
+  ob_select: { en: 'Select…', ar: 'اختر…' },
+
+  ob_s1_title: { en: 'Company information', ar: 'معلومات الشركة' },
+  ob_company_name: { en: 'Company name', ar: 'اسم الشركة' },
+  ob_company_address: { en: 'Company address', ar: 'عنوان الشركة' },
+  ob_job_title: { en: 'Your job title', ar: 'مسمّاك الوظيفي' },
+
+  ob_s2_title: { en: 'Company details', ar: 'تفاصيل الشركة' },
+  ob_employee_count: { en: 'Number of employees', ar: 'عدد الموظفين' },
+  ob_industry: { en: 'Business industry', ar: 'مجال العمل' },
+  ob_sub_industry: { en: 'Sub-industry', ar: 'التخصّص' },
+
+  ob_s3_title: { en: 'Branches', ar: 'الفروع' },
+  ob_branch_count: { en: 'How many branches?', ar: 'كم عدد الفروع؟' },
+  ob_branch_name: { en: 'Branch name', ar: 'اسم الفرع' },
+
+  ob_s4_title: { en: 'Features', ar: 'الميزات' },
+  ob_features_hint: {
+    en: 'Choose the features you want to use. You can change these later.',
+    ar: 'اختر الميزات التي تريد استخدامها. يمكنك تغييرها لاحقًا.',
+  },
+
+  ob_s5_title: { en: 'Branding', ar: 'الهوية' },
+  ob_logo: { en: 'Company logo (optional)', ar: 'شعار الشركة (اختياري)' },
+  ob_website: { en: 'Company website (optional)', ar: 'موقع الشركة (اختياري)' },
+  ob_choose_file: { en: 'Choose file…', ar: 'اختر ملفًا…' },
+
+  ob_s6_title: { en: 'Contact', ar: 'التواصل' },
+  ob_phone: { en: 'Phone number', ar: 'رقم الهاتف' },
 }
 
 type Ctx = {

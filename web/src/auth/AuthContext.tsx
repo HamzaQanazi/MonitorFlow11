@@ -14,6 +14,9 @@ export interface AuthUser {
   // console shows an admin (kind) or an oversight employee (holds view_all);
   // the server still enforces every capability with 403s.
   capabilities: string[]
+  // First-login gate: false for an Owner (admin) whose company hasn't run the
+  // "Customize your app" wizard yet; null for accounts with no company.
+  onboardingCompleted: boolean | null
 }
 
 // Who may use the web console: the admin, or an oversight employee (view_all).
@@ -29,6 +32,9 @@ interface AuthContextValue {
   user: AuthUser | null
   login: (identifier: string, password: string) => Promise<void>
   logout: () => void
+  // Called by the onboarding wizard on its final save so the gate stops
+  // intercepting and the console renders.
+  markOnboarded: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -81,6 +87,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearToken()
         setUser(null)
         setStatus('signedOut')
+      },
+      markOnboarded() {
+        setUser((u) => (u ? { ...u, onboardingCompleted: true } : u))
       },
     }),
     [status, user],
