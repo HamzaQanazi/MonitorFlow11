@@ -24,10 +24,6 @@ const dict: Record<string, Loc> = {
   nav_employees: { en: 'Employees', ar: 'الموظفون' },
   nav_reports: { en: 'Reports', ar: 'التقارير' },
   nav_audit: { en: 'Audit Log', ar: 'سجل التدقيق' },
-  nav_services: { en: 'Services', ar: 'الخدمات' },
-  nav_org: { en: 'Organisation', ar: 'الهيكل التنظيمي' },
-  nav_levels: { en: 'Levels', ar: 'المستويات' },
-  nav_webhooks: { en: 'Webhooks', ar: 'الويب هوك' },
   sign_out: { en: 'Sign out', ar: 'تسجيل الخروج' },
   lang_toggle: { en: 'العربية', ar: 'English' }, // shows the OTHER language
 

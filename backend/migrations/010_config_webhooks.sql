@@ -15,17 +15,3 @@ ALTER TABLE service_type ADD CONSTRAINT service_type_key_unique UNIQUE (key);
 
 ALTER TABLE service_type
   ADD COLUMN accepts_external_users BOOLEAN NOT NULL DEFAULT TRUE;
-
--- Outbound webhook subscriptions (admin-managed, spec v-Phase7). A subscriber
--- registers a URL + shared secret and the events it wants; the dispatcher POSTs
--- a signed payload after commit. `secret` signs the body (HMAC-SHA256) — it is
--- never returned after creation.
-CREATE TABLE webhook_subscription (
-  id         SERIAL PRIMARY KEY,
-  url        TEXT NOT NULL,
-  secret     TEXT NOT NULL,
-  events     TEXT[] NOT NULL,   -- subset of request_created/status_changed/assigned/sla_breached
-  is_active  BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_webhook_active ON webhook_subscription(is_active);

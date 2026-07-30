@@ -14,13 +14,10 @@ const oversightNav = [
   { to: '/employees', labelKey: 'nav_employees', end: false, need: 'manage_employees' },
   { to: '/reports', labelKey: 'nav_reports', end: false, need: 'view_all' },
 ]
-// Admin manages accounts/configuration only.
+// Owner (admin role) surface. Configuration now happens through the first-login
+// onboarding wizard; the audit log is the remaining standing page.
 const adminNav = [
-  { to: '/services', labelKey: 'nav_services', end: false },
-  { to: '/org', labelKey: 'nav_org', end: false },
-  { to: '/levels', labelKey: 'nav_levels', end: false },
   { to: '/audit', labelKey: 'nav_audit', end: false },
-  { to: '/webhooks', labelKey: 'nav_webhooks', end: false },
 ]
 
 export default function DashboardShell() {

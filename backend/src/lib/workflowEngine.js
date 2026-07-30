@@ -20,7 +20,6 @@ const pool = require('../db');
 const { ownerInScope } = require('./scope');
 const { isOversight } = require('./capabilities');
 const { pick } = require('./i18nLabel');
-const { fireWebhook } = require('./webhooks');
 const { logAudit } = require('./audit');
 
 class WorkflowError extends Error {
@@ -336,15 +335,6 @@ async function executeTransition({
     }
 
     await client.query('COMMIT');
-
-    // Phase 7: outbound webhooks fire AFTER commit — a subscriber being down
-    // must never roll back the transition. Fire-and-forget (fireWebhook never
-    // throws). `assigned` is data-driven off the transition's notify targets
-    // (the assign transition notifies assigned_to), so no status/transition key
-    // is hardcoded here.
-    const hook = { request_id: request.id, service_key: request.service_key, status: transition.to };
-    fireWebhook('status_changed', hook);
-    if ((transition.notify || []).includes('assigned_to')) fireWebhook('assigned', hook);
 
     return { request, task, transition, status: newStatus, extra };
   } catch (err) {

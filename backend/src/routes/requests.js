@@ -18,7 +18,6 @@ const { buildRequestFilter, PRIORITIES } = require('../lib/requestQuery');
 const { isOversight } = require('../lib/capabilities');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
 const { pick } = require('../lib/i18nLabel');
-const { fireWebhook } = require('../lib/webhooks');
 const { logAudit } = require('../lib/audit');
 
 const router = express.Router();
@@ -143,13 +142,6 @@ router.post('/', async (req, res, next) => {
     } finally {
       client.release();
     }
-
-    // Phase 7: request_created webhook, after commit, fire-and-forget.
-    fireWebhook('request_created', {
-      request_id: created.id,
-      service_key: service.key,
-      status: created.status,
-    });
 
     res.status(201).json({
       request: {
