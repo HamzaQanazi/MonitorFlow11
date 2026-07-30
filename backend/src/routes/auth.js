@@ -27,7 +27,7 @@ function rateLimitLogin(req, res, next) {
   next();
 }
 
-function publicUser(row, capabilities) {
+function publicUser(row, capabilities, onboardingCompleted = null) {
   const { id, name, email, role, phone, department_id, login_identifier } = row;
   return {
     id, name, email, role, phone,
@@ -36,7 +36,22 @@ function publicUser(row, capabilities) {
     // Two-gate model: clients read capabilities to show/hide oversight surfaces
     // (the server still enforces every one — Gate 1). Absent = none.
     capabilities: capabilities ? [...capabilities] : [],
+    // First-login gate: the Owner (admin) whose company hasn't been onboarded
+    // yet is routed to the "Customize your app" wizard, not the dashboard. null
+    // for accounts with no company (self-registered users).
+    onboardingCompleted,
   };
+}
+
+// The company's onboarding flag for a given account. null when the account
+// isn't tied to a company. Used by /login and /me to drive the first-login gate.
+async function getOnboarding(companyId) {
+  if (!companyId) return null;
+  const { rows } = await pool.query(
+    'SELECT onboarding_completed FROM company WHERE id = $1',
+    [companyId]
+  );
+  return rows.length ? rows[0].onboarding_completed : null;
 }
 
 function signToken(user) {
@@ -102,14 +117,16 @@ router.post('/login', rateLimitLogin, async (req, res, next) => {
     if (!user.is_active) return res.status(401).json({ error: 'Account is not active' });
 
     const capabilities = await loadCapabilities(user, pool);
-    res.json({ token: signToken(user), user: publicUser(user, capabilities) });
+    const onboarding = await getOnboarding(user.company_id);
+    res.json({ token: signToken(user), user: publicUser(user, capabilities, onboarding) });
   } catch (err) {
     next(err);
   }
 });
 
-router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: publicUser(req.user, req.user.capabilities) });
+router.get('/me', requireAuth, async (req, res) => {
+  const onboarding = await getOnboarding(req.user.company_id);
+  res.json({ user: publicUser(req.user, req.user.capabilities, onboarding) });
 });
 
 module.exports = router;

@@ -18,7 +18,7 @@ async function requireAuth(req, res, next) {
   // deactivated account's still-valid JWT must stop working immediately.
   const { rows } = await pool.query(
     `SELECT id, name, email, role, phone, department_id, is_active,
-            login_identifier, manager_id, level_id
+            login_identifier, manager_id, level_id, company_id
      FROM users WHERE id = $1`,
     [payload.sub]
   );
