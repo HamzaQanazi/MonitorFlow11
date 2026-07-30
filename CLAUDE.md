@@ -513,12 +513,15 @@ deployment.
 
 `openapi.yaml` (repo root) is the contract (I7) — the authoritative list of every
 endpoint, request/response shape, and status code. Do not duplicate it here and do
-not let this file contradict it. **v7 drift:** the pivot removed the `/config/*`
-surface and added `/onboarding/options` + `/company/onboarding`; the config paths
-have been stripped and onboarding added, but a **full reconciliation to the live
-routes is still pending** (e.g. employee management is served under `/employees`,
-not the old `/config/employees`). When in doubt, the mounted routes in
-`backend/src/index.js` are ground truth. Key conventions it encodes: base
+not let this file contradict it. **v7 reconciliation:** the pivot removed the
+`/config/*` surface and added `/onboarding/options` + `/company/onboarding`.
+Employee management is fully reconciled to the live routes — all under
+`/employees` (people tag, `manage_employees` capability); the old `/config/{org,
+levels,capabilities,employees}` paths are gone (levels/org/capabilities have no
+live endpoint post-pivot — Gate-1 level config is seed-time only for now). Still
+undocumented in the contract: `GET /departments` and `/users/me*`. When in doubt,
+the mounted routes in `backend/src/index.js` are ground truth. Key conventions it
+encodes: base
 path `/api/v1`; Bearer JWT on every route except register/login; standard list
 params `?page&pageSize(≤100)&status&state&serviceTypeId&priority&dateFrom&dateTo&q`;
 status codes 200/201/204/400/401/403/404/409/422/429/500 used exactly; dynamic-form

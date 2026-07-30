@@ -47,9 +47,11 @@ openapi: 3.0.3
 #   • ADDED: GET /onboarding/options (the wizard catalogue) and
 #     PATCH /company/onboarding (the Owner's one save; flips onboarding_completed).
 #     onboardingCompleted now rides on the /auth/login and /auth/me user payloads.
-#   • DRIFT: config-tagged admin endpoints for levels/org/employees below have NOT
-#     yet been reconciled to the live routes (employee mgmt is served at /employees,
-#     not /config/employees). backend/src/index.js mounts are ground truth.
+#   • Employee management is reconciled to the live routes: all under /employees
+#     (people tag, manage_employees capability). The old /config/{org,levels,
+#     capabilities,employees} paths are removed — levels/org/capabilities have no
+#     live endpoint post-pivot (Gate-1 level config is seed-time only for now).
+#     Still undocumented (out of this pass): GET /departments, /users/me*.
 #
 # PHASE 7 (2026-07-17) — SUPERSEDED by the v7 pivot (config API + webhooks removed).
 #
@@ -78,10 +80,9 @@ security:
 tags:
   - name: auth
   - name: onboarding      # v7: first-login wizard catalogue + company save
-  - name: config          # admin-only: levels/org/employees (drift — see header)
   - name: services        # read the stored form/workflow definition for rendering
   - name: requests        # the generic lifecycle — one engine, every sector
-  - name: people          # employees, the reporting tree
+  - name: people          # employees, the reporting tree (manage_employees capability)
   - name: notifications
   - name: files
 
@@ -247,269 +248,6 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Validation' }
 
-  # ── Admin endpoints (levels/org/employees) — DRIFT: not yet reconciled to the
-  #    live routes after the v7 pivot. employee mgmt is served at /employees, not
-  #    /config/employees. Treat backend/src/index.js mounts as ground truth. ─────
-  /config/org:
-    get:
-      tags: [config]
-      summary: >
-        The employee reporting tree with each employee's capability grant
-        (admin). Two orthogonal axes, not a role ladder: managerId is Gate 2
-        (subtree scope), capabilities is Gate 1 (what the level grants). Returned
-        flat; the client nests it by managerId (root = null).
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  employees:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id: { type: integer }
-                        name: { type: string }
-                        managerId: { type: integer, nullable: true }
-                        isActive: { type: boolean }
-                        departmentName: { $ref: '#/components/schemas/LocalizedText' }
-                        levelId: { type: integer, nullable: true }
-                        levelName: { $ref: '#/components/schemas/LocalizedText' }
-                        capabilities:
-                          type: array
-                          items: { type: string }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  # ── Levels & capability grants (admin) — Gate 1 configuration ────────────────
-  # Admin-only, not manage_employees: a manager who could set levels could grant
-  # a subordinate a capability they don't hold themselves. An admin is outside
-  # the reporting tree and holds no capabilities, so granting one gains them
-  # nothing. Reporting lines (manager_id) are deliberately NOT editable — the
-  # subtree CTEs have no cycle detection, so reorg stays a seed-time concern.
-  /config/capabilities:
-    get:
-      tags: [config]
-      summary: The fixed capability catalogue (admin). Lives in code, not data.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  capabilities:
-                    type: array
-                    items: { type: string, enum: [view_all, assign, set_priority, override, manage_employees, export] }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /config/levels:
-    get:
-      tags: [config]
-      summary: >
-        Levels with their grants and holder counts (admin). employeeCount is the
-        blast radius of changing a grant.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  levels:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id: { type: integer }
-                        name: { $ref: '#/components/schemas/LocalizedText' }
-                        capabilities: { type: array, items: { type: string } }
-                        employeeCount: { type: integer }
-        '403': { $ref: '#/components/responses/Forbidden' }
-    post:
-      tags: [config]
-      summary: Create a level with an initial grant set (admin)
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, capabilities]
-              properties:
-                name: { $ref: '#/components/schemas/LocalizedText' }
-                capabilities: { type: array, items: { type: string } }
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema: { type: object, properties: { id: { type: integer } } }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Validation' }
-
-  /config/levels/{id}:
-    patch:
-      tags: [config]
-      summary: >
-        Replace a level's capability grants (admin). Takes effect on the next
-        request for every employee at that level — capabilities are read from
-        the database per request, never carried in the JWT. Unknown capability
-        keys are rejected, not dropped.
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [capabilities]
-              properties:
-                capabilities: { type: array, items: { type: string } }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id: { type: integer }
-                  capabilities: { type: array, items: { type: string } }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/Validation' }
-
-    delete:
-      tags: [config]
-      summary: >
-        Delete a level nobody holds (admin). 409 when employees still hold it —
-        move them first. Grants are removed with it; audit rows referencing the
-        level survive by design and render as "Level #id".
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '204': { description: Deleted }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: Level still held by employees }
-
-  /config/employees/{id}/activate:
-    patch:
-      tags: [config]
-      summary: >
-        Reactivate an employee (admin). Companion to the deactivate route below.
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: { id: { type: integer }, isActive: { type: boolean } }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /config/employees/{id}/deactivate:
-    patch:
-      tags: [config]
-      summary: >
-        Deactivate an employee (admin). Exists because a ROOT employee has
-        manager_id NULL and so sits in nobody's subtree: every oversight actor
-        gets 404 from PATCH /employees/{id}/deactivate and the admin gets 403
-        there (no capabilities), leaving such an account impossible to disable.
-        Same open-tasks 409 guard as the capability-gated route.
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties: { id: { type: integer }, isActive: { type: boolean } }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: Employee still holds open tasks }
-
-  /config/employees/{id}/level:
-    patch:
-      tags: [config]
-      summary: >
-        Put an employee at a level, or null to strip them back to no
-        capabilities (admin). Not on PATCH /employees/{id}: that route is gated
-        by manage_employees, which an admin does not hold.
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [levelId]
-              properties:
-                levelId: { type: integer, nullable: true }
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id: { type: integer }
-                  levelId: { type: integer, nullable: true }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/Validation' }
-
-  /config/employees:
-    post:
-      tags: [config]
-      summary: >
-        Create a ROOT employee — manager_id NULL (admin). Breaks a bootstrap
-        deadlock: POST /employees requires manage_employees, admins hold no
-        capabilities, and a clean handover seeds only the admin, so otherwise a
-        fresh deployment could never create its first member of staff. Every
-        subsequent hire goes through the capability- and subtree-gated
-        POST /employees.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, email, password]
-              properties:
-                name: { type: string }
-                email: { type: string, format: email }
-                password: { type: string, minLength: 8 }
-                phone: { type: string, nullable: true }
-                departmentId: { type: integer, nullable: true }
-                levelId: { type: integer, nullable: true }
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id: { type: integer }
-                  name: { type: string }
-                  email: { type: string }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Validation' }
-
   # ── Services (read, for rendering) ───────────────────────────────────────────
   /services:
     get:
@@ -672,14 +410,44 @@ paths:
                 items: { $ref: '#/components/schemas/Candidate' }
 
   # ── People / reporting tree ─────────────────────────────────────────────────
+  # Every /employees route is gated by the manage_employees capability (Gate 1)
+  # and scoped to the caller's subtree (Gate 2): a valid id outside the subtree,
+  # a non-employee, or the caller themselves all return 404 (404-over-403).
   /employees:
+    get:
+      tags: [people]
+      summary: >
+        The caller's subtree employees (assignment picker + Employees page). Each
+        row carries openTaskCount and avgResolutionMinutes for the workload view.
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - { name: departmentId, in: query, required: false, schema: { type: integer } }
+        - { name: q, in: query, required: false, schema: { type: string }, description: name or email substring }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  employees:
+                    type: array
+                    items: { $ref: '#/components/schemas/EmployeeListItem' }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  total: { type: integer }
+        '400': { description: Invalid query params }
+        '403': { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [people]
       summary: >
-        Create an employee. login_identifier is NOT supplied by the client — the
-        server allocates the lowest free 4-digit number in the new employee's
-        department block (1000 + department * 100, 100 per department) and returns
-        it, since that is the only place the number is ever shown.
+        Create an employee. They become a direct report of the caller (manager_id =
+        caller) and inherit the caller's department. login_identifier is NOT
+        supplied by the client — the server allocates the lowest free 4-digit number
+        in that department block (1000 + department * 100, 100 per department) and
+        returns it, since that is the only place the number is ever shown.
       requestBody:
         required: true
         content:
@@ -690,16 +458,136 @@ paths:
               properties:
                 name: { type: string }
                 email: { type: string, format: email }
-                password: { type: string, format: password }
+                password: { type: string, format: password, minLength: 8 }
                 phone: { type: string, nullable: true }
       responses:
         '201':
           description: Created
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Account' }
+              schema:
+                type: object
+                properties:
+                  employee: { $ref: '#/components/schemas/Employee' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { description: The department's block of 100 employee numbers is exhausted }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /employees/{id}:
+    patch:
+      tags: [people]
+      summary: >
+        Edit an employee's name, phone, or department. departmentId, if given, must
+        equal the caller's own department (cross-department moves need an org-level
+        actor that does not exist today).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                phone: { type: string, nullable: true }
+                departmentId: { type: integer }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  employee: { $ref: '#/components/schemas/Employee' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /employees/{id}/activate:
+    patch:
+      tags: [people]
+      summary: Reactivate an employee.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  employee: { $ref: '#/components/schemas/Employee' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /employees/{id}/deactivate:
+    patch:
+      tags: [people]
+      summary: >
+        Deactivate an employee. 409 if they still hold a task in a non-terminal
+        status (finality read from the workflow data, no status key hardcoded) —
+        reassign it first. A deactivated account's JWT stops working immediately.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  employee: { $ref: '#/components/schemas/Employee' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Employee still holds an open task — reassign first }
+
+  /employees/{id}/reset-password:
+    patch:
+      tags: [people]
+      summary: >
+        Generate a temporary password for an employee, returned once (no forced
+        change — documented MVP limitation). The old password stops working at once.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: Reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tempPassword: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /employees/{id}/tasks:
+    get:
+      tags: [people]
+      summary: One employee's tasks — a read-only oversight view of their assignments.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        requestId: { type: integer }
+                        serviceTypeId: { type: integer }
+                        serviceTypeName: { $ref: '#/components/schemas/LocalizedText' }
+                        status: { $ref: '#/components/schemas/StatusView' }
+                        priority: { type: string, enum: [low, medium, high] }
+                        assignedAt: { type: string, format: date-time }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ── Notifications ────────────────────────────────────────────────────────────
   /notifications:
@@ -807,6 +695,37 @@ components:
           type: array
           items: { type: string }
           description: "resolved from level_capability — for UX only; server re-checks"
+
+    Employee:
+      type: object
+      description: An employee as returned by the /employees write routes.
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        loginIdentifier: { type: string, description: the 4-digit sign-in number }
+        isActive: { type: boolean }
+        departmentId: { type: integer, nullable: true }
+        departmentName: { $ref: '#/components/schemas/LocalizedText' }
+
+    EmployeeListItem:
+      type: object
+      description: A GET /employees row — an Employee plus workload metrics.
+      allOf:
+        - { $ref: '#/components/schemas/Employee' }
+        - type: object
+          properties:
+            openTaskCount: { type: integer, description: tasks in a non-terminal status }
+            avgResolutionMinutes: { type: integer, nullable: true, description: avg create→resolve minutes, null if none resolved }
+
+    StatusView:
+      type: object
+      description: The API-shaped status a client renders directly (no status key logic).
+      properties:
+        key: { type: string }
+        label: { $ref: '#/components/schemas/LocalizedText' }
+        isTerminal: { type: boolean }
 
     Level:
       type: object
