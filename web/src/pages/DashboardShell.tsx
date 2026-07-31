@@ -34,7 +34,11 @@ export default function DashboardShell() {
   return (
     <div className="shell">
       <header className="shell-bar">
-        <Wordmark variant="shell" />
+        <Wordmark
+          variant="shell"
+          companyName={user?.onboardingCompleted ? user.companyName : null}
+          companyLogo={user?.onboardingCompleted ? user.companyLogo : null}
+        />
         <nav className="shell-nav" aria-label="Primary">
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end}>

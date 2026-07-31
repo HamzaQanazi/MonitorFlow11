@@ -1,3 +1,5 @@
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -6,6 +8,10 @@ const { requireAuth } = require('../middleware/auth');
 const { loadCapabilities } = require('../lib/capabilities');
 
 const router = express.Router();
+
+// Same uploads dir files.js writes to — read-only here, just to inline the
+// company logo as a data URI on the authenticated user payload (see below).
+const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads');
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 5;
@@ -27,7 +33,7 @@ function rateLimitLogin(req, res, next) {
   next();
 }
 
-function publicUser(row, capabilities, onboardingCompleted = null) {
+function publicUser(row, capabilities, company = { onboardingCompleted: null, companyName: null }) {
   const { id, name, email, role, phone, department_id, login_identifier } = row;
   return {
     id, name, email, role, phone,
@@ -39,19 +45,44 @@ function publicUser(row, capabilities, onboardingCompleted = null) {
     // First-login gate: the Owner (admin) whose company hasn't been onboarded
     // yet is routed to the "Customize your app" wizard, not the dashboard. null
     // for accounts with no company (self-registered users).
-    onboardingCompleted,
+    onboardingCompleted: company.onboardingCompleted,
+    // The console wordmark falls back to the build-time brand default until
+    // these are set (both NULL until the onboarding PATCH writes them).
+    companyName: company.companyName,
+    companyLogo: company.companyLogo,
   };
 }
 
-// The company's onboarding flag for a given account. null when the account
-// isn't tied to a company. Used by /login and /me to drive the first-login gate.
-async function getOnboarding(companyId) {
-  if (!companyId) return null;
+// The company's onboarding flag, name and logo for a given account — null/null/
+// null when the account isn't tied to a company. Used by /login and /me to
+// drive the first-login gate and the post-onboarding wordmark. The logo is
+// inlined as a data URI (not a URL) so the wordmark's <img> never needs its
+// own authenticated request — GET /files/{id} is auth-gated per-file and would
+// otherwise 404 for every console user except whoever uploaded it.
+async function getCompanyInfo(companyId) {
+  const empty = { onboardingCompleted: null, companyName: null, companyLogo: null };
+  if (!companyId) return empty;
   const { rows } = await pool.query(
-    'SELECT onboarding_completed FROM company WHERE id = $1',
+    'SELECT onboarding_completed, name, logo_file_id FROM company WHERE id = $1',
     [companyId]
   );
-  return rows.length ? rows[0].onboarding_completed : null;
+  if (!rows.length) return empty;
+  let companyLogo = null;
+  if (rows[0].logo_file_id) {
+    const { rows: fa } = await pool.query(
+      'SELECT mime_type, storage_path FROM file_attachment WHERE id = $1',
+      [rows[0].logo_file_id]
+    );
+    if (fa.length) {
+      try {
+        const buf = await fs.promises.readFile(path.join(UPLOAD_DIR, fa[0].storage_path));
+        companyLogo = `data:${fa[0].mime_type};base64,${buf.toString('base64')}`;
+      } catch {
+        companyLogo = null;
+      }
+    }
+  }
+  return { onboardingCompleted: rows[0].onboarding_completed, companyName: rows[0].name, companyLogo };
 }
 
 function signToken(user) {
@@ -117,16 +148,16 @@ router.post('/login', rateLimitLogin, async (req, res, next) => {
     if (!user.is_active) return res.status(401).json({ error: 'Account is not active' });
 
     const capabilities = await loadCapabilities(user, pool);
-    const onboarding = await getOnboarding(user.company_id);
-    res.json({ token: signToken(user), user: publicUser(user, capabilities, onboarding) });
+    const company = await getCompanyInfo(user.company_id);
+    res.json({ token: signToken(user), user: publicUser(user, capabilities, company) });
   } catch (err) {
     next(err);
   }
 });
 
 router.get('/me', requireAuth, async (req, res) => {
-  const onboarding = await getOnboarding(req.user.company_id);
-  res.json({ user: publicUser(req.user, req.user.capabilities, onboarding) });
+  const company = await getCompanyInfo(req.user.company_id);
+  res.json({ user: publicUser(req.user, req.user.capabilities, company) });
 });
 
 module.exports = router;
