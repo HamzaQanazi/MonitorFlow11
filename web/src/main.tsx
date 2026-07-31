@@ -12,6 +12,7 @@ import DashboardPage from './pages/DashboardPage'
 import RequestsPage from './pages/RequestsPage'
 import EmployeesPage from './pages/EmployeesPage'
 import ReportsPage from './pages/ReportsPage'
+import TimeClockPage from './pages/TimeClockPage'
 import AuditPage from './pages/AuditPage'
 import AddServiceWizard from './pages/AddServiceWizard'
 
@@ -78,6 +79,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="requests/:id" element={<Guard need="view_all"><RequestsPage /></Guard>} />
             <Route path="employees" element={<Guard need="manage_employees" orAdmin><EmployeesPage /></Guard>} />
             <Route path="reports" element={<Guard need="view_all"><ReportsPage /></Guard>} />
+            <Route path="timeclock" element={<Guard need="view_all"><TimeClockPage /></Guard>} />
             <Route path="audit" element={<Guard need="admin"><AuditPage /></Guard>} />
             <Route path="services/new" element={<Guard need="admin"><AddServiceWizard /></Guard>} />
           </Route>
