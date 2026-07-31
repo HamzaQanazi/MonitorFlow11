@@ -261,11 +261,13 @@ router.post('/', async (req, res, next) => {
         const fullName = `${firstName.trim()} ${lastName.trim()}`;
         const { rows } = await tx.query(
           `INSERT INTO users (name, first_name, last_name, email, password_hash, role, phone,
-                              birthdate, gender, worker_type, department_id, manager_id, level_id, login_identifier)
-           VALUES ($1, $2, $3, $4, $5, 'employee', $6, $7, $8, $9, $10, $11, $12, $13)
+                              birthdate, gender, worker_type, department_id, manager_id, level_id,
+                              login_identifier, company_id)
+           VALUES ($1, $2, $3, $4, $5, 'employee', $6, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING id, name, email, phone, is_active, department_id`,
           [fullName, firstName.trim(), lastName.trim(), email.toLowerCase(), password_hash, phone || null,
-           birthdate || null, gender || null, workerType || null, departmentId, managerId, levelId, loginIdentifier]
+           birthdate || null, gender || null, workerType || null, departmentId, managerId, levelId,
+           loginIdentifier, req.user.company_id]
         );
         await logAudit(tx, req.user.id, 'employee.created', 'user', rows[0].id, { email: rows[0].email });
         return rows[0];
