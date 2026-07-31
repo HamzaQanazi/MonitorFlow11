@@ -284,6 +284,30 @@ const Map<String, Map<String, String>> _dict = {
   'df_change': {'en': 'Change', 'ar': 'تغيير'},
   'df_unsupported': {'en': 'This field type is not supported in this app version', 'ar': 'نوع الحقل هذا غير مدعوم في هذا الإصدار'},
 
+  // time clock (employee self-service — clock in/out, breaks, manual hours)
+  'tc_title': {'en': 'Time Clock', 'ar': 'ساعة الدوام'},
+  'tc_load_fail': {'en': 'Could not load your time clock status.', 'ar': 'تعذّر تحميل حالة ساعة الدوام.'},
+  'tc_not_clocked_in': {'en': 'Not clocked in', 'ar': 'لم تسجّل حضورًا'},
+  'tc_clocked_in': {'en': 'Clocked in', 'ar': 'مسجَّل حضور'},
+  'tc_on_break': {'en': 'On break', 'ar': 'في استراحة'},
+  'tc_since': {'en': 'since', 'ar': 'منذ'},
+  'tc_clock_in': {'en': 'Clock in', 'ar': 'تسجيل حضور'},
+  'tc_clock_out': {'en': 'Clock out', 'ar': 'تسجيل انصراف'},
+  'tc_start_break': {'en': 'Start break', 'ar': 'بدء الاستراحة'},
+  'tc_end_break': {'en': 'End break', 'ar': 'إنهاء الاستراحة'},
+  'tc_end_break_first': {'en': 'End your break before clocking out.', 'ar': 'أنهِ استراحتك قبل تسجيل الانصراف.'},
+  'tc_log_manual': {'en': 'Log hours manually', 'ar': 'تسجيل ساعات يدويًا'},
+  'tc_manual_title': {'en': 'Log hours manually', 'ar': 'تسجيل ساعات يدويًا'},
+  'tc_manual_hint': {
+    'en': 'Forgot to clock in? Log the hours here — a manager reviews and approves it.',
+    'ar': 'نسيت تسجيل الحضور؟ سجّل الساعات هنا — سيراجعها المدير ويعتمدها.',
+  },
+  'tc_note_optional': {'en': 'Note (optional)', 'ar': 'ملاحظة (اختياري)'},
+  'tc_submit_manual': {'en': 'Submit', 'ar': 'إرسال'},
+  'tc_submitting': {'en': 'Submitting…', 'ar': 'جارٍ الإرسال…'},
+  'tc_manual_submitted': {'en': 'Submitted — pending manager approval', 'ar': 'تم الإرسال — بانتظار موافقة المدير'},
+  'tc_err_required': {'en': 'Required', 'ar': 'مطلوب'},
+
   // form response view (shared)
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},
   'fr_no': {'en': 'No', 'ar': 'لا'},

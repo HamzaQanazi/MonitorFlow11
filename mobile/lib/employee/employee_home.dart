@@ -17,6 +17,7 @@ import '../widgets/state_chips.dart';
 import '../widgets/states.dart';
 import 'task_detail_screen.dart';
 import 'task_map_view.dart';
+import 'time_clock_screen.dart';
 
 class EmployeeHomeScreen extends StatefulWidget {
   const EmployeeHomeScreen({super.key});
@@ -110,6 +111,13 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       appBar: AppBar(
         title: Text('${i18n.tr('eh_title')} — $firstName'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.access_time_filled_outlined),
+            tooltip: i18n.tr('tc_title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TimeClockScreen()),
+            ),
+          ),
           NotificationBell(
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
