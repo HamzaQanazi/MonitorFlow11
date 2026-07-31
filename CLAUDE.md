@@ -283,18 +283,25 @@ combination gets at least one automated API test (§14).
 
 Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 
-- **company** (v7) — id, name, address, owner_job_title, employee_range, industry,
-  sub_industry, plan, email_domain (all owner-entered plain TEXT — tenant data, not
-  system labels, so I5's `{en,ar}` rule does not apply; plan is step 7, its
-  `employeeCap` server-enforced on hire — see §9; email_domain is step 5, the
-  domain suffix generated employee login emails use — see §4), features
+- **company** (v7) — id, name, address, owner_job_title (JSONB `{en,ar}`,
+  **both required** — the Owner types both halves in the wizard; unlike other
+  owner-entered tenant data, these three are shown to every console/mobile user
+  via the wordmark or future pickers regardless of *their* language, so I5's
+  rule applies here the same as a system label), employee_range, industry,
+  sub_industry, plan, email_domain (plain TEXT — genuinely Owner-only tenant
+  data nobody else's UI renders; plan is step 7, its `employeeCap`
+  server-enforced on hire — see §9; email_domain is step 5, the domain suffix
+  generated employee login emails use — see §4), features
   (`TEXT[]` of selected feature keys), logo_file_id (FK → file_attachment, nullable),
   phone, **onboarding_completed**
-  (bool, default false — the first-login gate), created_at. At most one row per
+  (bool, default false — the first-login gate), created_at. name/address/
+  owner_job_title stay nullable (the row exists pre-onboarding with no values
+  yet); the bilingual CHECK passes NULL through unchanged. At most one row per
   deployment (single-org, §13); a table not a singleton so branches/features get
   clean FKs and can grow to multi-tenant later.
-- **branch** (v7) — id, company_id (FK, cascade), name, created_at. One row per
-  branch the Owner names in the wizard.
+- **branch** (v7) — id, company_id (FK, cascade), name (JSONB `{en,ar}`, same
+  rationale as company's), created_at. One row per branch the Owner names in
+  the wizard.
 - **department** — id, name `{en,ar}`.
 - **users** — id, name (computed `${firstName} ${lastName}` for employees created
   through the extended Add Employee form — see §5's login_identifier note), email

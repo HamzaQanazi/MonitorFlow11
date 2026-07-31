@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ApiError, apiFetch, clearToken, getToken, setToken } from '../lib/api'
+import type { Loc } from '../i18n'
 
 export interface AuthUser {
   id: number
@@ -17,9 +18,10 @@ export interface AuthUser {
   // First-login gate: false for an Owner (admin) whose company hasn't run the
   // "Customize your app" wizard yet; null for accounts with no company.
   onboardingCompleted: boolean | null
-  // The company's plain-text name (CLAUDE.md §6 — tenant data, not a bilingual
-  // system label). NULL until the onboarding wizard's save writes it.
-  companyName: string | null
+  // The company's bilingual name (CLAUDE.md §6 — shown to every console/mobile
+  // user regardless of their language, via the wordmark). NULL until the
+  // onboarding wizard's save writes it.
+  companyName: Loc | null
   // The uploaded company logo as a data URI (auth.js inlines the file so the
   // wordmark never needs its own authenticated fetch). NULL if none uploaded.
   companyLogo: string | null
@@ -44,7 +46,7 @@ interface AuthContextValue {
   // shell wordmark switches immediately, without waiting on a fresh /auth/me
   // round-trip — the real, server-inlined logo replaces this preview on the
   // next login/restore anyway, so it doesn't need to be exact.
-  markOnboarded: (companyName: string, companyLogo: string | null) => void
+  markOnboarded: (companyName: Loc, companyLogo: string | null) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)

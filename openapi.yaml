@@ -263,16 +263,16 @@ paths:
               type: object
               required: [name, address, ownerJobTitle, employeeRange, industry, subIndustry, branches, phone, plan, emailDomain]
               properties:
-                name: { type: string }
-                address: { type: string }
-                ownerJobTitle: { type: string }
+                name: { $ref: '#/components/schemas/LocalizedText' }
+                address: { $ref: '#/components/schemas/LocalizedText' }
+                ownerJobTitle: { $ref: '#/components/schemas/LocalizedText' }
                 employeeRange: { type: string, description: one of options.employeeRanges }
                 industry: { type: string, description: an industry key }
                 subIndustry: { type: string, description: a sub-industry key of the chosen industry }
                 branches:
                   type: array
                   minItems: 1
-                  items: { type: string }
+                  items: { $ref: '#/components/schemas/LocalizedText' }
                 features:
                   type: array
                   items: { type: string, description: a feature key }

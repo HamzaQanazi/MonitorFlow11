@@ -6,13 +6,13 @@
 // third set of styles — the two sites size the mark differently.
 //
 // `companyName`/`companyLogo` are the runtime overrides: once an Owner finishes
-// onboarding, the console shell passes their company's plain-text name (not
-// bilingual — tenant data, not a system label, see CLAUDE.md §6) and uploaded
-// logo (a data URI — see auth.js's getCompanyInfo) here instead of the
-// build-time brand default. The login page never passes either (no session
-// yet), so it always shows the build-time default.
+// onboarding, the console shell passes their company's bilingual name (I5 —
+// shown to every console/mobile user regardless of language, see CLAUDE.md
+// §6) and uploaded logo (a data URI — see auth.js's getCompanyInfo) here
+// instead of the build-time brand default. The login page never passes
+// either (no session yet), so it always shows the build-time default.
 import { brand } from '../brand'
-import { useI18n } from '../i18n'
+import { useI18n, type Loc } from '../i18n'
 
 export function Wordmark({
   variant,
@@ -20,7 +20,7 @@ export function Wordmark({
   companyLogo,
 }: {
   variant: 'shell' | 'login'
-  companyName?: string | null
+  companyName?: Loc | null
   companyLogo?: string | null
 }) {
   const { L } = useI18n()
@@ -34,7 +34,7 @@ export function Wordmark({
       ) : (
         <span className={`${variant}-pip`} aria-hidden="true" />
       )}
-      {companyName || L(brand.name)}
+      {L(companyName ?? brand.name)}
     </p>
   )
 }

@@ -570,9 +570,12 @@ const dict: Record<string, Loc> = {
   ob_select: { en: 'Select…', ar: 'اختر…' },
 
   ob_s1_title: { en: 'Company information', ar: 'معلومات الشركة' },
-  ob_company_name: { en: 'Company name', ar: 'اسم الشركة' },
-  ob_company_address: { en: 'Company address', ar: 'عنوان الشركة' },
-  ob_job_title: { en: 'Your job title', ar: 'مسمّاك الوظيفي' },
+  ob_company_name_en: { en: 'Company name (English)', ar: 'اسم الشركة (بالإنجليزية)' },
+  ob_company_name_ar: { en: 'Company name (Arabic)', ar: 'اسم الشركة (بالعربية)' },
+  ob_company_address_en: { en: 'Company address (English)', ar: 'عنوان الشركة (بالإنجليزية)' },
+  ob_company_address_ar: { en: 'Company address (Arabic)', ar: 'عنوان الشركة (بالعربية)' },
+  ob_job_title_en: { en: 'Your job title (English)', ar: 'مسمّاك الوظيفي (بالإنجليزية)' },
+  ob_job_title_ar: { en: 'Your job title (Arabic)', ar: 'مسمّاك الوظيفي (بالعربية)' },
   ob_phone: { en: 'Phone number', ar: 'رقم الهاتف' },
 
   ob_s2_title: { en: 'Company details', ar: 'تفاصيل الشركة' },
@@ -582,7 +585,8 @@ const dict: Record<string, Loc> = {
 
   ob_s3_title: { en: 'Branches', ar: 'الفروع' },
   ob_branch_count: { en: 'How many branches?', ar: 'كم عدد الفروع؟' },
-  ob_branch_name: { en: 'Branch name', ar: 'اسم الفرع' },
+  ob_branch_name_en: { en: 'Branch name (English)', ar: 'اسم الفرع (بالإنجليزية)' },
+  ob_branch_name_ar: { en: 'Branch name (Arabic)', ar: 'اسم الفرع (بالعربية)' },
 
   ob_s4_title: { en: 'Features', ar: 'الميزات' },
   ob_features_hint: {

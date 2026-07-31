@@ -53,17 +53,22 @@ export default function OnboardingWizard() {
   const [saveError, setSaveError] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // Step 1
-  const [name, setName] = useState('')
-  const [address, setAddress] = useState('')
-  const [ownerJobTitle, setOwnerJobTitle] = useState('')
+  // Step 1 — name/address/job title are bilingual (I5): shown to every
+  // console/mobile user via the wordmark regardless of their language, same
+  // rationale as a system label.
+  const [nameEn, setNameEn] = useState('')
+  const [nameAr, setNameAr] = useState('')
+  const [addressEn, setAddressEn] = useState('')
+  const [addressAr, setAddressAr] = useState('')
+  const [ownerJobTitleEn, setOwnerJobTitleEn] = useState('')
+  const [ownerJobTitleAr, setOwnerJobTitleAr] = useState('')
   const [phone, setPhone] = useState('')
   // Step 2
   const [employeeRange, setEmployeeRange] = useState('')
   const [industry, setIndustry] = useState('')
   const [subIndustry, setSubIndustry] = useState('')
-  // Step 3
-  const [branchNames, setBranchNames] = useState<string[]>([''])
+  // Step 3 — bilingual, same rationale as the company name above.
+  const [branchNames, setBranchNames] = useState<{ en: string; ar: string }[]>([{ en: '', ar: '' }])
   // Step 4
   const [features, setFeatures] = useState<string[]>([])
   // Step 5
@@ -79,19 +84,22 @@ export default function OnboardingWizard() {
   }, [])
 
   // Step-1 address helper: once the owner pauses typing a bare city name
-  // (no comma yet), ask the backend to resolve it and append ", Country".
-  // Guards against races: only applies if `address` hasn't changed since the
-  // lookup fired.
+  // (no comma yet) in the English address field, ask the backend to resolve
+  // it and append ", Country". Guards against races: only applies if
+  // `addressEn` hasn't changed since the lookup fired. English-only — the
+  // backend's Nominatim proxy resolves Latin-script city/country names
+  // (accept-language=en), so there's nothing sensible to auto-append to the
+  // Arabic address field.
   useEffect(() => {
-    const trimmed = address.trim()
-    if (address.includes(',') || trimmed.length < 3) return
+    const trimmed = addressEn.trim()
+    if (addressEn.includes(',') || trimmed.length < 3) return
     const handle = setTimeout(() => {
       apiFetch<{ match: { city: string; country: string } | null }>(
         `/onboarding/geocode?q=${encodeURIComponent(trimmed)}`,
       )
         .then((res) => {
           if (!res.match) return
-          setAddress((current) =>
+          setAddressEn((current) =>
             current.trim().toLowerCase() === trimmed.toLowerCase() && !current.includes(',')
               ? `${res.match!.city}, ${res.match!.country}`
               : current,
@@ -100,7 +108,7 @@ export default function OnboardingWizard() {
         .catch(() => {})
     }, 600)
     return () => clearTimeout(handle)
-  }, [address])
+  }, [addressEn])
 
   const subs = useMemo(
     () => options?.industries.find((i) => i.key === industry)?.subs ?? [],
@@ -111,7 +119,7 @@ export default function OnboardingWizard() {
     const count = Math.max(1, Math.min(20, n || 1))
     setBranchNames((prev) => {
       const next = prev.slice(0, count)
-      while (next.length < count) next.push('')
+      while (next.length < count) next.push({ en: '', ar: '' })
       return next
     })
   }
@@ -127,9 +135,12 @@ export default function OnboardingWizard() {
       if (!v.trim()) e[k] = t('ob_err_required')
     }
     if (s === 0) {
-      req('name', name)
-      req('address', address)
-      req('ownerJobTitle', ownerJobTitle)
+      req('nameEn', nameEn)
+      req('nameAr', nameAr)
+      req('addressEn', addressEn)
+      req('addressAr', addressAr)
+      req('ownerJobTitleEn', ownerJobTitleEn)
+      req('ownerJobTitleAr', ownerJobTitleAr)
       req('phone', phone)
     } else if (s === 1) {
       if (!employeeRange) e.employeeRange = t('ob_err_required')
@@ -137,7 +148,8 @@ export default function OnboardingWizard() {
       if (!subIndustry) e.subIndustry = t('ob_err_required')
     } else if (s === 2) {
       branchNames.forEach((b, i) => {
-        if (!b.trim()) e[`branch${i}`] = t('ob_err_required')
+        if (!b.en.trim()) e[`branch${i}en`] = t('ob_err_required')
+        if (!b.ar.trim()) e[`branch${i}ar`] = t('ob_err_required')
       })
     } else if (s === 4) {
       if (!DOMAIN_RE.test(emailDomain.trim())) e.emailDomain = t('ob_err_domain')
@@ -181,12 +193,13 @@ export default function OnboardingWizard() {
     setSaveError('')
     try {
       const logoFileId = logoFile ? await uploadLogo(logoFile) : null
+      const name = { en: nameEn, ar: nameAr }
       await apiFetch('/company/onboarding', {
         method: 'PATCH',
         body: {
           name,
-          address,
-          ownerJobTitle,
+          address: { en: addressEn, ar: addressAr },
+          ownerJobTitle: { en: ownerJobTitleEn, ar: ownerJobTitleAr },
           employeeRange,
           industry,
           subIndustry,
@@ -269,14 +282,23 @@ export default function OnboardingWizard() {
 
           {step === 0 && (
             <>
-              <Field label={t('ob_company_name')} error={errors.name}>
-                <input value={name} onChange={(e) => setName(e.target.value)} aria-invalid={!!errors.name || undefined} />
+              <Field label={t('ob_company_name_en')} error={errors.nameEn}>
+                <input value={nameEn} onChange={(e) => setNameEn(e.target.value)} aria-invalid={!!errors.nameEn || undefined} />
               </Field>
-              <Field label={t('ob_company_address')} error={errors.address}>
-                <input value={address} onChange={(e) => setAddress(e.target.value)} aria-invalid={!!errors.address || undefined} />
+              <Field label={t('ob_company_name_ar')} error={errors.nameAr}>
+                <input dir="rtl" value={nameAr} onChange={(e) => setNameAr(e.target.value)} aria-invalid={!!errors.nameAr || undefined} />
               </Field>
-              <Field label={t('ob_job_title')} error={errors.ownerJobTitle}>
-                <input value={ownerJobTitle} onChange={(e) => setOwnerJobTitle(e.target.value)} aria-invalid={!!errors.ownerJobTitle || undefined} />
+              <Field label={t('ob_company_address_en')} error={errors.addressEn}>
+                <input value={addressEn} onChange={(e) => setAddressEn(e.target.value)} aria-invalid={!!errors.addressEn || undefined} />
+              </Field>
+              <Field label={t('ob_company_address_ar')} error={errors.addressAr}>
+                <input dir="rtl" value={addressAr} onChange={(e) => setAddressAr(e.target.value)} aria-invalid={!!errors.addressAr || undefined} />
+              </Field>
+              <Field label={t('ob_job_title_en')} error={errors.ownerJobTitleEn}>
+                <input value={ownerJobTitleEn} onChange={(e) => setOwnerJobTitleEn(e.target.value)} aria-invalid={!!errors.ownerJobTitleEn || undefined} />
+              </Field>
+              <Field label={t('ob_job_title_ar')} error={errors.ownerJobTitleAr}>
+                <input dir="rtl" value={ownerJobTitleAr} onChange={(e) => setOwnerJobTitleAr(e.target.value)} aria-invalid={!!errors.ownerJobTitleAr || undefined} />
               </Field>
               <Field label={t('ob_phone')} error={errors.phone}>
                 <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" aria-invalid={!!errors.phone || undefined} />
@@ -332,17 +354,31 @@ export default function OnboardingWizard() {
                 />
               </Field>
               {branchNames.map((b, i) => (
-                <Field key={i} label={`${t('ob_branch_name')} ${i + 1}`} error={errors[`branch${i}`]}>
-                  <input
-                    value={b}
-                    onChange={(e) => {
-                      const next = [...branchNames]
-                      next[i] = e.target.value
-                      setBranchNames(next)
-                    }}
-                    aria-invalid={!!errors[`branch${i}`] || undefined}
-                  />
-                </Field>
+                <div key={i} className="ob-branch-pair">
+                  <Field label={`${t('ob_branch_name_en')} ${i + 1}`} error={errors[`branch${i}en`]}>
+                    <input
+                      value={b.en}
+                      onChange={(e) => {
+                        const next = [...branchNames]
+                        next[i] = { ...next[i], en: e.target.value }
+                        setBranchNames(next)
+                      }}
+                      aria-invalid={!!errors[`branch${i}en`] || undefined}
+                    />
+                  </Field>
+                  <Field label={`${t('ob_branch_name_ar')} ${i + 1}`} error={errors[`branch${i}ar`]}>
+                    <input
+                      dir="rtl"
+                      value={b.ar}
+                      onChange={(e) => {
+                        const next = [...branchNames]
+                        next[i] = { ...next[i], ar: e.target.value }
+                        setBranchNames(next)
+                      }}
+                      aria-invalid={!!errors[`branch${i}ar`] || undefined}
+                    />
+                  </Field>
+                </div>
               ))}
             </>
           )}

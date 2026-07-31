@@ -23,6 +23,15 @@ router.use(requireAuth);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
+// Bilingual owner-entered fields (name, address, job title, branch names) —
+// both languages required, same CHECK the DB enforces (I5). Returns null if
+// either half is missing so the caller can turn that into a field error.
+function bilingual(v) {
+  if (!v || typeof v !== 'object') return null;
+  const en = str(v.en);
+  const ar = str(v.ar);
+  return en && ar ? { en, ar } : null;
+}
 
 // GET /onboarding/options — the wizard's catalogue (thin client, I4): employee
 // ranges, industries + their sub-industries, feature groups, and plan tiers.
@@ -79,15 +88,15 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
   const b = req.body || {};
   const errors = {};
 
-  const name = str(b.name);
-  const address = str(b.address);
-  const ownerJobTitle = str(b.ownerJobTitle);
+  const name = bilingual(b.name);
+  const address = bilingual(b.address);
+  const ownerJobTitle = bilingual(b.ownerJobTitle);
   const phone = str(b.phone);
   const emailDomain = str(b.emailDomain).toLowerCase();
 
-  if (!name) errors.name = 'Company name is required';
-  if (!address) errors.address = 'Company address is required';
-  if (!ownerJobTitle) errors.ownerJobTitle = 'Job title is required';
+  if (!name) errors.name = 'Company name (English and Arabic) is required';
+  if (!address) errors.address = 'Company address (English and Arabic) is required';
+  if (!ownerJobTitle) errors.ownerJobTitle = 'Job title (English and Arabic) is required';
   // Step 5: the domain suffix for generated employee login emails
   // (ha.qanazi@<emailDomain> — lib/employeeEmail.js). Same shape a browser's
   // native <input type="email"> domain part accepts.
@@ -101,8 +110,10 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
   }
   if (!phone) errors.phone = 'Phone number is required';
 
-  const branches = Array.isArray(b.branches) ? b.branches.map(str).filter(Boolean) : [];
-  if (!branches.length) errors.branches = 'At least one branch is required';
+  const branches = (Array.isArray(b.branches) ? b.branches : []).map(bilingual);
+  if (!branches.length || branches.some((br) => !br)) {
+    errors.branches = 'Each branch needs a name in English and Arabic';
+  }
 
   const features = Array.isArray(b.features) ? [...new Set(b.features)] : [];
   if (features.some((f) => !FEATURE_KEYS.has(f))) errors.features = 'Unknown feature selected';
@@ -155,14 +166,15 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
              plan=$10, email_domain=$11, onboarding_completed=TRUE
        WHERE id=$12`,
       [
-        name, address, ownerJobTitle, b.employeeRange, b.industry, b.subIndustry,
+        JSON.stringify(name), JSON.stringify(address), JSON.stringify(ownerJobTitle),
+        b.employeeRange, b.industry, b.subIndustry,
         features, logoFileId, phone, b.plan, emailDomain, req.user.company_id,
       ]
     );
     for (const branchName of branches) {
       await client.query('INSERT INTO branch (company_id, name) VALUES ($1, $2)', [
         req.user.company_id,
-        branchName,
+        JSON.stringify(branchName),
       ]);
     }
     await client.query('COMMIT');

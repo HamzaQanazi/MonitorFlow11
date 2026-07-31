@@ -92,6 +92,22 @@
   gap: 6px;
 }
 
+/* Each branch's English/Arabic name pair, grouped and separated from the next. */
+.ob-branch-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  padding-block-end: 12px;
+  margin-block-end: 12px;
+  border-block-end: 1px solid var(--border);
+}
+
+.ob-branch-pair:last-child {
+  border-block-end: none;
+  padding-block-end: 0;
+  margin-block-end: 0;
+}
+
 .ob-field label {
   font-size: 14px;
   font-weight: 600;
