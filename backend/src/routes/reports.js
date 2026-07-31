@@ -7,6 +7,7 @@ const pool = require('../db');
 const { requireAuth, requireCapability } = require('../middleware/auth');
 const { buildRequestFilter } = require('../lib/requestQuery');
 const { subtreeIds } = require('../lib/scope');
+const { csvCell } = require('../lib/csv');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -80,15 +81,6 @@ router.get('/', async (req, res, next) => {
     next(err);
   }
 });
-
-// A leading =, +, -, or @ makes a spreadsheet treat the cell as a formula;
-// prefix with ' to neutralize (Section 7). Then apply normal CSV quoting.
-function csvCell(value) {
-  let s = value === null || value === undefined ? '' : String(value);
-  if (/^[=+\-@]/.test(s)) s = `'${s}`;
-  if (/[",\n\r]/.test(s)) s = `"${s.replaceAll('"', '""')}"`;
-  return s;
-}
 
 // GET /reports/export.csv — same filters, frozen columns (§10 replaced the
 // `category` column with `state` = open/closed). completed_at is the first

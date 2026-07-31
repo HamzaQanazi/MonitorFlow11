@@ -85,6 +85,7 @@ tags:
   - name: people          # employees, the reporting tree (manage_employees capability)
   - name: notifications
   - name: files
+  - name: timeclock       # employee self-service: clock in/out, breaks, manual hours, in-shift entries
 
 paths:
   # ── Auth ───────────────────────────────────────────────────────────────────
@@ -782,6 +783,186 @@ paths:
         '200': { description: File stream }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /timeclock/shifts/active:
+    get:
+      tags: [timeclock]
+      summary: The caller's own open shift (with its breaks and entries), or null. Employee only.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { shift: { $ref: '#/components/schemas/TimeShift', nullable: true } }
+
+  /timeclock/clock-in:
+    post:
+      tags: [timeclock]
+      summary: Start a shift. 409 if already clocked in (DB-enforced, one active shift per employee).
+      responses:
+        '201': { description: Clocked in, content: { application/json: { schema: { type: object, properties: { shift: { $ref: '#/components/schemas/TimeShift' } } } } } }
+        '409': { description: Already clocked in }
+
+  /timeclock/clock-out:
+    post:
+      tags: [timeclock]
+      summary: End the caller's active shift. 409 if not clocked in, or an active break isn't ended first.
+      responses:
+        '200': { description: Clocked out, content: { application/json: { schema: { type: object, properties: { shift: { $ref: '#/components/schemas/TimeShift' } } } } } }
+        '409': { description: Not clocked in, or an active break is still open }
+
+  /timeclock/breaks/start:
+    post:
+      tags: [timeclock]
+      summary: Start a break on the caller's active shift. 409 if not clocked in or a break is already active.
+      responses:
+        '201': { description: Break started, content: { application/json: { schema: { type: object, properties: { shift: { $ref: '#/components/schemas/TimeShift' } } } } } }
+        '409': { description: Not clocked in, or a break is already active }
+
+  /timeclock/breaks/end:
+    post:
+      tags: [timeclock]
+      summary: End the active break on the caller's active shift. 409 if none is active.
+      responses:
+        '200': { description: Break ended, content: { application/json: { schema: { type: object, properties: { shift: { $ref: '#/components/schemas/TimeShift' } } } } } }
+        '409': { description: Not clocked in, or no active break }
+
+  /timeclock/shifts/manual:
+    post:
+      tags: [timeclock]
+      summary: Backdated hours entry. Lands with approvalStatus 'pending' — a manager approves/edits it (later phase).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clockInAt, clockOutAt]
+              properties:
+                clockInAt: { type: string, format: date-time }
+                clockOutAt: { type: string, format: date-time }
+                note: { type: string }
+      responses:
+        '201': { description: Recorded pending approval, content: { application/json: { schema: { type: object, properties: { shift: { $ref: '#/components/schemas/TimeShift' } } } } } }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /timeclock/shifts/{id}/entries:
+    post:
+      tags: [timeclock]
+      summary: Add a note/photo/tip to the caller's own active shift. 404 if not their shift, 409 if not active.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [note, photo, tip] }
+                body: { type: string, description: "required for type=note" }
+                amount: { type: number, description: "required for type=tip" }
+                fileAttachmentId: { type: string, format: uuid, description: "required for type=photo; a pending upload from POST /files owned by the caller" }
+      responses:
+        '201': { description: Entry added, content: { application/json: { schema: { type: object, properties: { shift: { $ref: '#/components/schemas/TimeShift' } } } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Shift is not active }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /timeclock/today:
+    get:
+      tags: [timeclock]
+      summary: >
+        Manager Today view — one row per subtree employee (their most recent
+        shift on `date`) plus the 5 counters the web Today tab renders as
+        clickable filters. Requires view_all (Gate 1) + subtree scope (Gate 2).
+      parameters:
+        - { name: date, in: query, schema: { type: string, format: date }, description: "defaults to today" }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  employees: { type: array, items: { $ref: '#/components/schemas/TodayAttendance' } }
+                  counters:
+                    type: object
+                    properties:
+                      lateClockIns: { type: integer }
+                      lateClockOuts: { type: integer }
+                      attendance: { type: integer }
+                      absences: { type: integer }
+                      currentlyWorking: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /timeclock/timesheets:
+    get:
+      tags: [timeclock]
+      summary: Manager weekly timesheet grid — one row per subtree employee, 7 daily totals + weekly total/overtime.
+      parameters:
+        - { name: weekStart, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  weekStart: { type: string, format: date }
+                  timesheets: { type: array, items: { $ref: '#/components/schemas/Timesheet' } }
+        '400': { description: weekStart missing or malformed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /timeclock/timesheets/export.csv:
+    get:
+      tags: [timeclock]
+      summary: Same weekly grid as GET /timeclock/timesheets, frozen CSV columns, for payroll. Requires view_all AND export.
+      parameters:
+        - { name: weekStart, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: CSV stream }
+        '400': { description: weekStart missing or malformed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /timeclock/shifts/{id}:
+    patch:
+      tags: [timeclock]
+      summary: >
+        Manager correction to a subtree employee's shift. Always lands
+        status=completed, approvalStatus=edited. Requires manage_employees +
+        subtree scope (404 if the shift's employee is outside it).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clockInAt, clockOutAt]
+              properties:
+                clockInAt: { type: string, format: date-time }
+                clockOutAt: { type: string, format: date-time }
+                note: { type: string }
+      responses:
+        '200': { description: Edited, content: { application/json: { schema: { type: object, properties: { shift: { $ref: '#/components/schemas/TimeShift' } } } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /timeclock/shifts/{id}/approve:
+    post:
+      tags: [timeclock]
+      summary: Clears a pending manual entry's approval. 409 if the shift isn't pending. Requires manage_employees + subtree scope.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200': { description: Approved, content: { application/json: { schema: { type: object, properties: { shift: { $ref: '#/components/schemas/TimeShift' } } } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Shift is not pending approval }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -1005,6 +1186,86 @@ components:
         name: { type: string }
         level: { $ref: '#/components/schemas/Level' }
         open_workload: { type: integer, description: "outcome metric, not behaviour tracking" }
+
+    TimeShift:
+      type: object
+      properties:
+        id: { type: integer }
+        clockInAt: { type: string, format: date-time }
+        clockOutAt: { type: string, format: date-time, nullable: true }
+        source: { type: string, enum: [clock, manual] }
+        status: { type: string, enum: [active, completed] }
+        approvalStatus: { type: string, enum: [pending, approved, edited] }
+        note: { type: string, nullable: true }
+        breaks:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              breakStartAt: { type: string, format: date-time }
+              breakEndAt: { type: string, format: date-time, nullable: true }
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              type: { type: string, enum: [note, photo, tip] }
+              body: { type: string, nullable: true }
+              amount: { type: number, nullable: true }
+              attachmentId: { type: string, format: uuid, nullable: true }
+              createdAt: { type: string, format: date-time }
+
+    TodayAttendance:
+      type: object
+      description: One subtree employee's Today-tab row, with the flags backing the 5 clickable counters.
+      properties:
+        employeeId: { type: integer }
+        name: { type: string }
+        shiftId: { type: integer, nullable: true }
+        clockInAt: { type: string, format: date-time, nullable: true }
+        clockOutAt: { type: string, format: date-time, nullable: true }
+        breakStartAt: { type: string, format: date-time, nullable: true, description: "first break of the shift only" }
+        breakEndAt: { type: string, format: date-time, nullable: true }
+        breakSeconds: { type: integer }
+        approvalStatus: { type: string, enum: [pending, approved, edited], nullable: true }
+        source: { type: string, enum: [clock, manual], nullable: true }
+        totalHours: { type: number, nullable: true }
+        overtimeHours: { type: number, nullable: true, description: "null when no employee_default_shift baseline is set" }
+        lateClockIn: { type: boolean }
+        lateClockOut: { type: boolean }
+        absent: { type: boolean }
+        currentlyWorking: { type: boolean }
+
+    Timesheet:
+      type: object
+      description: One subtree employee's weekly row — 7 daily totals plus weekly aggregates.
+      properties:
+        employeeId: { type: integer }
+        name: { type: string }
+        days:
+          type: array
+          minItems: 7
+          maxItems: 7
+          items:
+            type: object
+            properties:
+              totalHours: { type: number }
+              overtimeHours: { type: number }
+              shifts:
+                type: array
+                description: The shift(s) that landed on this day — drives the edit/approve actions in the web Timesheets tab.
+                items:
+                  type: object
+                  properties:
+                    id: { type: integer }
+                    clockInAt: { type: string, format: date-time }
+                    clockOutAt: { type: string, format: date-time, nullable: true }
+                    approvalStatus: { type: string, enum: [pending, approved, edited] }
+                    source: { type: string, enum: [clock, manual] }
+        weeklyTotalHours: { type: number }
+        weeklyOvertimeHours: { type: number }
 
     Notification:
       type: object
