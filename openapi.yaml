@@ -320,6 +320,88 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/ServiceSummary' }
+    post:
+      tags: [services]
+      summary: >
+        The "Add Service" builder's one save (admin-only, requireRole('admin')
+        — a config action, not oversight, so no capability). Validates the
+        whole shape server-side (I8) through the same seed-time validators
+        (formSchema.js/workflowSchema.js) and writes service_type + both
+        form_definition rows + workflow_definition in one transaction. No
+        edit-in-place — see PATCH /services/{id}/enabled; to change a live
+        definition, create a new service and disable the old one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, departmentId, defaultPriority, acceptsExternalUsers, ownerId, requestFields, completionFields, statuses, transitions]
+              properties:
+                name: { $ref: '#/components/schemas/LocalizedText' }
+                departmentId: { type: integer }
+                defaultPriority: { type: string, enum: [low, medium, high] }
+                acceptsExternalUsers: { type: boolean }
+                ownerId: { type: integer, description: an existing employee — the Gate-2 visibility anchor }
+                requestFields:
+                  type: array
+                  description: field_schema for the request form — see formSchema.js's FIELD_TYPES
+                  items: { type: object }
+                completionFields:
+                  type: array
+                  description: field_schema for the completion form
+                  items: { type: object }
+                statuses:
+                  type: array
+                  description: workflow statuses — see workflowSchema.js
+                  items: { type: object }
+                transitions:
+                  type: array
+                  items: { type: object }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serviceTypeId: { type: integer }
+                  key: { type: string, description: auto-slugified from name.en, uniqueness-suffixed on collision }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /services/{id}/enabled:
+    patch:
+      tags: [services]
+      summary: >
+        Toggle a service on/off (admin-only). Not an edit endpoint — this is
+        the whole mechanism behind the "definitions are immutable once live"
+        rule (§3/§15): there is no route that could violate it.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  enabled: { type: boolean }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
 
   /services/{serviceKey}/forms/{formKey}:
     get:

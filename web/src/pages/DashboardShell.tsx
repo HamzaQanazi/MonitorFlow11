@@ -20,6 +20,7 @@ const oversightNav = [
 const adminNav = [
   { to: '/', labelKey: 'nav_dashboard', end: true },
   { to: '/employees', labelKey: 'nav_employees', end: false },
+  { to: '/services/new', labelKey: 'nav_add_service', end: false },
   { to: '/audit', labelKey: 'nav_audit', end: false },
 ]
 
