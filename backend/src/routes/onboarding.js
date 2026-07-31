@@ -10,10 +10,12 @@ const {
   EMPLOYEE_RANGES,
   INDUSTRIES,
   FEATURE_GROUPS,
+  PLANS,
   INDUSTRY_KEYS,
   SUBS_BY_INDUSTRY,
   FEATURE_KEYS,
   EMPLOYEE_RANGE_SET,
+  PLAN_KEYS,
 } = require('../lib/onboardingOptions');
 
 const router = express.Router();
@@ -23,9 +25,50 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 
 // GET /onboarding/options — the wizard's catalogue (thin client, I4): employee
-// ranges, industries + their sub-industries, and the feature groups.
+// ranges, industries + their sub-industries, feature groups, and plan tiers.
 router.get('/onboarding/options', (req, res) => {
-  res.json({ employeeRanges: EMPLOYEE_RANGES, industries: INDUSTRIES, featureGroups: FEATURE_GROUPS });
+  res.json({
+    employeeRanges: EMPLOYEE_RANGES,
+    industries: INDUSTRIES,
+    featureGroups: FEATURE_GROUPS,
+    plans: PLANS,
+  });
+});
+
+// GET /onboarding/geocode?q=… — step-1 address helper. Proxies OpenStreetMap
+// Nominatim server-side (its usage policy forbids calling it directly from a
+// browser and requires a descriptive User-Agent + ~1 req/sec throttling) and
+// returns only { match: { city, country } | null } — never the raw response.
+let lastNominatimCallAt = 0;
+const NOMINATIM_MIN_INTERVAL_MS = 1000;
+// Nominatim's English country name for 'ps' is 'Palestinian Territories';
+// the wizard's audience expects 'Palestine'.
+const COUNTRY_NAME_OVERRIDES = { ps: 'Palestine' };
+
+router.get('/onboarding/geocode', async (req, res) => {
+  const q = str(req.query.q);
+  if (q.length < 3) return res.json({ match: null });
+
+  const wait = NOMINATIM_MIN_INTERVAL_MS - (Date.now() - lastNominatimCallAt);
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+  lastNominatimCallAt = Date.now();
+
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&accept-language=en&q=${encodeURIComponent(q)}`;
+    const upstream = await fetch(url, {
+      headers: { 'User-Agent': 'MonitorFlow-Onboarding/1.0 (student project; graduation onboarding wizard)' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!upstream.ok) return res.json({ match: null });
+    const [place] = await upstream.json();
+    const city = place?.address?.city || place?.address?.town || place?.address?.village;
+    const countryCode = place?.address?.country_code;
+    const country = COUNTRY_NAME_OVERRIDES[countryCode] || place?.address?.country;
+    if (!city || !country) return res.json({ match: null });
+    res.json({ match: { city, country } });
+  } catch {
+    res.json({ match: null });
+  }
 });
 
 // PATCH /company/onboarding — "Customize your app in 1 minute" save. Validates
@@ -41,10 +84,17 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
   const ownerJobTitle = str(b.ownerJobTitle);
   const website = str(b.website);
   const phone = str(b.phone);
+  const emailDomain = str(b.emailDomain).toLowerCase();
 
   if (!name) errors.name = 'Company name is required';
   if (!address) errors.address = 'Company address is required';
   if (!ownerJobTitle) errors.ownerJobTitle = 'Job title is required';
+  // Step 5: the domain suffix for generated employee login emails
+  // (ha.qanazi@<emailDomain> — lib/employeeEmail.js). Same shape a browser's
+  // native <input type="email"> domain part accepts.
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(emailDomain)) {
+    errors.emailDomain = 'Enter a valid domain, e.g. company.org';
+  }
   if (!EMPLOYEE_RANGE_SET.has(b.employeeRange)) errors.employeeRange = 'Select a valid employee range';
   if (!INDUSTRY_KEYS.has(b.industry)) errors.industry = 'Select a valid industry';
   else if (!SUBS_BY_INDUSTRY.get(b.industry).has(b.subIndustry)) {
@@ -57,6 +107,8 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
 
   const features = Array.isArray(b.features) ? [...new Set(b.features)] : [];
   if (features.some((f) => !FEATURE_KEYS.has(f))) errors.features = 'Unknown feature selected';
+
+  if (!PLAN_KEYS.has(b.plan)) errors.plan = 'Select a valid plan';
 
   if (b.logoFileId != null && b.logoFileId !== '' && !UUID_RE.test(b.logoFileId)) {
     errors.logoFileId = 'Invalid logo reference';
@@ -101,11 +153,11 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
       `UPDATE company
          SET name=$1, address=$2, owner_job_title=$3, employee_range=$4, industry=$5,
              sub_industry=$6, features=$7, logo_file_id=$8, website=$9, phone=$10,
-             onboarding_completed=TRUE
-       WHERE id=$11`,
+             plan=$11, email_domain=$12, onboarding_completed=TRUE
+       WHERE id=$13`,
       [
         name, address, ownerJobTitle, b.employeeRange, b.industry, b.subIndustry,
-        features, logoFileId, website || null, phone, req.user.company_id,
+        features, logoFileId, website || null, phone, b.plan, emailDomain, req.user.company_id,
       ]
     );
     for (const branchName of branches) {

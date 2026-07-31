@@ -5,50 +5,68 @@ const express = require('express');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const pool = require('../db');
-const { requireAuth, requireCapability } = require('../middleware/auth');
+const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
 const { statusOf } = require('../lib/workflowEngine');
 const { subtreeIds } = require('../lib/scope');
 const { withTx, logAudit } = require('../lib/audit');
-const { allocateEmployeeNumber } = require('../lib/employeeNumber');
+const { allocateEmployeeEmail } = require('../lib/employeeEmail');
 
 const router = express.Router();
 router.use(requireAuth);
-router.use(requireCapability('manage_employees'));
+router.use(requireCapabilityOrAdmin('manage_employees'));
+
+// Machine-key picklists (same treatment as `priority`, I5's precedent) —
+// translated client-side, not stored bilingual.
+const GENDERS = new Set(['male', 'female']);
+const WORKER_TYPES = new Set(['full_time', 'part_time', 'contractor']);
 
 function publicEmployee(r) {
   return {
     id: r.id,
     name: r.name,
+    firstName: r.first_name,
+    lastName: r.last_name,
     email: r.email,
     phone: r.phone,
-    // The 4-digit number this employee signs in with — returned so whoever
-    // created them can hand it over (there is no other way to look it up).
+    // The login this employee signs in with — returned so whoever created
+    // them can hand it over (there is no other way to look it up).
     loginIdentifier: r.login_identifier,
     isActive: r.is_active,
+    birthdate: r.birthdate,
+    gender: r.gender,
+    workerType: r.worker_type,
     departmentId: r.department_id,
     departmentName: r.department_name,
+    levelId: r.level_id,
+    levelName: r.level_name,
   };
 }
 
 // Load an employee by id, joined to its department. Returns null for a
 // missing id, a non-employee user, the actor themselves, OR (Gate 2) an
 // employee outside the acting oversight actor's subtree — all look
-// nonexistent → 404.
-async function loadEmployee(id, actorId) {
+// nonexistent → 404. The admin has no subtree (I2) — they see the whole
+// company, so their "sub" CTE is every user rather than a recursive walk.
+async function loadEmployee(id, actor) {
   if (!Number.isInteger(id)) return null;
+  const sub = actor.role === 'admin'
+    ? 'WITH sub AS (SELECT id FROM users)'
+    : `WITH RECURSIVE sub AS (
+         SELECT id FROM users WHERE id = $2
+         UNION ALL
+         SELECT u.id FROM users u JOIN sub ON u.manager_id = sub.id
+       )`;
   const { rows } = await pool.query(
-    `WITH RECURSIVE sub AS (
-       SELECT id FROM users WHERE id = $2
-       UNION ALL
-       SELECT u.id FROM users u JOIN sub ON u.manager_id = sub.id
-     )
-     SELECT u.id, u.name, u.email, u.phone, u.login_identifier, u.is_active,
-            u.department_id, d.name AS department_name
+    `${sub}
+     SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
+            u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type,
+            u.department_id, d.name AS department_name, u.level_id, l.name AS level_name
      FROM users u
      LEFT JOIN department d ON d.id = u.department_id
+     LEFT JOIN employee_level l ON l.id = u.level_id
      WHERE u.id = $1 AND u.role = 'employee'
        AND u.id <> $2 AND u.id IN (SELECT id FROM sub)`,
-    [id, actorId]
+    [id, actor.id]
   );
   return rows[0] || null;
 }
@@ -71,9 +89,10 @@ router.get('/', async (req, res, next) => {
       params.push(value);
       where.push(sql.replaceAll('?', `$${params.length}`));
     };
-    // Gate 2: an oversight actor manages the staff inside their subtree only
-    // (excluding themselves). The departmentId param narrows within that.
-    add('u.id = ANY(?)', await subtreeIds(req.user.id));
+    // Gate 2: an oversight actor manages the staff inside their subtree only.
+    // The admin has no subtree (I2) — they see the whole company. The
+    // departmentId param narrows within whichever scope applies.
+    if (req.user.role !== 'admin') add('u.id = ANY(?)', await subtreeIds(req.user.id));
     add('u.id <> ?', req.user.id);
     if (q.departmentId !== undefined) add('u.department_id = ?', Number(q.departmentId));
     if (q.q) add('(u.name ILIKE ? OR u.email ILIKE ?)', `%${q.q}%`);
@@ -83,8 +102,9 @@ router.get('/', async (req, res, next) => {
     // status is non-final — finality read from the workflow data, no status
     // key in code (same mechanism as the deactivate guard below).
     const { rows } = await pool.query(
-      `SELECT u.id, u.name, u.email, u.phone, u.login_identifier, u.is_active,
-              u.department_id, d.name AS department_name,
+      `SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
+              u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type,
+              u.department_id, d.name AS department_name, u.level_id, l.name AS level_name,
               (SELECT COUNT(*)::int
                FROM task t
                JOIN request r ON r.id = t.request_id
@@ -119,6 +139,7 @@ router.get('/', async (req, res, next) => {
               COUNT(*) OVER()::int AS total
        FROM users u
        JOIN department d ON d.id = u.department_id
+       LEFT JOIN employee_level l ON l.id = u.level_id
        WHERE ${where.join(' AND ')}
        ORDER BY u.name
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -129,12 +150,19 @@ router.get('/', async (req, res, next) => {
       employees: rows.map((r) => ({
         id: r.id,
         name: r.name,
+        firstName: r.first_name,
+        lastName: r.last_name,
         email: r.email,
         phone: r.phone,
         loginIdentifier: r.login_identifier,
         isActive: r.is_active,
+        birthdate: r.birthdate,
+        gender: r.gender,
+        workerType: r.worker_type,
         departmentId: r.department_id,
         departmentName: r.department_name,
+        levelId: r.level_id,
+        levelName: r.level_name,
         openTaskCount: r.open_task_count,
         avgResolutionMinutes: r.avg_resolution_minutes,
       })),
@@ -150,45 +178,88 @@ router.get('/', async (req, res, next) => {
 // POST /employees — create an employee; monitor sets the initial password.
 router.post('/', async (req, res, next) => {
   try {
-    const { name, email, password, phone } = req.body || {};
+    const b = req.body || {};
+    const { firstName, lastName, email, password, phone, birthdate, gender, workerType } = b;
     const errors = {};
-    if (!name || typeof name !== 'string' || !name.trim()) errors.name = 'Name is required';
+    if (!firstName || typeof firstName !== 'string' || !firstName.trim()) errors.firstName = 'First name is required';
+    if (!lastName || typeof lastName !== 'string' || !lastName.trim()) errors.lastName = 'Last name is required';
     if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       errors.email = 'A valid email is required';
     }
     if (!password || typeof password !== 'string' || password.length < 8) {
       errors.password = 'Password must be at least 8 characters';
     }
+    if (birthdate !== undefined && birthdate !== null && Number.isNaN(Date.parse(birthdate))) {
+      errors.birthdate = 'Invalid date';
+    }
+    if (gender !== undefined && gender !== null && !GENDERS.has(gender)) errors.gender = 'Invalid gender';
+    if (workerType !== undefined && workerType !== null && !WORKER_TYPES.has(workerType)) {
+      errors.workerType = 'Invalid worker type';
+    }
+
+    // Gate 2: an oversight actor's new hire becomes their direct report
+    // (manager_id = actor), inheriting the actor's department. The admin has
+    // no department/subtree of their own (I2) — they sit outside the tree —
+    // so they must say where the hire goes; an omitted managerId makes the
+    // hire a tree root (I3: "a root employee reaches the whole organisation
+    // by sitting at the top").
+    let departmentId = req.user.department_id;
+    let managerId = req.user.id;
+    // Handing out a level at creation grants real Gate-1 power, so only the
+    // admin can do it — an oversight employee handing an arbitrary level
+    // (including one stronger than their own) to their own hire would be a
+    // privilege-escalation path. Oversight-created hires keep level_id NULL,
+    // same as before this change.
+    let levelId = null;
+    if (req.user.role === 'admin') {
+      if (!Number.isInteger(b.departmentId)) errors.departmentId = 'Department is required';
+      departmentId = b.departmentId;
+      if (b.managerId !== undefined && b.managerId !== null) {
+        if (!Number.isInteger(b.managerId)) errors.managerId = 'Invalid manager';
+        managerId = b.managerId;
+      } else {
+        managerId = null;
+      }
+      if (b.levelId !== undefined && b.levelId !== null) {
+        if (!Number.isInteger(b.levelId)) errors.levelId = 'Invalid level';
+        levelId = b.levelId;
+      }
+    }
+
     if (Object.keys(errors).length) return res.status(422).json({ errors });
+
+    // The generated login lives on the one company row's email_domain
+    // (step 5 of the wizard) — single-org per deployment (§13), so there's
+    // exactly one to read, not one scoped per actor.
+    const { rows: co } = await pool.query('SELECT email_domain FROM company LIMIT 1');
+    if (!co.length || !co[0].email_domain) {
+      return res.status(422).json({ errors: { _: 'Company email domain is not set — finish onboarding first' } });
+    }
+    const emailDomain = co[0].email_domain;
 
     const password_hash = await bcrypt.hash(password, 10);
     let inserted;
     try {
-      // Gate 2: a new employee becomes a direct report of the creating oversight
-      // actor (manager_id = actor) so it lands inside their subtree, and
-      // inherits the actor's department. They log in with a 4-digit number from
-      // that department's block, not with the email.
       inserted = await withTx(async (tx) => {
-        const loginNumber = await allocateEmployeeNumber(tx, req.user.department_id);
-        if (!loginNumber) return 'block_full';
+        const loginIdentifier = await allocateEmployeeEmail(tx, firstName, lastName, emailDomain);
+        const fullName = `${firstName.trim()} ${lastName.trim()}`;
         const { rows } = await tx.query(
-          `INSERT INTO users (name, email, password_hash, role, phone, department_id, manager_id, login_identifier)
-           VALUES ($1, $2, $3, 'employee', $4, $5, $6, $7)
+          `INSERT INTO users (name, first_name, last_name, email, password_hash, role, phone,
+                              birthdate, gender, worker_type, department_id, manager_id, level_id, login_identifier)
+           VALUES ($1, $2, $3, $4, $5, 'employee', $6, $7, $8, $9, $10, $11, $12, $13)
            RETURNING id, name, email, phone, is_active, department_id`,
-          [name.trim(), email.toLowerCase(), password_hash, phone || null,
-           req.user.department_id, req.user.id, loginNumber]
+          [fullName, firstName.trim(), lastName.trim(), email.toLowerCase(), password_hash, phone || null,
+           birthdate || null, gender || null, workerType || null, departmentId, managerId, levelId, loginIdentifier]
         );
         await logAudit(tx, req.user.id, 'employee.created', 'user', rows[0].id, { email: rows[0].email });
         return rows[0];
       });
     } catch (err) {
       if (err.code === '23505') return res.status(422).json({ errors: { email: 'Email is already registered' } });
+      if (err.code === '23503') return res.status(422).json({ errors: { departmentId: 'Invalid department, manager, or level' } });
       throw err;
     }
-    if (inserted === 'block_full') {
-      return res.status(409).json({ error: 'This department has no free employee numbers left' });
-    }
-    const created = await loadEmployee(inserted.id, req.user.id);
+    const created = await loadEmployee(inserted.id, req.user);
     res.status(201).json({ employee: publicEmployee(created) });
   } catch (err) {
     next(err);
@@ -198,7 +269,7 @@ router.post('/', async (req, res, next) => {
 // PATCH /employees/{id} — edit name / phone / department
 router.patch('/:id', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id), req.user.id);
+    const emp = await loadEmployee(Number(req.params.id), req.user);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
     const { name, phone, departmentId } = req.body || {};
@@ -208,9 +279,11 @@ router.patch('/:id', async (req, res, next) => {
     if (departmentId !== undefined && !Number.isInteger(departmentId)) errors.departmentId = 'Invalid department';
     if (Object.keys(errors).length) return res.status(422).json({ errors });
 
-    // Spec v4: an employee cannot be moved out of the monitor's department
-    // (that would need an org-level actor; today no one has that power).
-    if (departmentId !== undefined && departmentId !== req.user.department_id) {
+    // Spec v4: an oversight employee cannot move a report out of their own
+    // department (that would need an org-level actor). The admin has no
+    // department of their own (I2) and configures the whole org, so this
+    // restriction doesn't apply to them.
+    if (req.user.role !== 'admin' && departmentId !== undefined && departmentId !== req.user.department_id) {
       return res.status(422).json({ errors: { departmentId: 'Must be your own department' } });
     }
 
@@ -235,7 +308,7 @@ router.patch('/:id', async (req, res, next) => {
         ...(departmentId !== undefined ? { departmentId } : {}),
       });
     });
-    res.json({ employee: publicEmployee(await loadEmployee(emp.id, req.user.id)) });
+    res.json({ employee: publicEmployee(await loadEmployee(emp.id, req.user)) });
   } catch (err) {
     next(err);
   }
@@ -244,7 +317,7 @@ router.patch('/:id', async (req, res, next) => {
 // PATCH /employees/{id}/activate
 router.patch('/:id/activate', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id), req.user.id);
+    const emp = await loadEmployee(Number(req.params.id), req.user);
     if (!emp) return res.status(404).json({ error: 'Not found' });
     await withTx(async (tx) => {
       await tx.query('UPDATE users SET is_active = TRUE WHERE id = $1', [emp.id]);
@@ -261,7 +334,7 @@ router.patch('/:id/activate', async (req, res, next) => {
 // data, not a hardcoded status key: reassign the open task first.
 router.patch('/:id/deactivate', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id), req.user.id);
+    const emp = await loadEmployee(Number(req.params.id), req.user);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
     const open = await pool.query(
@@ -294,7 +367,7 @@ router.patch('/:id/deactivate', async (req, res, next) => {
 // returned once (no forced-change flow — documented MVP limitation).
 router.patch('/:id/reset-password', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id), req.user.id);
+    const emp = await loadEmployee(Number(req.params.id), req.user);
     if (!emp) return res.status(404).json({ error: 'Not found' });
     const tempPassword = `Temp-${crypto.randomBytes(6).toString('base64url')}`;
     const password_hash = await bcrypt.hash(tempPassword, 10);
@@ -313,7 +386,7 @@ router.patch('/:id/reset-password', async (req, res, next) => {
 // from the workflow data). Read-only oversight view of assignment progress.
 router.get('/:id/tasks', async (req, res, next) => {
   try {
-    const emp = await loadEmployee(Number(req.params.id), req.user.id);
+    const emp = await loadEmployee(Number(req.params.id), req.user);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
     const { rows } = await pool.query(

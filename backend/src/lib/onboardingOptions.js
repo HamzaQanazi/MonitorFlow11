@@ -42,16 +42,6 @@ const INDUSTRIES = [
     ],
   },
   {
-    key: 'retail',
-    label: { en: 'Retail', ar: 'تجارة التجزئة' },
-    subs: [
-      { key: 'supermarket', label: { en: 'Supermarket', ar: 'سوبر ماركت' } },
-      { key: 'clothing', label: { en: 'Clothing', ar: 'الملابس' } },
-      { key: 'electronics', label: { en: 'Electronics', ar: 'الإلكترونيات' } },
-      { key: 'pharmacy', label: { en: 'Pharmacy', ar: 'صيدلية' } },
-    ],
-  },
-  {
     key: 'food_beverage',
     label: { en: 'Food & Beverage', ar: 'الأغذية والمشروبات' },
     subs: [
@@ -71,15 +61,6 @@ const INDUSTRIES = [
     ],
   },
   {
-    key: 'manufacturing',
-    label: { en: 'Manufacturing', ar: 'التصنيع' },
-    subs: [
-      { key: 'factory', label: { en: 'Factory', ar: 'مصنع' } },
-      { key: 'warehouse', label: { en: 'Warehouse', ar: 'مستودع' } },
-      { key: 'assembly', label: { en: 'Assembly', ar: 'خطوط التجميع' } },
-    ],
-  },
-  {
     key: 'field_services',
     label: { en: 'Field Services', ar: 'الخدمات الميدانية' },
     subs: [
@@ -87,6 +68,16 @@ const INDUSTRIES = [
       { key: 'landscaping', label: { en: 'Landscaping', ar: 'تنسيق الحدائق' } },
       { key: 'security', label: { en: 'Security', ar: 'الأمن' } },
       { key: 'logistics', label: { en: 'Logistics', ar: 'الخدمات اللوجستية' } },
+    ],
+  },
+  {
+    key: 'municipality',
+    label: { en: 'Municipality', ar: 'البلدية' },
+    subs: [
+      { key: 'public_works', label: { en: 'Public Works', ar: 'الأشغال العامة' } },
+      { key: 'parks_recreation', label: { en: 'Parks & Recreation', ar: 'الحدائق والترفيه' } },
+      { key: 'waste_management', label: { en: 'Waste Management', ar: 'إدارة النفايات' } },
+      { key: 'permits_licensing', label: { en: 'Permits & Licensing', ar: 'التراخيص والتصاريح' } },
     ],
   },
 ];
@@ -125,18 +116,45 @@ const FEATURE_GROUPS = [
   },
 ];
 
+// Plan catalogue — step 7. Record-only (no billing, no enforcement yet): each
+// plan's employeeCap and featureGroups are descriptive text on the wizard card,
+// not a limit the server checks. null employeeCap = unlimited.
+const PLANS = [
+  {
+    key: 'starter',
+    name: { en: 'Starter', ar: 'أساسي' },
+    employeeCap: 10,
+    featureGroups: ['operations'],
+  },
+  {
+    key: 'growth',
+    name: { en: 'Growth', ar: 'نمو' },
+    employeeCap: 50,
+    featureGroups: ['operations', 'communication'],
+  },
+  {
+    key: 'enterprise',
+    name: { en: 'Enterprise', ar: 'مؤسسات' },
+    employeeCap: null,
+    featureGroups: ['operations', 'communication', 'hr_skills'],
+  },
+];
+
 // Flat lookup sets for validation.
 const INDUSTRY_KEYS = new Set(INDUSTRIES.map((i) => i.key));
 const SUBS_BY_INDUSTRY = new Map(INDUSTRIES.map((i) => [i.key, new Set(i.subs.map((s) => s.key))]));
 const FEATURE_KEYS = new Set(FEATURE_GROUPS.flatMap((g) => g.features.map((f) => f.key)));
 const EMPLOYEE_RANGE_SET = new Set(EMPLOYEE_RANGES);
+const PLAN_KEYS = new Set(PLANS.map((p) => p.key));
 
 module.exports = {
   EMPLOYEE_RANGES,
   INDUSTRIES,
   FEATURE_GROUPS,
+  PLANS,
   INDUSTRY_KEYS,
   SUBS_BY_INDUSTRY,
   FEATURE_KEYS,
   EMPLOYEE_RANGE_SET,
+  PLAN_KEYS,
 };

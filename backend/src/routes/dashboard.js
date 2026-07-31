@@ -3,17 +3,27 @@
 // from each status's `is_terminal` flag — no status key appears here (Section 9).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireCapability } = require('../middleware/auth');
+const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
 const { subtreeIds } = require('../lib/scope');
 
 const router = express.Router();
-router.use(requireAuth, requireCapability('view_all'));
+router.use(requireAuth, requireCapabilityOrAdmin('view_all'));
 
-// Gate 2: every query is scoped to the services the oversight actor's subtree
-// owns — the dashboard shows their board, not the whole organization's.
+// Gate 2: an oversight employee's queries are scoped to the services their
+// subtree owns. The admin (Owner) has no subtree — they configure the whole
+// deployment (I2) — so they see every service's data (single-org per
+// deployment, so "company-wide" is just "no owner_id filter").
+async function ownerScopeIds(user) {
+  if (user.role === 'admin') {
+    const { rows } = await pool.query('SELECT id FROM users');
+    return rows.map((r) => r.id);
+  }
+  return subtreeIds(user.id);
+}
+
 router.get('/stats', async (req, res, next) => {
   try {
-    const dept = [await subtreeIds(req.user.id)];
+    const dept = [await ownerScopeIds(req.user)];
     const [byState, byService, byPriority, byDepartment] = await Promise.all([
       pool.query(
         `SELECT (s->>'is_terminal')::bool AS is_terminal, COUNT(*)::int AS count
@@ -132,7 +142,7 @@ router.get('/chart', async (req, res, next) => {
        WHERE r.created_at >= (CURRENT_DATE - INTERVAL '29 days')
          AND st.owner_id = ANY($1)
        GROUP BY 1`,
-      [await subtreeIds(req.user.id)]
+      [await ownerScopeIds(req.user)]
     );
     const counts = Object.fromEntries(rows.map((r) => [r.day, r.count]));
     const days = [];

@@ -18,11 +18,25 @@ import AuditPage from './pages/AuditPage'
 // the pages. Each page needs a capability (Gate 1) — or the admin kind for the
 // account/config surfaces. The server enforces the same with 403s; this just
 // keeps the UI from rendering pages that would only show errors.
+// `orAdmin` admits the admin (Owner) into a capability-gated page too — used
+// only where the backend was updated to match (requireCapabilityOrAdmin):
+// Dashboard and Employees. Everywhere else stays capability-only.
 // eslint-disable-next-line react-refresh/only-export-components -- entrypoint file, fast refresh doesn't apply
-function Guard({ need, children }: { need: 'view_all' | 'manage_employees' | 'admin'; children: ReactNode }) {
+function Guard({
+  need,
+  orAdmin,
+  children,
+}: {
+  need: 'view_all' | 'manage_employees' | 'admin'
+  orAdmin?: boolean
+  children: ReactNode
+}) {
   const { user } = useAuth()
   if (!user) return null
-  const allowed = need === 'admin' ? user.role === 'admin' : user.capabilities.includes(need)
+  const allowed =
+    need === 'admin'
+      ? user.role === 'admin'
+      : user.capabilities.includes(need) || (orAdmin === true && user.role === 'admin')
   if (!allowed) {
     // Send each kind to its own home rather than showing a 403 page.
     return <Navigate to={user.role === 'admin' ? '/audit' : '/'} replace />
@@ -58,10 +72,10 @@ createRoot(document.getElementById('root')!).render(
               </RequireAuth>
             }
           >
-            <Route index element={<Guard need="view_all"><DashboardPage /></Guard>} />
+            <Route index element={<Guard need="view_all" orAdmin><DashboardPage /></Guard>} />
             <Route path="requests" element={<Guard need="view_all"><RequestsPage /></Guard>} />
             <Route path="requests/:id" element={<Guard need="view_all"><RequestsPage /></Guard>} />
-            <Route path="employees" element={<Guard need="manage_employees"><EmployeesPage /></Guard>} />
+            <Route path="employees" element={<Guard need="manage_employees" orAdmin><EmployeesPage /></Guard>} />
             <Route path="reports" element={<Guard need="view_all"><ReportsPage /></Guard>} />
             <Route path="audit" element={<Guard need="admin"><AuditPage /></Guard>} />
           </Route>

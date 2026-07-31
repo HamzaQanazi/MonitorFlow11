@@ -14,9 +14,12 @@ const oversightNav = [
   { to: '/employees', labelKey: 'nav_employees', end: false, need: 'manage_employees' },
   { to: '/reports', labelKey: 'nav_reports', end: false, need: 'view_all' },
 ]
-// Owner (admin role) surface. Configuration now happens through the first-login
-// onboarding wizard; the audit log is the remaining standing page.
+// Owner (admin role) surface. Dashboard + Employees admit the admin via the
+// backend's requireCapabilityOrAdmin (I2: admins hold no capabilities, so this
+// is a role-based allow, not a Gate-1 capability like oversightNav's items).
 const adminNav = [
+  { to: '/', labelKey: 'nav_dashboard', end: true },
+  { to: '/employees', labelKey: 'nav_employees', end: false },
   { to: '/audit', labelKey: 'nav_audit', end: false },
 ]
 

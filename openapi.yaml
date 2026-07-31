@@ -199,6 +199,51 @@ paths:
                             properties:
                               key: { type: string }
                               label: { $ref: '#/components/schemas/LocalizedText' }
+                  plans:
+                    type: array
+                    description: >
+                      Step-7 plan tiers. Descriptive only for now — employeeCap
+                      and featureGroups are not enforced server-side (no billing,
+                      no gating; see CLAUDE.md §13).
+                    items:
+                      type: object
+                      properties:
+                        key: { type: string }
+                        name: { $ref: '#/components/schemas/LocalizedText' }
+                        employeeCap: { type: integer, nullable: true, description: null = unlimited }
+                        featureGroups:
+                          type: array
+                          items: { type: string, description: a featureGroups key }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /onboarding/geocode:
+    get:
+      tags: [onboarding]
+      summary: >
+        Step-1 address helper: server-side proxy to OpenStreetMap Nominatim
+        (never called directly from the browser — Nominatim's usage policy
+        requires a descriptive User-Agent and ~1 req/sec throttling, both
+        enforced here). Returns only a normalized { city, country } match, never
+        the raw upstream response.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 3 }
+      responses:
+        '200':
+          description: OK (match is null when nothing found)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  match:
+                    type: object
+                    nullable: true
+                    properties:
+                      city: { type: string }
+                      country: { type: string }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /company/onboarding:
@@ -216,7 +261,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, address, ownerJobTitle, employeeRange, industry, subIndustry, branches, phone]
+              required: [name, address, ownerJobTitle, employeeRange, industry, subIndustry, branches, phone, plan, emailDomain]
               properties:
                 name: { type: string }
                 address: { type: string }
@@ -234,6 +279,12 @@ paths:
                 logoFileId: { type: string, format: uuid, nullable: true }
                 website: { type: string, nullable: true }
                 phone: { type: string }
+                plan: { type: string, description: one of options.plans (step 7) }
+                emailDomain:
+                  type: string
+                  description: >
+                    Step 5. Domain suffix for generated employee login emails
+                    (e.g. 'company.org' → 'ha.qanazi@company.org').
       responses:
         '200':
           description: Onboarding complete
@@ -443,23 +494,35 @@ paths:
     post:
       tags: [people]
       summary: >
-        Create an employee. They become a direct report of the caller (manager_id =
-        caller) and inherit the caller's department. login_identifier is NOT
-        supplied by the client — the server allocates the lowest free 4-digit number
-        in that department block (1000 + department * 100, 100 per department) and
-        returns it, since that is the only place the number is ever shown.
+        Create an employee. An oversight employee's hire becomes their direct
+        report (manager_id = caller), inheriting the caller's department; the
+        admin (no department/subtree of their own, I2) must supply
+        departmentId and may supply managerId (omitted → the hire becomes a
+        tree root) and levelId (admin-only — handing out a level grants real
+        Gate-1 power). login_identifier is NOT supplied by the client — the
+        server generates it as two letters of firstName + '.' + lastName +
+        '@' + the company's email_domain (step 5 of onboarding), with a
+        numeric suffix on collision (lib/employeeEmail.js), and returns it,
+        since that is the only place it's ever shown.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, email, password]
+              required: [firstName, lastName, email, password]
               properties:
-                name: { type: string }
+                firstName: { type: string }
+                lastName: { type: string }
                 email: { type: string, format: email }
                 password: { type: string, format: password, minLength: 8 }
                 phone: { type: string, nullable: true }
+                birthdate: { type: string, format: date, nullable: true }
+                gender: { type: string, nullable: true }
+                workerType: { type: string, nullable: true }
+                departmentId: { type: integer, description: required when the caller is the admin }
+                managerId: { type: integer, nullable: true, description: admin-only; omitted makes the hire a tree root }
+                levelId: { type: integer, nullable: true, description: admin-only }
       responses:
         '201':
           description: Created
@@ -470,7 +533,6 @@ paths:
                 properties:
                   employee: { $ref: '#/components/schemas/Employee' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '409': { description: The department's block of 100 employee numbers is exhausted }
         '422': { $ref: '#/components/responses/Validation' }
 
   /employees/{id}:
@@ -702,12 +764,19 @@ components:
       properties:
         id: { type: integer }
         name: { type: string }
+        firstName: { type: string, nullable: true }
+        lastName: { type: string, nullable: true }
         email: { type: string, nullable: true }
         phone: { type: string, nullable: true }
-        loginIdentifier: { type: string, description: the 4-digit sign-in number }
+        loginIdentifier: { type: string, description: the generated sign-in email (or, for pre-existing rows, the legacy 4-digit number) }
         isActive: { type: boolean }
+        birthdate: { type: string, format: date, nullable: true }
+        gender: { type: string, nullable: true, description: machine key, e.g. 'male'/'female' }
+        workerType: { type: string, nullable: true, description: machine key, e.g. 'full_time'/'part_time'/'contractor' }
         departmentId: { type: integer, nullable: true }
         departmentName: { $ref: '#/components/schemas/LocalizedText' }
+        levelId: { type: integer, nullable: true }
+        levelName: { $ref: '#/components/schemas/LocalizedText' }
 
     EmployeeListItem:
       type: object

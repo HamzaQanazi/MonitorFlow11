@@ -185,6 +185,56 @@
   accent-color: var(--amber-600);
 }
 
+.ob-plan-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ob-plan-card {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding-block: 14px;
+  padding-inline: 44px 16px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.ob-plan-card:hover {
+  border-color: var(--muted);
+}
+
+.ob-plan-card-on {
+  border-color: var(--amber-600);
+  background: color-mix(in oklch, var(--amber-600) 8%, transparent);
+}
+
+.ob-plan-card input {
+  position: absolute;
+  inset-inline-start: 16px;
+  inset-block-start: 16px;
+  inline-size: 18px;
+  block-size: 18px;
+  accent-color: var(--amber-600);
+}
+
+.ob-plan-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.ob-plan-cap {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ob-plan-includes {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .ob-error {
   background: var(--error-bg);
   border: 1px solid var(--error-border);

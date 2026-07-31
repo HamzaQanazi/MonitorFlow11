@@ -222,13 +222,23 @@ surveillance tool. Do not add behavioural tracking, even if asked casually.
   data).
 - Deactivated accounts (`is_active = false`) are rejected at JWT validation, not
   only at login.
-- `login_identifier` is deliberately generic: employees log in with a 4-digit
-  employee number, users with an email. One column, one lookup, one flow — do
-  not split into two auth paths. The number is `1000 + department_id × 100` plus
-  the lowest free offset, giving each department a block of 100 (no department →
-  `1000–1099`); the server allocates it (`lib/employeeNumber.js`), a client never
-  supplies one, and an exhausted block is a 409. Monitor/admin accounts are seed- or admin-
-  created; `POST /auth/register` creates `user` role only.
+- `login_identifier` is deliberately generic: an external `user` logs in with
+  their email; an employee logs in with a **generated company email**
+  (`lib/employeeEmail.js`: two letters of their first name + `.` + last name +
+  `@` + the company's wizard-set `email_domain`, e.g. `ha.qanazi@company.org`;
+  a colliding name gets a number inserted after the first-name part —
+  `ha2.qanazi@...` — via an advisory-lock retry, same safety shape as the
+  legacy allocator below). One column, one lookup, one flow — do not split
+  into two auth paths; this only changes what value populates that one column
+  for a new employee, not the lookup itself. Server-generated always — a
+  client never supplies one. **Superseded (2026, this deviation flagged for
+  Student 2's awareness — auth is their owned surface, §11):** employees were
+  previously allocated a 4-digit number instead (`1000 + department_id × 100`
+  plus the lowest free offset per department, `lib/employeeNumber.js`,
+  exhausted block → 409). That allocator is left in place but unused by
+  `POST /employees` — existing employee rows keep their number, only new
+  hires get the generated email. Monitor/admin accounts are seed- or
+  admin-created; `POST /auth/register` creates `user` role only.
 
 ---
 
@@ -274,19 +284,27 @@ combination gets at least one automated API test (§14).
 Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 
 - **company** (v7) — id, name, address, owner_job_title, employee_range, industry,
-  sub_industry (all owner-entered plain TEXT — tenant data, not system labels, so
-  I5's `{en,ar}` rule does not apply), features (`TEXT[]` of selected feature keys),
-  logo_file_id (FK → file_attachment, nullable), website, phone, **onboarding_completed**
+  sub_industry, plan, email_domain (all owner-entered plain TEXT — tenant data, not
+  system labels, so I5's `{en,ar}` rule does not apply; plan is step 7, record-only —
+  see §9; email_domain is step 5, the domain suffix generated employee login emails
+  use — see §4), features
+  (`TEXT[]` of selected feature keys), logo_file_id (FK → file_attachment, nullable),
+  website, phone, **onboarding_completed**
   (bool, default false — the first-login gate), created_at. At most one row per
   deployment (single-org, §13); a table not a singleton so branches/features get
   clean FKs and can grow to multi-tenant later.
 - **branch** (v7) — id, company_id (FK, cascade), name, created_at. One row per
   branch the Owner names in the wizard.
 - **department** — id, name `{en,ar}`.
-- **users** — id, name, email (nullable, unique), password_hash, role
+- **users** — id, name (computed `${firstName} ${lastName}` for employees created
+  through the extended Add Employee form — see §5's login_identifier note), email
+  (nullable, unique), password_hash, role
   (`admin`/`employee`/`user`), phone (nullable), department_id (FK, nullable),
-  **login_identifier** (unique — an email, or a 4-digit employee number),
-  **manager_id** (self-FK,
+  **login_identifier** (unique — an email, a generated employee login email, or a
+  legacy 4-digit employee number — see §4), first_name, last_name, birthdate (date,
+  nullable), gender, worker_type (both plain TEXT machine keys, i18n-translated
+  client-side like `priority` — not a bilingual JSONB catalogue, since I5 doesn't
+  require one for small fixed system enums), **manager_id** (self-FK,
   nullable — the reporting tree), **level_id** (FK → employee_level, nullable),
   **company_id** (FK → company, nullable — the account's company; nullable so the
   Owner, created before the company row, and self-registered users stay valid),
@@ -435,13 +453,27 @@ configures, sits outside the reporting tree, holds no capabilities.
 `requireRole('admin')`):
 - **`GET /onboarding/options`** — the static wizard catalogue from
   `lib/onboardingOptions.js`: employee ranges, industries + their sub-industries,
-  feature groups (all `{en,ar}` labels). Thin client renders it (I4).
+  feature groups, and plan tiers (all `{en,ar}` labels). Thin client renders it (I4).
+- **`GET /onboarding/geocode?q=…`** — step-1 address helper. Server-side proxy to
+  OpenStreetMap Nominatim (its usage policy forbids calling it from a browser and
+  requires a descriptive User-Agent + ~1 req/sec throttling, both enforced here);
+  returns only `{ match: { city, country } | null }`, never the raw upstream
+  response. The wizard debounces on the address field and auto-appends the
+  country on an exact city match. **This is the one deliberate exception to "no
+  named vendor integrations" (§13)** — flagged and agreed as a one-off, not a
+  precedent for adding others without the same conversation.
 - **`PATCH /company/onboarding`** — the wizard's one save. Validates every pick
   **server-side against the catalogue** (I8), writes the `company` row + its
   `branch` rows in **one transaction**, then flips `onboarding_completed` (one-shot:
   a second call after completion is **409**). Optional logo is a parentless
   `file_attachment` the Owner POSTed to `/files` first (admins may create the
-  parentless company-logo upload).
+  parentless company-logo upload). Step 5's `emailDomain` is validated as a bare
+  domain (no scheme/path) and is what `lib/employeeEmail.js` appends to every
+  generated employee login. Step 7's `plan` pick is **record-only** — the
+  employee cap and feature-group access shown on each plan card are descriptive
+  text, not server-enforced limits, same status as the step-4 feature selections
+  (the modules and any real gating are a future increment). No pricing, checkout,
+  or billing of any kind — that stays on the "deliberately NOT built" list (§13).
 
 **The first-login gate:** `onboardingCompleted` rides on the `/auth/login` and
 `/auth/me` user payloads (joined from the Owner's company). The React app routes an
@@ -477,7 +509,7 @@ cancel, confirm/dispute resolution, attachments, map pin).
 **Employee mobile:** Home + My Tasks · Task Details · workflow transitions ·
 Complete Task (dynamic completion form).
 
-**Monitor web:** Login · **First-login onboarding wizard** (v7 — the six-step
+**Monitor web:** Login · **First-login onboarding wizard** (v7 — the seven-step
 "Customize your app in 1 minute", gated on an un-onboarded Owner) · Dashboard
 Overview (stats grouped **open vs closed**, per-service + per-priority totals,
 30-day chart) · Requests Management + Assignment (list/filters + detail pane,
@@ -517,9 +549,12 @@ not let this file contradict it. **v7 reconciliation:** the pivot removed the
 `/config/*` surface and added `/onboarding/options` + `/company/onboarding`.
 Employee management is fully reconciled to the live routes — all under
 `/employees` (people tag, `manage_employees` capability); the old `/config/{org,
-levels,capabilities,employees}` paths are gone (levels/org/capabilities have no
-live endpoint post-pivot — Gate-1 level config is seed-time only for now). Still
-undocumented in the contract: `GET /departments` and `/users/me*`. When in doubt,
+levels,capabilities,employees}` paths are gone (org/capabilities have no live
+endpoint post-pivot — Gate-1 level *authoring* is seed-time only for now, but
+`GET /employee-levels` reads the catalogue, backing the Add Employee "role"
+picker). Still undocumented in the contract: `GET /departments`,
+`GET /employee-levels` (same read-only reference-data shape as departments),
+and `/users/me*`. When in doubt,
 the mounted routes in `backend/src/index.js` are ground truth. Key conventions it
 encodes: base
 path `/api/v1`; Bearer JWT on every route except register/login; standard list

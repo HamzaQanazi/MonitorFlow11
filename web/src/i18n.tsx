@@ -276,12 +276,30 @@ const dict: Record<string, Loc> = {
   emp_reset_password: { en: 'Reset password', ar: 'إعادة تعيين كلمة المرور' },
   emp_edit_h: { en: 'Edit employee', ar: 'تعديل الموظف' },
   emp_name: { en: 'Name', ar: 'الاسم' },
+  emp_first_name: { en: 'First name', ar: 'الاسم الأول' },
+  emp_last_name: { en: 'Last name', ar: 'اسم العائلة' },
   emp_email: { en: 'Email', ar: 'البريد الإلكتروني' },
   emp_initial_password: { en: 'Initial password', ar: 'كلمة المرور الأولية' },
   emp_phone_optional: { en: 'Phone (optional)', ar: 'الهاتف (اختياري)' },
+  emp_birthdate_optional: { en: 'Birthdate (optional)', ar: 'تاريخ الميلاد (اختياري)' },
+  emp_gender_optional: { en: 'Gender (optional)', ar: 'الجنس (اختياري)' },
+  emp_worker_type_optional: { en: 'Worker type (optional)', ar: 'نوع العامل (اختياري)' },
+  emp_manager_optional: { en: 'Manager (optional)', ar: 'المدير المباشر (اختياري)' },
+  emp_manager_none: { en: 'No manager (organization root)', ar: 'بلا مدير (جذر التنظيم)' },
+  emp_role_optional: { en: 'Role (optional)', ar: 'الدور (اختياري)' },
   emp_department: { en: 'Department', ar: 'الدائرة' },
   emp_save_changes: { en: 'Save changes', ar: 'حفظ التغييرات' },
   emp_create: { en: 'Create employee', ar: 'إنشاء موظف' },
+  emp_created_h: { en: 'Employee created', ar: 'تم إنشاء الموظف' },
+  emp_created_login_p: {
+    en: 'Share this login with them — it won’t be shown again.',
+    ar: 'شارك بيانات الدخول هذه معهم — لن تظهر مرة أخرى.',
+  },
+  gender_male: { en: 'Male', ar: 'ذكر' },
+  gender_female: { en: 'Female', ar: 'أنثى' },
+  worker_type_full_time: { en: 'Full-time', ar: 'دوام كامل' },
+  worker_type_part_time: { en: 'Part-time', ar: 'دوام جزئي' },
+  worker_type_contractor: { en: 'Contractor', ar: 'متعاقد' },
   emp_deactivate_q_pre: { en: 'Deactivate', ar: 'إلغاء تفعيل' },
   emp_deactivate_warn: {
     en: 'They will be unable to log in and cannot be assigned new tasks. You can reactivate them later.',
@@ -539,7 +557,7 @@ const dict: Record<string, Loc> = {
 
   // onboarding wizard (first-login, admin only)
   ob_title: { en: 'Customize your app in 1 minute', ar: 'خصّص تطبيقك في دقيقة' },
-  ob_step_of: { en: 'Step', ar: 'خطوة' }, // "Step 2 of 6"
+  ob_step_of: { en: 'Step', ar: 'خطوة' }, // "Step 2 of 7"
   ob_finish: { en: 'Get started', ar: 'ابدأ الآن' },
   ob_saving: { en: 'Saving…', ar: 'جارٍ الحفظ…' },
   ob_err_required: { en: 'This field is required.', ar: 'هذا الحقل مطلوب.' },
@@ -548,6 +566,7 @@ const dict: Record<string, Loc> = {
     ar: 'تعذّر حفظ الإعداد. تحقّق من إجاباتك وحاول مجددًا.',
   },
   ob_err_logo: { en: 'Couldn’t upload the logo. Try a JPG, PNG, or PDF under 5 MB.', ar: 'تعذّر رفع الشعار. جرّب JPG أو PNG أو PDF أقل من 5 ميغابايت.' },
+  ob_err_domain: { en: 'Enter a valid domain, e.g. company.org', ar: 'أدخل نطاقًا صالحًا، مثل company.org' },
   ob_select: { en: 'Select…', ar: 'اختر…' },
 
   ob_s1_title: { en: 'Company information', ar: 'معلومات الشركة' },
@@ -574,9 +593,24 @@ const dict: Record<string, Loc> = {
   ob_logo: { en: 'Company logo (optional)', ar: 'شعار الشركة (اختياري)' },
   ob_website: { en: 'Company website (optional)', ar: 'موقع الشركة (اختياري)' },
   ob_choose_file: { en: 'Choose file…', ar: 'اختر ملفًا…' },
+  ob_email_domain: { en: 'Employee email domain', ar: 'نطاق بريد الموظفين' },
+  ob_email_domain_hint: {
+    en: 'New employee logins are generated as name@this-domain, e.g. ha.qanazi@company.org.',
+    ar: 'يتم إنشاء بيانات دخول الموظفين على شكل الاسم@هذا-النطاق، مثل ha.qanazi@company.org.',
+  },
 
   ob_s6_title: { en: 'Contact', ar: 'التواصل' },
   ob_phone: { en: 'Phone number', ar: 'رقم الهاتف' },
+
+  ob_s7_title: { en: 'Choose your plan', ar: 'اختر خطتك' },
+  ob_plan_hint: {
+    en: 'Pick the plan that fits your team. This is just a starting point — you can change it later.',
+    ar: 'اختر الخطة المناسبة لفريقك. هذه بداية فقط — يمكنك تغييرها لاحقًا.',
+  },
+  ob_plan_up_to: { en: 'Up to', ar: 'حتى' },
+  ob_plan_employees: { en: 'employees', ar: 'موظف' },
+  ob_plan_unlimited: { en: 'Unlimited employees', ar: 'عدد غير محدود من الموظفين' },
+  ob_plan_includes: { en: 'Includes', ar: 'يشمل' },
 }
 
 type Ctx = {

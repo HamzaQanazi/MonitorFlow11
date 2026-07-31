@@ -49,6 +49,31 @@ async function seed() {
       await client.query('INSERT INTO capability (key) VALUES ($1)', [key]);
     }
 
+    // One starter department — users.department_id is NOT NULL, so without
+    // this the Owner can't create a single employee post-onboarding. Not
+    // sector-specific (I1): every deployment gets this same generic name;
+    // the Owner is free to add more once department management exists.
+    await client.query(
+      `INSERT INTO department (name) VALUES ($1::jsonb)`,
+      [JSON.stringify({ en: 'General', ar: 'عام' })]
+    );
+
+    // Starter employee levels (Gate 1 grants) — same reasoning: empty by
+    // default made the Add Employee "role" picker have nothing to offer.
+    const { rows: levels } = await client.query(
+      `INSERT INTO employee_level (name) VALUES
+         ($1::jsonb), ($2::jsonb)
+       RETURNING id, name`,
+      [JSON.stringify({ en: 'Staff', ar: 'موظف' }), JSON.stringify({ en: 'Manager', ar: 'مدير' })]
+    );
+    const managerLevelId = levels.find((l) => l.name.en === 'Manager').id;
+    for (const capabilityKey of ['view_all', 'manage_employees']) {
+      await client.query('INSERT INTO level_capability (level_id, capability_key) VALUES ($1, $2)', [
+        managerLevelId,
+        capabilityKey,
+      ]);
+    }
+
     // The single empty company — onboarding pending. The wizard fills it in.
     const { rows: co } = await client.query(
       'INSERT INTO company (onboarding_completed) VALUES (FALSE) RETURNING id'

@@ -15,9 +15,12 @@ type Options = {
   employeeRanges: string[]
   industries: { key: string; label: Loc; subs: { key: string; label: Loc }[] }[]
   featureGroups: { key: string; label: Loc; features: { key: string; label: Loc }[] }[]
+  plans: { key: string; name: Loc; employeeCap: number | null; featureGroups: string[] }[]
 }
 
-const STEP_COUNT = 6
+const STEP_COUNT = 7
+// Step 5's email-domain field — mirrors the backend's validation regex.
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i
 
 export default function OnboardingWizard() {
   const { t, L } = useI18n()
@@ -45,14 +48,41 @@ export default function OnboardingWizard() {
   // Step 5
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [website, setWebsite] = useState('')
+  const [emailDomain, setEmailDomain] = useState('')
   // Step 6
   const [phone, setPhone] = useState('')
+  // Step 7
+  const [plan, setPlan] = useState('')
 
   useEffect(() => {
     apiFetch<Options>('/onboarding/options')
       .then(setOptions)
       .catch(() => setLoadError(true))
   }, [])
+
+  // Step-1 address helper: once the owner pauses typing a bare city name
+  // (no comma yet), ask the backend to resolve it and append ", Country".
+  // Guards against races: only applies if `address` hasn't changed since the
+  // lookup fired.
+  useEffect(() => {
+    const trimmed = address.trim()
+    if (address.includes(',') || trimmed.length < 3) return
+    const handle = setTimeout(() => {
+      apiFetch<{ match: { city: string; country: string } | null }>(
+        `/onboarding/geocode?q=${encodeURIComponent(trimmed)}`,
+      )
+        .then((res) => {
+          if (!res.match) return
+          setAddress((current) =>
+            current.trim().toLowerCase() === trimmed.toLowerCase() && !current.includes(',')
+              ? `${res.match!.city}, ${res.match!.country}`
+              : current,
+          )
+        })
+        .catch(() => {})
+    }, 600)
+    return () => clearTimeout(handle)
+  }, [address])
 
   const subs = useMemo(
     () => options?.industries.find((i) => i.key === industry)?.subs ?? [],
@@ -90,8 +120,12 @@ export default function OnboardingWizard() {
       branchNames.forEach((b, i) => {
         if (!b.trim()) e[`branch${i}`] = t('ob_err_required')
       })
+    } else if (s === 4) {
+      if (!DOMAIN_RE.test(emailDomain.trim())) e.emailDomain = t('ob_err_domain')
     } else if (s === 5) {
       req('phone', phone)
+    } else if (s === 6) {
+      if (!plan) e.plan = t('ob_err_required')
     }
     return e
   }
@@ -143,7 +177,9 @@ export default function OnboardingWizard() {
           features,
           logoFileId,
           website,
+          emailDomain,
           phone,
+          plan,
         },
       })
       markOnboarded()
@@ -184,7 +220,15 @@ export default function OnboardingWizard() {
     )
   }
 
-  const stepTitles = ['ob_s1_title', 'ob_s2_title', 'ob_s3_title', 'ob_s4_title', 'ob_s5_title', 'ob_s6_title']
+  const stepTitles = [
+    'ob_s1_title',
+    'ob_s2_title',
+    'ob_s3_title',
+    'ob_s4_title',
+    'ob_s5_title',
+    'ob_s6_title',
+    'ob_s7_title',
+  ]
 
   return (
     <div className="ob-overlay">
@@ -310,6 +354,15 @@ export default function OnboardingWizard() {
               <Field label={t('ob_website')}>
                 <input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://" />
               </Field>
+              <Field label={t('ob_email_domain')} error={errors.emailDomain}>
+                <input
+                  value={emailDomain}
+                  onChange={(e) => setEmailDomain(e.target.value)}
+                  placeholder="company.org"
+                  aria-invalid={!!errors.emailDomain || undefined}
+                />
+                <span className="ob-hint">{t('ob_email_domain_hint')}</span>
+              </Field>
             </>
           )}
 
@@ -317,6 +370,32 @@ export default function OnboardingWizard() {
             <Field label={t('ob_phone')} error={errors.phone}>
               <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" aria-invalid={!!errors.phone || undefined} />
             </Field>
+          )}
+
+          {step === 6 && (
+            <>
+              <p className="ob-hint">{t('ob_plan_hint')}</p>
+              <div className="ob-plan-list" role="radiogroup" aria-label={t('ob_s7_title')}>
+                {options.plans.map((p) => (
+                  <label key={p.key} className={p.key === plan ? 'ob-plan-card ob-plan-card-on' : 'ob-plan-card'}>
+                    <input type="radio" name="plan" checked={p.key === plan} onChange={() => setPlan(p.key)} />
+                    <span className="ob-plan-name">{L(p.name)}</span>
+                    <span className="ob-plan-cap">
+                      {p.employeeCap == null
+                        ? t('ob_plan_unlimited')
+                        : `${t('ob_plan_up_to')} ${p.employeeCap} ${t('ob_plan_employees')}`}
+                    </span>
+                    <span className="ob-plan-includes">
+                      {t('ob_plan_includes')}:{' '}
+                      {p.featureGroups
+                        .map((gKey) => L(options.featureGroups.find((g) => g.key === gKey)?.label ?? { en: gKey, ar: gKey }))
+                        .join(', ')}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {errors.plan && <span className="ob-field-error">{errors.plan}</span>}
+            </>
           )}
 
           {saveError && <p className="ob-error" role="alert">{saveError}</p>}
