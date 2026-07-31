@@ -285,11 +285,11 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 
 - **company** (v7) — id, name, address, owner_job_title, employee_range, industry,
   sub_industry, plan, email_domain (all owner-entered plain TEXT — tenant data, not
-  system labels, so I5's `{en,ar}` rule does not apply; plan is step 7, record-only —
-  see §9; email_domain is step 5, the domain suffix generated employee login emails
-  use — see §4), features
+  system labels, so I5's `{en,ar}` rule does not apply; plan is step 7, its
+  `employeeCap` server-enforced on hire — see §9; email_domain is step 5, the
+  domain suffix generated employee login emails use — see §4), features
   (`TEXT[]` of selected feature keys), logo_file_id (FK → file_attachment, nullable),
-  website, phone, **onboarding_completed**
+  phone, **onboarding_completed**
   (bool, default false — the first-login gate), created_at. At most one row per
   deployment (single-org, §13); a table not a singleton so branches/features get
   clean FKs and can grow to multi-tenant later.
@@ -469,11 +469,20 @@ configures, sits outside the reporting tree, holds no capabilities.
   `file_attachment` the Owner POSTed to `/files` first (admins may create the
   parentless company-logo upload). Step 5's `emailDomain` is validated as a bare
   domain (no scheme/path) and is what `lib/employeeEmail.js` appends to every
-  generated employee login. Step 7's `plan` pick is **record-only** — the
-  employee cap and feature-group access shown on each plan card are descriptive
-  text, not server-enforced limits, same status as the step-4 feature selections
-  (the modules and any real gating are a future increment). No pricing, checkout,
-  or billing of any kind — that stays on the "deliberately NOT built" list (§13).
+  generated employee login. Step 7's `plan` pick sets a real limit: `POST
+  /employees` (`routes/employees.js`) looks up the company's plan and, if its
+  `employeeCap` isn't null (Enterprise = unlimited), counts active employees and
+  refuses the hire with **409** once at cap — message names the plan and cap and
+  says to contact support to upgrade (no working upgrade/billing flow exists;
+  see below). Step 2's employee-range answer is only a size hint here — step 7
+  shows a non-blocking warning if a plan's cap looks too small for it, but
+  doesn't stop the Owner picking it anyway; the plan's own cap is the one real
+  gate. Each plan's **feature-group access is still record-only** — descriptive
+  text on the card, not server-enforced, same status as the step-4 feature
+  selections (the modules and any real gating there are a future increment). No
+  pricing, checkout, or billing of any kind — that stays on the "deliberately
+  NOT built" list (§13), which is why hitting the cap points the Owner to
+  support rather than an in-app upgrade action.
 
 **The first-login gate:** `onboardingCompleted` rides on the `/auth/login` and
 `/auth/me` user payloads (joined from the Owner's company). The React app routes an
@@ -518,14 +527,21 @@ Employees Management · Reports + CSV export · Audit.
 
 **Shared component:** Notifications + Profile, reused by both mobile apps.
 
-**Branding is build-time, per deployment** (`web/src/brand.ts`, `web/.env.example`):
-the company name `{en,ar}` and an optional logo come from `VITE_BRAND_*` at build
-time, rendered by the one `<Wordmark>` component (shell + login) and used for the
-tab title. Consistent with one organisation per deployment (§13) — there is no
-branding API and no runtime lookup. Mobile app name and icon are build-time too,
-in `pubspec.yaml` / `AndroidManifest.xml` / `Info.plist`. **Never rebrand
-`X-MonitorFlow-Signature`** — that is a wire protocol subscribers verify, not a
-company name.
+**Branding has a build-time default and one runtime override, post-onboarding**
+(`web/src/brand.ts`, `web/.env.example`, `web/src/components/Wordmark.tsx`): the
+generic "MonitorFlow" name/pip come from `VITE_BRAND_*` at build time, used on
+the login page (rendered pre-auth, so it can never know a company) and the tab
+title. Once an Owner completes onboarding, `<Wordmark>` in the **console shell
+only** prefers their company's own name and uploaded logo instead — both ride
+the authenticated `/auth/login`/`/auth/me` payload (`companyName`/`companyLogo`,
+the logo inlined as a data URI by `routes/auth.js` so the `<img>` never needs
+its own authenticated fetch against the per-file-gated `GET /files/{id}`). This
+is a deliberate, scoped exception to "no branding API, no runtime lookup" for
+the shell only — the login page still never does a runtime lookup, and there is
+still no public/unauthenticated branding endpoint. Mobile app name and icon stay
+build-time only, in `pubspec.yaml` / `AndroidManifest.xml` / `Info.plist` — this
+override doesn't extend there. **Never rebrand `X-MonitorFlow-Signature`** —
+that is a wire protocol subscribers verify, not a company name.
 
 **UI-state rule (every page):** loading + empty states on every list; a
 confirmation dialog on every destructive/terminal action, with a note field where
@@ -618,7 +634,7 @@ transitions → exactly one wins · cancel-vs-assign race → one wins other 409
 deactivated JWT → 401 · deactivate employee holding an open task → 409 · confirm
 before done → 409 · cross-subtree assign → refused · override to nonexistent
 status → 422 · download another user's file → 404 · user submit to internal-only
-service → 403.
+service → 403 · hire past the plan's employee cap → 409.
 
 ---
 

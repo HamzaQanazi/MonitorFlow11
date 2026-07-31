@@ -82,7 +82,6 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
   const name = str(b.name);
   const address = str(b.address);
   const ownerJobTitle = str(b.ownerJobTitle);
-  const website = str(b.website);
   const phone = str(b.phone);
   const emailDomain = str(b.emailDomain).toLowerCase();
 
@@ -152,12 +151,12 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
     await client.query(
       `UPDATE company
          SET name=$1, address=$2, owner_job_title=$3, employee_range=$4, industry=$5,
-             sub_industry=$6, features=$7, logo_file_id=$8, website=$9, phone=$10,
-             plan=$11, email_domain=$12, onboarding_completed=TRUE
-       WHERE id=$13`,
+             sub_industry=$6, features=$7, logo_file_id=$8, phone=$9,
+             plan=$10, email_domain=$11, onboarding_completed=TRUE
+       WHERE id=$12`,
       [
         name, address, ownerJobTitle, b.employeeRange, b.industry, b.subIndustry,
-        features, logoFileId, website || null, phone, b.plan, emailDomain, req.user.company_id,
+        features, logoFileId, phone, b.plan, emailDomain, req.user.company_id,
       ]
     );
     for (const branchName of branches) {

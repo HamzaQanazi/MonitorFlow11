@@ -557,7 +557,7 @@ const dict: Record<string, Loc> = {
 
   // onboarding wizard (first-login, admin only)
   ob_title: { en: 'Customize your app in 1 minute', ar: 'خصّص تطبيقك في دقيقة' },
-  ob_step_of: { en: 'Step', ar: 'خطوة' }, // "Step 2 of 7"
+  ob_step_of: { en: 'Step', ar: 'خطوة' }, // "Step 2 of 6"
   ob_finish: { en: 'Get started', ar: 'ابدأ الآن' },
   ob_saving: { en: 'Saving…', ar: 'جارٍ الحفظ…' },
   ob_err_required: { en: 'This field is required.', ar: 'هذا الحقل مطلوب.' },
@@ -573,6 +573,7 @@ const dict: Record<string, Loc> = {
   ob_company_name: { en: 'Company name', ar: 'اسم الشركة' },
   ob_company_address: { en: 'Company address', ar: 'عنوان الشركة' },
   ob_job_title: { en: 'Your job title', ar: 'مسمّاك الوظيفي' },
+  ob_phone: { en: 'Phone number', ar: 'رقم الهاتف' },
 
   ob_s2_title: { en: 'Company details', ar: 'تفاصيل الشركة' },
   ob_employee_count: { en: 'Number of employees', ar: 'عدد الموظفين' },
@@ -591,16 +592,12 @@ const dict: Record<string, Loc> = {
 
   ob_s5_title: { en: 'Branding', ar: 'الهوية' },
   ob_logo: { en: 'Company logo (optional)', ar: 'شعار الشركة (اختياري)' },
-  ob_website: { en: 'Company website (optional)', ar: 'موقع الشركة (اختياري)' },
   ob_choose_file: { en: 'Choose file…', ar: 'اختر ملفًا…' },
   ob_email_domain: { en: 'Employee email domain', ar: 'نطاق بريد الموظفين' },
   ob_email_domain_hint: {
     en: 'New employee logins are generated as name@this-domain, e.g. ha.qanazi@company.org.',
     ar: 'يتم إنشاء بيانات دخول الموظفين على شكل الاسم@هذا-النطاق، مثل ha.qanazi@company.org.',
   },
-
-  ob_s6_title: { en: 'Contact', ar: 'التواصل' },
-  ob_phone: { en: 'Phone number', ar: 'رقم الهاتف' },
 
   ob_s7_title: { en: 'Choose your plan', ar: 'اختر خطتك' },
   ob_plan_hint: {
@@ -611,6 +608,10 @@ const dict: Record<string, Loc> = {
   ob_plan_employees: { en: 'employees', ar: 'موظف' },
   ob_plan_unlimited: { en: 'Unlimited employees', ar: 'عدد غير محدود من الموظفين' },
   ob_plan_includes: { en: 'Includes', ar: 'يشمل' },
+  ob_plan_size_warning: {
+    en: 'This may not fit your team size — consider a larger plan.',
+    ar: 'قد لا تناسب هذه الخطة حجم فريقك — فكّر في خطة أكبر.',
+  },
 }
 
 type Ctx = {

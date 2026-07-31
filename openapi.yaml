@@ -277,7 +277,6 @@ paths:
                   type: array
                   items: { type: string, description: a feature key }
                 logoFileId: { type: string, format: uuid, nullable: true }
-                website: { type: string, nullable: true }
                 phone: { type: string }
                 plan: { type: string, description: one of options.plans (step 7) }
                 emailDomain:

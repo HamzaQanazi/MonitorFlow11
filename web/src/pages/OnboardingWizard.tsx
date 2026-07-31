@@ -18,9 +18,29 @@ type Options = {
   plans: { key: string; name: Loc; employeeCap: number | null; featureGroups: string[] }[]
 }
 
-const STEP_COUNT = 7
+const STEP_COUNT = 6
 // Step 5's email-domain field — mirrors the backend's validation regex.
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i
+
+// The lower bound of a step-2 employee-range string ("51-100" → 51, "500+" →
+// 500) — used only to warn on the plan step (step 6) if a plan's cap looks too
+// small for the declared size. Not a second cap; the plan's own employeeCap is
+// the real one.
+function employeeRangeFloor(range: string): number {
+  return parseInt(range, 10) || 0
+}
+
+// Local preview of the picked logo file, so the shell wordmark can switch to
+// it immediately on finish — the server's data-URI (auth.js) replaces this on
+// the next login/restore, so this preview doesn't need to survive past that.
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
 
 export default function OnboardingWizard() {
   const { t, L } = useI18n()
@@ -37,6 +57,7 @@ export default function OnboardingWizard() {
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [ownerJobTitle, setOwnerJobTitle] = useState('')
+  const [phone, setPhone] = useState('')
   // Step 2
   const [employeeRange, setEmployeeRange] = useState('')
   const [industry, setIndustry] = useState('')
@@ -47,11 +68,8 @@ export default function OnboardingWizard() {
   const [features, setFeatures] = useState<string[]>([])
   // Step 5
   const [logoFile, setLogoFile] = useState<File | null>(null)
-  const [website, setWebsite] = useState('')
   const [emailDomain, setEmailDomain] = useState('')
   // Step 6
-  const [phone, setPhone] = useState('')
-  // Step 7
   const [plan, setPlan] = useState('')
 
   useEffect(() => {
@@ -112,6 +130,7 @@ export default function OnboardingWizard() {
       req('name', name)
       req('address', address)
       req('ownerJobTitle', ownerJobTitle)
+      req('phone', phone)
     } else if (s === 1) {
       if (!employeeRange) e.employeeRange = t('ob_err_required')
       if (!industry) e.industry = t('ob_err_required')
@@ -123,8 +142,6 @@ export default function OnboardingWizard() {
     } else if (s === 4) {
       if (!DOMAIN_RE.test(emailDomain.trim())) e.emailDomain = t('ob_err_domain')
     } else if (s === 5) {
-      req('phone', phone)
-    } else if (s === 6) {
       if (!plan) e.plan = t('ob_err_required')
     }
     return e
@@ -176,13 +193,13 @@ export default function OnboardingWizard() {
           branches: branchNames,
           features,
           logoFileId,
-          website,
           emailDomain,
           phone,
           plan,
         },
       })
-      markOnboarded()
+      const logoPreview = logoFile ? await readAsDataUrl(logoFile).catch(() => null) : null
+      markOnboarded(name, logoPreview)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'logo') {
         setSaveError(t('ob_err_logo'))
@@ -220,13 +237,14 @@ export default function OnboardingWizard() {
     )
   }
 
+  // 'ob_s6_title' (the old standalone Contact step) is gone — phone moved into
+  // step 0 — so this list skips straight from s5 to s7 by position.
   const stepTitles = [
     'ob_s1_title',
     'ob_s2_title',
     'ob_s3_title',
     'ob_s4_title',
     'ob_s5_title',
-    'ob_s6_title',
     'ob_s7_title',
   ]
 
@@ -259,6 +277,9 @@ export default function OnboardingWizard() {
               </Field>
               <Field label={t('ob_job_title')} error={errors.ownerJobTitle}>
                 <input value={ownerJobTitle} onChange={(e) => setOwnerJobTitle(e.target.value)} aria-invalid={!!errors.ownerJobTitle || undefined} />
+              </Field>
+              <Field label={t('ob_phone')} error={errors.phone}>
+                <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" aria-invalid={!!errors.phone || undefined} />
               </Field>
             </>
           )}
@@ -351,9 +372,6 @@ export default function OnboardingWizard() {
                   <span>{logoFile ? logoFile.name : t('ob_choose_file')}</span>
                 </label>
               </Field>
-              <Field label={t('ob_website')}>
-                <input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://" />
-              </Field>
               <Field label={t('ob_email_domain')} error={errors.emailDomain}>
                 <input
                   value={emailDomain}
@@ -367,12 +385,6 @@ export default function OnboardingWizard() {
           )}
 
           {step === 5 && (
-            <Field label={t('ob_phone')} error={errors.phone}>
-              <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" aria-invalid={!!errors.phone || undefined} />
-            </Field>
-          )}
-
-          {step === 6 && (
             <>
               <p className="ob-hint">{t('ob_plan_hint')}</p>
               <div className="ob-plan-list" role="radiogroup" aria-label={t('ob_s7_title')}>
@@ -391,6 +403,12 @@ export default function OnboardingWizard() {
                         .map((gKey) => L(options.featureGroups.find((g) => g.key === gKey)?.label ?? { en: gKey, ar: gKey }))
                         .join(', ')}
                     </span>
+                    {/* Step 2's employee range is a size hint, not a second cap —
+                        the plan's own employeeCap (enforced server-side when
+                        adding employees) is the only real limit. */}
+                    {p.employeeCap != null && p.employeeCap < employeeRangeFloor(employeeRange) && (
+                      <span className="ob-plan-warning">{t('ob_plan_size_warning')}</span>
+                    )}
                   </label>
                 ))}
               </div>

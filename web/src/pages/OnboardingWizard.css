@@ -235,6 +235,12 @@
   color: var(--muted);
 }
 
+/* Soft, non-blocking — the plan is still pickable, just flagged. */
+.ob-plan-warning {
+  font-size: 13px;
+  color: var(--amber-700);
+}
+
 .ob-error {
   background: var(--error-bg);
   border: 1px solid var(--error-border);

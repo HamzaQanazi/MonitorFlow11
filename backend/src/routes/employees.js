@@ -10,6 +10,7 @@ const { statusOf } = require('../lib/workflowEngine');
 const { subtreeIds } = require('../lib/scope');
 const { withTx, logAudit } = require('../lib/audit');
 const { allocateEmployeeEmail } = require('../lib/employeeEmail');
+const { PLANS } = require('../lib/onboardingOptions');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -231,11 +232,26 @@ router.post('/', async (req, res, next) => {
     // The generated login lives on the one company row's email_domain
     // (step 5 of the wizard) — single-org per deployment (§13), so there's
     // exactly one to read, not one scoped per actor.
-    const { rows: co } = await pool.query('SELECT email_domain FROM company LIMIT 1');
+    const { rows: co } = await pool.query('SELECT id, plan, email_domain FROM company LIMIT 1');
     if (!co.length || !co[0].email_domain) {
       return res.status(422).json({ errors: { _: 'Company email domain is not set — finish onboarding first' } });
     }
     const emailDomain = co[0].email_domain;
+
+    // Plan seat cap (step 7 of onboarding) — Enterprise's employeeCap is null
+    // (unlimited). Counts active employees only; a deactivated one frees a seat.
+    const planDef = PLANS.find((p) => p.key === co[0].plan);
+    if (planDef && planDef.employeeCap != null) {
+      const { rows: countRows } = await pool.query(
+        "SELECT count(*)::int AS n FROM users WHERE role = 'employee' AND company_id = $1 AND is_active = true",
+        [co[0].id]
+      );
+      if (countRows[0].n >= planDef.employeeCap) {
+        return res.status(409).json({
+          error: `Employee limit reached for the ${planDef.name.en} plan (${planDef.employeeCap}). Contact support to upgrade your plan.`,
+        });
+      }
+    }
 
     const password_hash = await bcrypt.hash(password, 10);
     let inserted;
