@@ -338,12 +338,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, departmentId, defaultPriority, acceptsExternalUsers, ownerId, requestFields, completionFields, statuses, transitions]
+              required: [name, departmentId, defaultPriority, acceptsExternalUsers, acceptsEmployeeSubmitters, ownerId, requestFields, completionFields, statuses, transitions]
               properties:
                 name: { $ref: '#/components/schemas/LocalizedText' }
                 departmentId: { type: integer }
                 defaultPriority: { type: string, enum: [low, medium, high] }
                 acceptsExternalUsers: { type: boolean }
+                acceptsEmployeeSubmitters:
+                  type: boolean
+                  description: whether an employee (not just a self-registered user) may submit to this service, e.g. Time Off
+
                 ownerId: { type: integer, description: an existing employee — the Gate-2 visibility anchor }
                 requestFields:
                   type: array
@@ -1223,6 +1227,7 @@ components:
         ownerName: { type: string, nullable: true }
         enabled: { type: boolean }
         acceptsExternalUsers: { type: boolean }
+        acceptsEmployeeSubmitters: { type: boolean }
 
     TransitionDef:
       type: object

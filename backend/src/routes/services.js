@@ -38,7 +38,7 @@ router.get('/', async (req, res, next) => {
     }
     const { rows } = await pool.query(
       `SELECT st.id, st.name, st.department_id, d.name AS department_name,
-              st.default_priority, st.accepts_external_users
+              st.default_priority, st.accepts_external_users, st.accepts_employee_submitters
        FROM service_type st
        JOIN department d ON d.id = st.department_id
        WHERE st.enabled ${externalOnly ? 'AND st.accepts_external_users' : ''} ${ownedClause}
@@ -53,6 +53,7 @@ router.get('/', async (req, res, next) => {
         departmentName: r.department_name,
         defaultPriority: r.default_priority,
         acceptsExternalUsers: r.accepts_external_users,
+        acceptsEmployeeSubmitters: r.accepts_employee_submitters,
       })),
     });
   } catch (err) {
@@ -122,6 +123,9 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
       errors.push('defaultPriority must be low, medium, or high');
     }
     if (typeof b.acceptsExternalUsers !== 'boolean') errors.push('acceptsExternalUsers must be a boolean');
+    if (typeof b.acceptsEmployeeSubmitters !== 'boolean') {
+      errors.push('acceptsEmployeeSubmitters must be a boolean');
+    }
     if (!Number.isInteger(b.ownerId)) errors.push('ownerId is required');
 
     errors.push(...validateFieldSchema(b.requestFields).map((e) => `requestFields ${e}`));
@@ -164,10 +168,20 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
       }
 
       const { rows: st } = await tx.query(
-        `INSERT INTO service_type (name, department_id, default_priority, enabled, owner_id, key, accepts_external_users)
-         VALUES ($1::jsonb, $2, $3, TRUE, $4, $5, $6)
+        `INSERT INTO service_type
+           (name, department_id, default_priority, enabled, owner_id, key,
+            accepts_external_users, accepts_employee_submitters)
+         VALUES ($1::jsonb, $2, $3, TRUE, $4, $5, $6, $7)
          RETURNING id`,
-        [JSON.stringify(b.name), b.departmentId, b.defaultPriority, b.ownerId, key, b.acceptsExternalUsers]
+        [
+          JSON.stringify(b.name),
+          b.departmentId,
+          b.defaultPriority,
+          b.ownerId,
+          key,
+          b.acceptsExternalUsers,
+          b.acceptsEmployeeSubmitters,
+        ]
       );
       const serviceTypeId = st[0].id;
 

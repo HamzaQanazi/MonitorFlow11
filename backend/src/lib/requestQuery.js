@@ -9,9 +9,12 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // { where, params, page, pageSize }. `where` refers to aliases r (request),
 // st (service_type), u (requester), s (the lateral status element) — every
 // caller must join those the same way. A user is always scoped to own rows
-// regardless of params; an oversight employee is scoped to services whose
-// owner is inside their subtree (`ownerScope`, an array of user ids the caller
-// resolves via subtreeIds). Missing scope for an oversight actor fails closed.
+// regardless of params. An employee sees the union of: requests they
+// personally submitted (a service with accepts_employee_submitters) and, if
+// oversight, services whose owner is inside their subtree (`ownerScope`, an
+// array of user ids the caller resolves via subtreeIds). A non-oversight
+// employee passes ownerScope as null/empty, so that half of the union
+// contributes nothing and they only ever see their own submissions.
 function buildRequestFilter(q, user, ownerScope = null) {
   const page = q.page === undefined ? 1 : Number(q.page);
   const pageSize = q.pageSize === undefined ? 20 : Number(q.pageSize);
@@ -34,10 +37,14 @@ function buildRequestFilter(q, user, ownerScope = null) {
     where.push(sql.replaceAll('?', `$${params.length}`));
   };
 
-  if (user.role === 'user' || q.userId === 'me') add('r.user_id = ?', user.id);
-  // Gate 2: an oversight employee sees only requests whose service owner is in
-  // their subtree. No scope (or an empty one) matches nothing: fail closed.
-  if (user.role === 'employee') add('st.owner_id = ANY(?)', ownerScope || []);
+  if (user.role === 'user') add('r.user_id = ?', user.id);
+  // Gate 2 union: an employee sees requests they own themselves, plus (if
+  // oversight) any whose service owner is in their subtree. No scope (or an
+  // empty one) contributes nothing to the second half: fail closed, not open.
+  if (user.role === 'employee') {
+    params.push(user.id, ownerScope || []);
+    where.push(`(r.user_id = $${params.length - 1} OR st.owner_id = ANY($${params.length}))`);
+  }
   if (q.status !== undefined) add('r.status = ?', q.status);
   if (q.state !== undefined) add("(s->>'is_terminal')::bool = ?", q.state === 'closed');
   if (q.serviceTypeId !== undefined) add('r.service_type_id = ?', Number(q.serviceTypeId));
