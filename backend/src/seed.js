@@ -67,7 +67,11 @@ async function seed() {
       [JSON.stringify({ en: 'Staff', ar: 'موظف' }), JSON.stringify({ en: 'Manager', ar: 'مدير' })]
     );
     const managerLevelId = levels.find((l) => l.name.en === 'Manager').id;
-    for (const capabilityKey of ['view_all', 'manage_employees']) {
+    // override is included so a Manager can review capability-gated approval
+    // workflows (e.g. Time Off) — the web console's oversight action buttons
+    // always fire PATCH /:id/status, which requires 'override' regardless of
+    // what capability the transition itself declares.
+    for (const capabilityKey of ['view_all', 'manage_employees', 'override']) {
       await client.query('INSERT INTO level_capability (level_id, capability_key) VALUES ($1, $2)', [
         managerLevelId,
         capabilityKey,
