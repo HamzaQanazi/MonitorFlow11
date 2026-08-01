@@ -1,4 +1,4 @@
-# Handoff — Time Clock + Schedule (shipped), Time Off (planned) — 2026-08-01
+# Handoff — Time Clock + Schedule (shipped), Time Off (engine + service live, mobile next) — 2026-08-01
 
 ## Where things stand
 
@@ -7,8 +7,13 @@ pushed to `main`: backend (self-service + manager API for both), web console
 (Time Clock's Today + Timesheets tabs, Schedule's Roster + Templates tabs),
 and mobile (employee clock in/out screen, employee read-only "My Schedule").
 
-**Time Off** is fully planned but **not started** — no code written yet. Full
-plan below under "Next up: Time Off." This is the very next task.
+**Time Off**: the engine change is committed, and the service itself is
+seeded and live-verified end-to-end (submit → approve, via the same calls
+the web console makes). **Mobile screens are the only thing left** — see
+"Next up: Time Off" below. Nothing has been committed for the service data
+itself yet (it was created live through the admin API, not via seed.js —
+see "How Time Off was actually seeded" below) — decide whether that matters
+before the next session.
 
 Dropped from scope (deliberate, discussed with the user):
 - **NFC clock-in** — hardware-dependent, no testable path in this environment.
@@ -110,9 +115,11 @@ only working target here.
 
 ## Next up: Time Off
 
-**Step 1 (engine change) is DONE, committed.** Steps 2–4 (seed the service,
-mobile screens) are still not started — see the checklist below, now trimmed
-to what's left.
+**Steps 1–2 are done.** Step 1 (engine change) is committed. Step 2 (the
+Time Off service itself) is live in the dev DB and verified end-to-end —
+but **not committed anywhere**, because it was created live through the
+admin API rather than seed.js (see "How Time Off was actually seeded"
+below). **Step 3 (mobile) is the only thing left, not started.**
 
 ### Step 1 — done: employees can now own/submit requests
 
@@ -147,14 +154,20 @@ needed no change — they validate field/workflow shapes, not the
 `acceptsExternalUsers` already was — the original checklist's guess here was
 wrong).
 
-**Not yet live-verified end-to-end against a running server** — local dev DB
-login (`su.ordinate@adad.ada` / `owner@company.com`, `Password123!` per the
-table below) returned "Invalid credentials" this session, which predates
-these changes (auth.js wasn't touched) and wasn't chased down. Confirmed
-correct instead via 60/60 unit tests exercising the exact ownership/party
-logic that changed. **Verify logins before the next session assumes they
-work** — if they're still broken, check whether the accounts were re-seeded
-with different values since this doc was last written.
+**Correction to the previous version of this doc**: it claimed dev-DB login
+was broken ("Invalid credentials"). That was a testing mistake, not a real
+bug — `POST /auth/login` takes `identifier` (or legacy `email`), not
+`loginIdentifier`; the curl command used the wrong field name. Logins work
+fine; verified this session by actually logging in as
+`owner@company.com`/`ma.manager@adad.ada`/`su.ordinate@adad.ada`, all
+`Password123!`.
+
+Full end-to-end live verification done this session: employee submits →
+appears in their own `GET /requests` and `GET /requests/{id}` → `GET
+/requests/{id}/transitions` correctly offers `cancel` to the requester →
+manager (oversight) sees it in their `GET /requests` → manager approves.
+See "How Time Off was actually seeded" below for the one wrinkle this
+surfaced (a capability mismatch with the web console's button wiring).
 
 ### Original finding (context for the above, still accurate)
 
@@ -169,13 +182,16 @@ Also useful context already confirmed:
 - `GET /services` already returns every enabled service to staff
   (employees/admins) with no filtering beyond the `user`-only
   `accepts_external_users` gate — no change needed there.
-- Web Requests Management already renders any service generically — no new
-  web work needed at all for the manager-review side.
+- Web Requests Management renders any service generically — confirmed live,
+  no new web code, **but only once approve/reject are `override`-gated**
+  (see "How Time Off was actually seeded" below for why).
 - The workflow shape Time Off needs (submit → oversight approve/reject →
-  terminal, no task) is already proven: see the since-removed
-  `docs/demo/home_nursing.json` fixture for the JSON shape to copy from
-  (it uses a similar but not identical shape — home_nursing has a dispatch/
-  complete/confirm loop; Time Off is simpler, see below).
+  terminal, no task) is already proven: `docs/demo/home_nursing.json` is
+  still in the repo (this doc previously said it was removed — it wasn't)
+  and shows the JSON shape, though it's the old nested `service`/`workflow`/
+  `forms` config-API body shape, not what `POST /services` actually expects
+  today (flat `name`/`departmentId`/`requestFields`/`statuses`/... —
+  see the real payload used, below).
 
 ### Decided: `accepts_employee_submitters` flag (not "any employee, any service")
 
@@ -193,40 +209,76 @@ turned up), `workflowEngine.js`'s `partyOf`/ownership check, `requestQuery.js`,
 `routes/services.js`, `openapi.yaml`, and the full test suite (60/60) are all
 committed. Next up is seeding the Time Off service itself (below), then mobile.
 
-### Time Off definition (seed it, same as every other service)
+### How Time Off was actually seeded
 
-- New department: **"Human Resources"**.
-- `service_type`: key `time_off`, `accepts_employee_submitters: true`,
-  `accepts_external_users: false`, `owner_id` = whichever employee should
-  centrally review requests. Visibility then radiates *up* from that owner
-  to the root (Gate 2's existing rule — "owner_id in actor's subtree" means
-  actor is at-or-above owner in the tree) — same mechanism every other
-  service already uses, not a new one. This is centralized-HR-review by
-  design, not "your own direct manager only" — that's consistent with how
-  the whole system already works, not a limitation specific to Time Off.
+Not via `seed.js` — the plan's original assumption ("author it in seed.js,
+same as every other service") ran into a hard fact: **post-pivot, seed.js
+seeds zero services** (the old municipal seed was removed in v7) and only
+TRUNCATE-reseeds an empty company + Owner. The current dev DB has real
+state built live through the app across the last two feature sessions (an
+onboarded company, 4 employee accounts, real Time Clock/Schedule history) —
+running `SEED_FORCE=true npm run seed` to add Time Off "properly" would
+have destroyed all of it. Discussed with the user: created Time Off live
+through the existing admin-only **Add Service Wizard** (`POST /services`,
+same seed-time validators `formSchema.js`/`workflowSchema.js` run) instead.
+Consequence: **Time Off's service/form/workflow definition is dev-DB-only
+data, not in any commit.** If this DB is ever reseeded from scratch, Time
+Off needs to be recreated (either re-run the same `POST /services` call, or
+decide to actually port it into `seed.js` at that point).
+
+- Department: **reused the existing "General"** department, not a new
+  "Human Resources" one — there is no live `POST /departments` endpoint
+  (department authoring is seed-time only), and creating one via direct SQL
+  would have been exactly the "ad-hoc test data" CLAUDE.md forbids.
+- Two service rows exist in the dev DB because of a live discovery (below):
+  - `service_type_id 1`, key `time_off` — **disabled**, has one test
+    request (id 1, now approved). Left in place rather than deleted:
+    deleting would violate the immutable-audit-trail invariant (I9), and
+    "disable + create a new one" is the documented pattern for fixing a
+    live definition (CLAUDE.md §3 — definitions are immutable once any
+    request exists).
+  - `service_type_id 2`, key `time_off_2` — **the real one**, enabled,
+    `owner_id` = employee 4 (Manny Manager, the only oversight-capable
+    employee seeded so far). Has one live-verified test request (id 2,
+    submitted by `su.ordinate`, approved by `ma.manager`).
 - **Request form** (no completion form — no task/assignee, pure approval
-  decision):
+  decision; note a `form_definition` row is required per form_type either
+  way — §6's "exactly two rows per service" — so the completion form got a
+  single unused placeholder field, `notes`/text, never referenced by any
+  transition's `required_form_key`):
   - `start_date` — type `date`, required
   - `end_date` — type `date`, required
   - `type` — type `dropdown`, required, options: vacation / sick / unpaid
   - `reason` — type `multiline`, optional
 - **Workflow** ("approval gate + reject terminal" shape):
-  - `pending` (initial) → `approved` (terminal): `required_capability:
-    manage_employees`
-  - `pending` → `rejected` (terminal): `required_capability:
-    manage_employees`, `requires_note: true`
+  - `pending` (initial) → `approved` (terminal): `required_capability: override`
+  - `pending` → `rejected` (terminal): `required_capability: override`, `requires_note: true`
   - `pending` → `cancelled` (terminal): `actor: requester`
-  - `manage_employees` was chosen (over `override` or `assign`) to keep
-    "people-ops" capability coherent across Time Off/Schedule/Time Clock
-    manager actions — all the same capability gates all three.
-- Authored via `seed.js`, like every other service — keeps demo data
-  reproducible on reseed (CLAUDE.md's "never hand-create test data" rule).
-  **Bonus option, not required**: the live Add Service Wizard
-  (`POST /services`, `web/src/pages/AddServiceWizard.tsx`, admin-only, same
-  seed-time validators) already exists and is nav-linked
-  (`nav_add_service`) — you could demo adding Time Off live instead of/in
-  addition to seeding it, since it's genuinely built for exactly this.
-  Decide later; not blocking.
+
+**The `manage_employees` vs `override` finding (this changed the plan):**
+the original plan picked `manage_employees` for approve/reject "to keep
+people-ops capability coherent." Live-testing found this doesn't work with
+the existing web console: `RequestDetailPane.tsx`'s oversight action
+buttons (`monitorMoves`) always call `PATCH /:id/status` — the dedicated
+override endpoint — for *any* capability-gated transition, regardless of
+which capability that transition actually declares. That endpoint
+hardcodes `requireCapability('override')` and `resolveOverride()` checks
+`user.capabilities.has('override')` specifically. A `manage_employees`-gated
+transition fires fine through the generic `POST /:id/transitions` (verified
+live), but 403s when clicked in the actual web UI. Fix, decided with the
+user: **use `required_capability: 'override'`** (zero web changes needed —
+matches the existing button wiring) and grant the Manager level `override`
+too. Applied both in `seed.js` (for future installs) and as a direct
+`level_capability` insert on the live dev DB (no live endpoint exists for
+granting a level a capability — Gate-1 authoring is seed-time only per
+CLAUDE.md §12). **Tradeoff to be aware of**: `override` is a strong,
+generic capability (forces *any* status on *any* in-scope request, not just
+Time Off approvals) — a Manager can now also override Time Clock/Schedule-
+adjacent requests or any other future service's status outside its normal
+flow. If that's too broad, the real fix is teaching `RequestDetailPane.tsx`
+to route each `monitorMove` through `POST /:id/transitions` with its own
+declared capability instead of always calling `/status` — flagged as
+future work, not done here.
 
 **Known gap, won't be fixed as part of this**: the dynamic form engine has
 no cross-field validation (a documented exclusion, not a bug) — nothing
@@ -250,9 +302,8 @@ employees submit — smaller than porting the User app's full flow:
 
 ### Web
 
-Nothing new. Requests Management already renders any service generically —
-whoever holds `owner_id` (or is above them) just uses the page that already
-exists.
+Nothing new, confirmed live — Requests Management already renders Time Off
+correctly for whoever holds `owner_id` (or is above them).
 
 ### Optional follow-up (separate, smaller, after the base flow ships)
 
@@ -264,15 +315,14 @@ same PR/commit as the base Time Off flow.
 ### Suggested build order (matches how Time Clock/Schedule were built)
 
 1. ~~Engine change~~ — **done, committed** (see "Step 1 — done" above).
-2. Seed the Time Off service/form/workflow + Human Resources department.
-   Verify live against the backend (submit as an employee, approve/reject
-   as the owner) before moving on. **First fix/confirm dev-DB login** (see
-   the "not yet live-verified" note above) — you'll need a working session
-   to do this verification at all.
-3. Web: nothing to build, just verify Requests Management renders it
-   correctly.
+2. ~~Seed the Time Off service~~ — **done, live-verified, but not
+   committed** (it's dev-DB-only data — see "How Time Off was actually
+   seeded" above). Decide before the next session whether to port it into
+   `seed.js` for real, or leave it as a one-off demo artifact.
+3. ~~Web~~ — **confirmed, nothing to build.**
 4. Mobile: Request Time Off screen, then My Time Off list/detail screen.
-5. Commit separately per layer (seed data / mobile), never batched — same
+   This is the only remaining work.
+5. Commit the mobile screens as their own commit, never batched — same
    discipline as Time Clock and Schedule's commits.
 6. Optional: the Time Clock absence-suppression follow-up, as its own
    commit, only if there's time.
@@ -293,6 +343,8 @@ payoff for a 2-student grad project.
    route files are the most-commented if you need a design decision (UTC
    bucketing, the "first break only" simplification on the Today tab, why
    Schedule's roster is a flat grid with no recurrence engine).
-3. Time Off is the committed next step (see plan above) — start there
-   unless the user says otherwise. This doc is a snapshot, not a
-   commitment; confirm before touching `routes/requests.js`.
+3. Time Off's engine change and service are done and live-verified; only
+   the mobile screens are left (see "Suggested build order" above). Note
+   the service data lives only in the dev DB, not in a migration or
+   seed.js — check it's still there (`GET /services` as any staff account)
+   before assuming it exists on whatever DB you're pointed at.
