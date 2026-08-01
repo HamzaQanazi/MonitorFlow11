@@ -19,6 +19,7 @@ import 'schedule_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_map_view.dart';
 import 'time_clock_screen.dart';
+import 'time_off_screen.dart';
 
 class EmployeeHomeScreen extends StatefulWidget {
   const EmployeeHomeScreen({super.key});
@@ -124,6 +125,13 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             tooltip: i18n.tr('sc_title'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const ScheduleScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.beach_access_outlined),
+            tooltip: i18n.tr('to_title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TimeOffScreen()),
             ),
           ),
           NotificationBell(

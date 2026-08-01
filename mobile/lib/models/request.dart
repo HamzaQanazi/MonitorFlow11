@@ -156,12 +156,19 @@ class ServiceType {
   final int id;
   final Loc name;
   final Loc departmentName;
+  final bool acceptsEmployeeSubmitters;
 
-  const ServiceType({required this.id, required this.name, required this.departmentName});
+  const ServiceType({
+    required this.id,
+    required this.name,
+    required this.departmentName,
+    this.acceptsEmployeeSubmitters = false,
+  });
 
   factory ServiceType.fromJson(Map<String, dynamic> json) => ServiceType(
         id: json['id'] as int,
         name: Loc.fromJson(json['name']),
         departmentName: Loc.fromJson(json['departmentName']),
+        acceptsEmployeeSubmitters: json['acceptsEmployeeSubmitters'] == true,
       );
 }

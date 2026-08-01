@@ -313,6 +313,14 @@ const Map<String, Map<String, String>> _dict = {
   'sc_load_fail': {'en': 'Could not load your schedule.', 'ar': 'تعذّر تحميل جدولك.'},
   'sc_no_shift': {'en': 'No shift scheduled', 'ar': 'لا وردية مجدولة'},
 
+  // time off (employee self-service — submit, list, detail)
+  'to_title': {'en': 'My Time Off', 'ar': 'إجازاتي'},
+  'to_detail_title': {'en': 'Time Off', 'ar': 'إجازة'},
+  'to_new': {'en': 'Request time off', 'ar': 'طلب إجازة'},
+  'to_load_fail': {'en': 'Could not load your time off requests.', 'ar': 'تعذّر تحميل طلبات إجازتك.'},
+  'to_none_title': {'en': 'No time off requests yet', 'ar': 'لا طلبات إجازة بعد'},
+  'to_none_sub': {'en': 'Your submitted time off requests will appear here.', 'ar': 'ستظهر هنا طلبات الإجازة التي أرسلتها.'},
+
   // form response view (shared)
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},
   'fr_no': {'en': 'No', 'ar': 'لا'},
