@@ -1,0 +1,11 @@
+/* Schedule — Templates + Roster tabs reuse TimeClockPage's tab strip and
+   day-cell button styling; this just widens the cell for a template name. */
+
+.sc-roster-table .tc-day-cell {
+  width: 100%;
+  height: auto;
+  min-height: 30px;
+  padding: 4px 16px 4px 8px;
+  text-align: start;
+  white-space: normal;
+}

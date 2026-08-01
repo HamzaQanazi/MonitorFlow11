@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
+import { useAuth } from '../auth/AuthContext'
 import { useI18n, type Loc } from '../i18n'
 import { formatDuration } from '../lib/format'
 import './RequestsPage.css'
@@ -15,14 +16,22 @@ const PAGE_SIZE = 20
 interface Employee {
   id: number
   name: string
+  firstName: string | null
+  lastName: string | null
   email: string
-  // The 4-digit number this employee signs in with — server-allocated, and this
-  // list is the only place it is ever shown.
+  // The login this employee signs in with (generated email, or the legacy
+  // 4-digit number for pre-existing rows) — server-allocated, and this list
+  // is the only place it is ever shown.
   loginIdentifier: string
   phone: string | null
   isActive: boolean
+  birthdate: string | null
+  gender: string | null
+  workerType: string | null
   departmentId: number
   departmentName: Loc
+  levelId: number | null
+  levelName: Loc | null
   // Avg minutes to resolve the requests this employee holds; null = none yet.
   avgResolutionMinutes: number | null
 }
@@ -33,6 +42,10 @@ interface ListResponse {
   total: number
 }
 interface Department {
+  id: number
+  name: Loc
+}
+interface Level {
   id: number
   name: Loc
 }
@@ -48,6 +61,8 @@ function fieldErrorsOf(err: unknown): FieldErrors {
 
 export default function EmployeesPage() {
   const { t, L } = useI18n()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
   const departmentId = params.get('department') ?? ''
@@ -57,6 +72,7 @@ export default function EmployeesPage() {
   const [data, setData] = useState<ListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [departments, setDepartments] = useState<Department[]>([])
+  const [levels, setLevels] = useState<Level[]>([])
   const [search, setSearch] = useState(q)
 
   // Which dialog is open, if any.
@@ -111,6 +127,15 @@ export default function EmployeesPage() {
       .then((res) => setDepartments(res.departments))
       .catch(() => {})
   }, [])
+
+  // Levels back the admin-only "role" picker (Gate-1 power, so only the
+  // admin can hand one out at creation — CLAUDE.md §5/§9).
+  useEffect(() => {
+    if (!isAdmin) return
+    apiFetch<{ levels: Level[] }>('/employee-levels')
+      .then((res) => setLevels(res.levels))
+      .catch(() => {})
+  }, [isAdmin])
 
   const [prevQ, setPrevQ] = useState(q)
   if (prevQ !== q) {
@@ -298,10 +323,25 @@ export default function EmployeesPage() {
       )}
 
       {dialog?.kind === 'create' && (
-        <EmployeeForm departments={departments} onClose={() => setDialog(null)} onDone={onDone} />
+        <EmployeeForm
+          departments={departments}
+          levels={levels}
+          managers={data?.employees ?? []}
+          isAdmin={isAdmin}
+          onClose={() => setDialog(null)}
+          onDone={onDone}
+        />
       )}
       {dialog?.kind === 'edit' && (
-        <EmployeeForm departments={departments} employee={dialog.employee} onClose={() => setDialog(null)} onDone={onDone} />
+        <EmployeeForm
+          departments={departments}
+          levels={levels}
+          managers={data?.employees ?? []}
+          isAdmin={isAdmin}
+          employee={dialog.employee}
+          onClose={() => setDialog(null)}
+          onDone={onDone}
+        />
       )}
       {dialog?.kind === 'deactivate' && (
         <DeactivateDialog employee={dialog.employee} onClose={() => setDialog(null)} onDone={onDone} />
@@ -316,15 +356,27 @@ export default function EmployeesPage() {
   )
 }
 
+const GENDERS = ['male', 'female']
+const WORKER_TYPES = ['full_time', 'part_time', 'contractor']
+
 // Create (no employee) or edit (employee given). Create sends the initial
-// password; edit changes name/phone/department only.
+// password + the extended fields; edit still only changes name/phone/
+// department (the backend PATCH route's scope hasn't grown). Create shows
+// the server-generated login email once, on success — there's no other way
+// to look it up (mirrors ResetPasswordDialog's reveal-once pattern).
 function EmployeeForm({
   departments,
+  levels,
+  managers,
+  isAdmin,
   employee,
   onClose,
   onDone,
 }: {
   departments: Department[]
+  levels: Level[]
+  managers: Employee[]
+  isAdmin: boolean
   employee?: Employee
   onClose: () => void
   onDone: () => void
@@ -332,12 +384,20 @@ function EmployeeForm({
   const { t, L } = useI18n()
   const isEdit = !!employee
   const [name, setName] = useState(employee?.name ?? '')
-  const [email, setEmail] = useState(employee?.email ?? '')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [phone, setPhone] = useState(employee?.phone ?? '')
+  const [birthdate, setBirthdate] = useState('')
+  const [gender, setGender] = useState('')
+  const [workerType, setWorkerType] = useState('')
   const [depId, setDepId] = useState(String(employee?.departmentId ?? departments[0]?.id ?? ''))
+  const [managerId, setManagerId] = useState('')
+  const [levelId, setLevelId] = useState('')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
+  const [createdLogin, setCreatedLogin] = useState<string | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -355,13 +415,32 @@ function EmployeeForm({
           method: 'PATCH',
           body: { name, phone: phone || null, departmentId: Number(depId) },
         })
+        onDone()
       } else {
-        await apiFetch('/employees', {
+        const res = await apiFetch<{ employee: Employee }>('/employees', {
           method: 'POST',
-          body: { name, email, password, phone: phone || null, departmentId: Number(depId) },
+          body: {
+            firstName,
+            lastName,
+            email,
+            password,
+            phone: phone || null,
+            birthdate: birthdate || null,
+            gender: gender || null,
+            workerType: workerType || null,
+            ...(isAdmin
+              ? {
+                  departmentId: Number(depId),
+                  managerId: managerId ? Number(managerId) : null,
+                  levelId: levelId ? Number(levelId) : null,
+                }
+              : { departmentId: Number(depId) }),
+          },
         })
+        // Reveal the generated login once instead of closing immediately —
+        // there's no other way to look it up afterward.
+        setCreatedLogin(res.employee.loginIdentifier)
       }
-      onDone()
     } catch (err) {
       const fe = fieldErrorsOf(err)
       if (Object.keys(fe).length) setErrors(fe)
@@ -371,17 +450,45 @@ function EmployeeForm({
     }
   }
 
+  if (createdLogin) {
+    return (
+      <div className="dialog-backdrop" onClick={onDone}>
+        <div className="dialog" onClick={(e) => e.stopPropagation()}>
+          <h4>{t('emp_created_h')}</h4>
+          <p className="req-status-msg">{t('emp_created_login_p')}</p>
+          <code className="temp-pass">{createdLogin}</code>
+          <div className="dialog-actions">
+            <button type="button" className="req-retry" onClick={onDone}>
+              {t('done')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <form className="dialog" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <h4>{isEdit ? t('emp_edit_h') : t('emp_add')}</h4>
-        <label className="field">
-          <span>{t('emp_name')}</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-          {errors.name && <em className="field-err">{errors.name}</em>}
-        </label>
-        {!isEdit && (
+        {isEdit ? (
+          <label className="field">
+            <span>{t('emp_name')}</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+            {errors.name && <em className="field-err">{errors.name}</em>}
+          </label>
+        ) : (
           <>
+            <label className="field">
+              <span>{t('emp_first_name')}</span>
+              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} autoFocus />
+              {errors.firstName && <em className="field-err">{errors.firstName}</em>}
+            </label>
+            <label className="field">
+              <span>{t('emp_last_name')}</span>
+              <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+              {errors.lastName && <em className="field-err">{errors.lastName}</em>}
+            </label>
             <label className="field">
               <span>{t('emp_email')}</span>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -391,6 +498,35 @@ function EmployeeForm({
               <span>{t('emp_initial_password')}</span>
               <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} />
               {errors.password && <em className="field-err">{errors.password}</em>}
+            </label>
+            <label className="field">
+              <span>{t('emp_birthdate_optional')}</span>
+              <input type="date" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
+              {errors.birthdate && <em className="field-err">{errors.birthdate}</em>}
+            </label>
+            <label className="field">
+              <span>{t('emp_gender_optional')}</span>
+              <select className="req-select" value={gender} onChange={(e) => setGender(e.target.value)}>
+                <option value="">{t('ob_select')}</option>
+                {GENDERS.map((g) => (
+                  <option key={g} value={g}>
+                    {t(`gender_${g}`)}
+                  </option>
+                ))}
+              </select>
+              {errors.gender && <em className="field-err">{errors.gender}</em>}
+            </label>
+            <label className="field">
+              <span>{t('emp_worker_type_optional')}</span>
+              <select className="req-select" value={workerType} onChange={(e) => setWorkerType(e.target.value)}>
+                <option value="">{t('ob_select')}</option>
+                {WORKER_TYPES.map((w) => (
+                  <option key={w} value={w}>
+                    {t(`worker_type_${w}`)}
+                  </option>
+                ))}
+              </select>
+              {errors.workerType && <em className="field-err">{errors.workerType}</em>}
             </label>
           </>
         )}
@@ -410,6 +546,34 @@ function EmployeeForm({
           </select>
           {errors.departmentId && <em className="field-err">{errors.departmentId}</em>}
         </label>
+        {!isEdit && isAdmin && (
+          <>
+            <label className="field">
+              <span>{t('emp_manager_optional')}</span>
+              <select className="req-select" value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+                <option value="">{t('emp_manager_none')}</option>
+                {managers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+              {errors.managerId && <em className="field-err">{errors.managerId}</em>}
+            </label>
+            <label className="field">
+              <span>{t('emp_role_optional')}</span>
+              <select className="req-select" value={levelId} onChange={(e) => setLevelId(e.target.value)}>
+                <option value="">{t('ob_select')}</option>
+                {levels.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {L(l.name)}
+                  </option>
+                ))}
+              </select>
+              {errors.levelId && <em className="field-err">{errors.levelId}</em>}
+            </label>
+          </>
+        )}
         {errors._ && <p className="assign-error">{errors._}</p>}
         <div className="dialog-actions">
           <button type="button" className="detail-close-text" onClick={onClose}>

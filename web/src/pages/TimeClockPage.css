@@ -1,0 +1,160 @@
+/* Time Clock — tab strip + clickable counter cards on top of the shared
+   RequestsPage vocabulary (req-table, req-empty, etc.). */
+
+.tc-tabs {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  width: fit-content;
+}
+
+.tc-tab {
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  background: var(--bg);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tc-tab + .tc-tab {
+  border-inline-start: 1px solid var(--border);
+}
+
+.tc-tab.is-active {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.tc-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.tc-counters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.tc-counter {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.tc-counter:hover {
+  border-color: var(--border-strong);
+}
+
+.tc-counter[aria-pressed='true'] {
+  background: var(--surface);
+  border-color: var(--amber-600);
+}
+
+.tc-counter-num {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.tc-counter-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tc-late {
+  color: var(--error);
+  font-weight: 650;
+}
+
+.tc-muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* --- Timesheets grid --- */
+
+.tc-day-cell {
+  position: relative;
+  height: 30px;
+  padding: 0 16px 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.tc-day-cell:hover {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.tc-pending-dot {
+  position: absolute;
+  top: 4px;
+  inset-inline-end: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber-600);
+}
+
+.tc-day-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.tc-shift-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.tc-shift-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tc-shift-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.tc-shift-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tc-shift-edit {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}

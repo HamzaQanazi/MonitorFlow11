@@ -18,7 +18,6 @@ const { buildRequestFilter, PRIORITIES } = require('../lib/requestQuery');
 const { isOversight } = require('../lib/capabilities');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
 const { pick } = require('../lib/i18nLabel');
-const { fireWebhook } = require('../lib/webhooks');
 const { logAudit } = require('../lib/audit');
 
 const router = express.Router();
@@ -48,11 +47,9 @@ function listItem(row) {
   };
 }
 
-// POST /requests — submit (user role only, Section 6)
+// POST /requests — submit (user or employee, gated per-service, Section 6)
 router.post('/', async (req, res, next) => {
   try {
-    if (req.user.role !== 'user') return res.status(403).json({ error: 'Forbidden' });
-
     const { serviceTypeId, formResponse } = req.body || {};
     if (!Number.isInteger(serviceTypeId)) {
       return res.status(422).json({ errors: { serviceTypeId: 'A service type is required' } });
@@ -60,7 +57,7 @@ router.post('/', async (req, res, next) => {
 
     const { rows } = await pool.query(
       `SELECT st.id, st.key, st.default_priority, st.accepts_external_users,
-              fd.field_schema, w.statuses
+              st.accepts_employee_submitters, fd.field_schema, w.statuses
        FROM service_type st
        JOIN form_definition fd ON fd.service_type_id = st.id AND fd.form_type = 'request'
        JOIN workflow_definition w ON w.service_type_id = st.id
@@ -70,10 +67,13 @@ router.post('/', async (req, res, next) => {
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     const service = rows[0];
 
-    // Phase 7: a service that doesn't accept external users is not submittable
-    // by self-registered `user` accounts (it's also hidden from their catalogue
-    // — GET /services). Enforced server-side, not just in the UI.
-    if (!service.accepts_external_users) return res.status(403).json({ error: 'Forbidden' });
+    // A service accepts submitters per-role: self-registered `user` accounts
+    // via accepts_external_users (also gates their GET /services catalogue),
+    // employees via accepts_employee_submitters (e.g. Time Off) — both
+    // enforced server-side, not just in the UI.
+    const accepts =
+      req.user.role === 'user' ? service.accepts_external_users : service.accepts_employee_submitters;
+    if (!accepts) return res.status(403).json({ error: 'Forbidden' });
 
     const errors = await validateFormResponse(service.field_schema, formResponse, {
       db: pool,
@@ -144,13 +144,6 @@ router.post('/', async (req, res, next) => {
       client.release();
     }
 
-    // Phase 7: request_created webhook, after commit, fire-and-forget.
-    fireWebhook('request_created', {
-      request_id: created.id,
-      service_key: service.key,
-      status: created.status,
-    });
-
     res.status(201).json({
       request: {
         id: created.id,
@@ -173,12 +166,9 @@ router.post('/', async (req, res, next) => {
 // for known params are 400.
 router.get('/', async (req, res, next) => {
   try {
-    // Field employees use GET /tasks, not this list; only requesters (own) and
-    // oversight employees (subtree) read requests here.
-    if (req.user.role === 'employee' && !isOversight(req.user)) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-
+    // Field-only employees (no oversight, never submitted anything) get an
+    // empty list here — the filter's ownership union naturally excludes them;
+    // they use GET /tasks for their assignments instead.
     const scope = isOversight(req.user) ? await subtreeIds(req.user.id) : null;
     const filter = buildRequestFilter(req.query, req.user, scope);
     if (filter.error) return res.status(400).json({ error: filter.error });
@@ -223,9 +213,6 @@ router.get('/', async (req, res, next) => {
 // exactly one call (Section 7).
 router.get('/:id', async (req, res, next) => {
   try {
-    if (req.user.role === 'employee' && !isOversight(req.user)) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
 
@@ -246,10 +233,14 @@ router.get('/:id', async (req, res, next) => {
     if (req.user.role === 'user' && r.user_id !== req.user.id) {
       return res.status(404).json({ error: 'Not found' });
     }
-    // Gate 2: an oversight employee sees a request only if its service owner is
-    // in their subtree (404-over-403).
-    if (isOversight(req.user) && !(await ownerInScope(req.user.id, r.service_owner_id))) {
-      return res.status(404).json({ error: 'Not found' });
+    // An employee always sees a request they submitted themselves (e.g. Time
+    // Off). Otherwise (a non-oversight employee uses GET /tasks/{id} for
+    // assignments instead) they need Gate 2: oversight, and the service owner
+    // inside their subtree (404-over-403).
+    if (req.user.role === 'employee' && r.user_id !== req.user.id) {
+      if (!isOversight(req.user) || !(await ownerInScope(req.user.id, r.service_owner_id))) {
+        return res.status(404).json({ error: 'Not found' });
+      }
     }
 
     const [history, comments, attachments, task] = await Promise.all([
@@ -373,7 +364,9 @@ async function loadTransitionContext(req, res) {
   const request = rows[0];
 
   // Party + ownership (404-over-403). Oversight employees have no actor
-  // transitions here — they use the dedicated oversight endpoints.
+  // transitions here — they use the dedicated oversight endpoints, unless
+  // they're also the requester (e.g. their own Time Off submission), checked
+  // first so that still resolves to 'requester'.
   if (req.user.role === 'user') {
     if (request.user_id !== req.user.id) {
       res.status(404).json({ error: 'Not found' });
@@ -381,6 +374,7 @@ async function loadTransitionContext(req, res) {
     }
     return { id, request, party: 'requester' };
   }
+  if (request.user_id === req.user.id) return { id, request, party: 'requester' };
   if (isOversight(req.user)) return { id, request, party: null };
   const { rows: taskRows } = await pool.query(
     'SELECT employee_id FROM task WHERE request_id = $1',
@@ -501,23 +495,22 @@ router.post('/:id/transitions', async (req, res, next) => {
   }
 });
 
-// PATCH /requests/{id}/cancel — user: via the workflow's own user-role
-// cancel transition, and only while no task exists (checked under the
-// engine's row lock, so the cancel-vs-assign race of must-pass #13 always
-// leaves one side with 409); monitor: any state, as an override. No status
-// key in code — the cancel target is derived from the data as the target of
-// the user-role transition into a terminated-category status.
+// PATCH /requests/{id}/cancel — requester (user or a submitting employee):
+// via the workflow's own requester-role cancel transition, and only while no
+// task exists (checked under the engine's row lock, so the cancel-vs-assign
+// race of must-pass #13 always leaves one side with 409); oversight: any
+// state, as an override. Ownership/party is enforced inside executeTransition
+// (404-over-403), same as every other actor-gated transition. No status key
+// in code — the cancel target is derived from the data as the target of the
+// requester-role transition into a terminated-category status.
 router.patch('/:id/cancel', async (req, res, next) => {
   try {
-    if (req.user.role === 'employee' && !isOversight(req.user)) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
     const note = (req.body || {}).note ?? null;
 
     const { rows } = await pool.query(
-      `SELECT w.statuses, w.transitions
+      `SELECT r.user_id, w.statuses, w.transitions
        FROM request r JOIN workflow_definition w ON w.service_type_id = r.service_type_id
        WHERE r.id = $1`,
       [id]
@@ -536,7 +529,10 @@ router.patch('/:id/cancel', async (req, res, next) => {
       return res.status(409).json({ error: 'This request cannot be cancelled' });
     }
 
-    const oversight = isOversight(req.user);
+    // An oversight employee who is also the requester (their own Time Off,
+    // say) cancels as the requester, not as an override — override needs its
+    // own capability, and this is their own request to withdraw either way.
+    const asOverride = isOversight(req.user) && rows[0].user_id !== req.user.id;
     let result;
     try {
       result = await executeTransition({
@@ -545,7 +541,7 @@ router.patch('/:id/cancel', async (req, res, next) => {
         // Oversight cancels from any state as an override; the requester fires
         // their own cancel transition (only while unassigned — the engine's
         // requester-terminal guard enforces it under the row lock).
-        ...(oversight
+        ...(asOverride
           ? { to: cancelTransition.to, override: true }
           : { transitionKey: cancelTransition.key }),
         note,
@@ -593,13 +589,10 @@ router.patch('/:id/status', requireCapability('override'), async (req, res, next
 });
 
 // Shared by the comment routes: Section 6 comment cells — user own (404
-// otherwise), monitor any, employee never. Returns the request row or null
-// after having written the error response.
+// otherwise), oversight employee any-in-subtree, a submitting employee own
+// (404 otherwise), a plain task-only employee never. Returns the request row
+// or null after having written the error response.
 async function loadCommentableRequest(req, res) {
-  if (req.user.role === 'employee' && !isOversight(req.user)) {
-    res.status(403).json({ error: 'Forbidden' });
-    return null;
-  }
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {
     res.status(404).json({ error: 'Not found' });
@@ -614,8 +607,11 @@ async function loadCommentableRequest(req, res) {
   if (
     !rows.length ||
     (req.user.role === 'user' && rows[0].user_id !== req.user.id) ||
-    // Gate 2: an oversight employee comments only within their subtree.
-    (isOversight(req.user) && !(await ownerInScope(req.user.id, rows[0].owner_id)))
+    // An employee always reaches a request they submitted themselves.
+    // Otherwise Gate 2: oversight, and only within their subtree.
+    (req.user.role === 'employee' &&
+      rows[0].user_id !== req.user.id &&
+      (!isOversight(req.user) || !(await ownerInScope(req.user.id, rows[0].owner_id))))
   ) {
     res.status(404).json({ error: 'Not found' });
     return null;

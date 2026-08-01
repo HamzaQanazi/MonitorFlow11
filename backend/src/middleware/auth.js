@@ -18,7 +18,7 @@ async function requireAuth(req, res, next) {
   // deactivated account's still-valid JWT must stop working immediately.
   const { rows } = await pool.query(
     `SELECT id, name, email, role, phone, department_id, is_active,
-            login_identifier, manager_id, level_id
+            login_identifier, manager_id, level_id, company_id
      FROM users WHERE id = $1`,
     [payload.sub]
   );
@@ -56,4 +56,18 @@ function requireCapability(capability) {
   };
 }
 
-module.exports = { requireAuth, requireRole, requireCapability };
+// Same as requireCapability, but also admits the admin (Owner) — who holds no
+// capabilities by design (I2). Precedent: departments.js already OR's these
+// two checks inline; this is the shared version for routes that need it too.
+// The handler is still expected to branch on req.user.role for data scope
+// (admin sees company-wide, a capability holder sees their Gate-2 subtree).
+function requireCapabilityOrAdmin(capability) {
+  return (req, res, next) => {
+    if (req.user.role === 'admin' || (req.user.capabilities && req.user.capabilities.has(capability))) {
+      return next();
+    }
+    return res.status(403).json({ error: 'Forbidden' });
+  };
+}
+
+module.exports = { requireAuth, requireRole, requireCapability, requireCapabilityOrAdmin };

@@ -20,7 +20,6 @@ const pool = require('../db');
 const { ownerInScope } = require('./scope');
 const { isOversight } = require('./capabilities');
 const { pick } = require('./i18nLabel');
-const { fireWebhook } = require('./webhooks');
 const { logAudit } = require('./audit');
 
 class WorkflowError extends Error {
@@ -48,9 +47,13 @@ function statusOf(statuses, key) {
 
 // The party a caller acts as on this request. Oversight employees are not
 // served by the generic path (they use the dedicated endpoints), so only the
-// requester and the assignee resolve here.
-function partyOf(user) {
-  return user.role === 'user' ? 'requester' : 'assignee';
+// requester and the assignee resolve here. An employee is the requester when
+// they own the request (a service with accepts_employee_submitters), else
+// they're the assignee — role alone no longer decides this (only `user`
+// accounts are unconditionally requesters).
+function partyOf(user, requestUserId) {
+  if (user.role === 'user') return 'requester';
+  return requestUserId === user.id ? 'requester' : 'assignee';
 }
 
 // Actor-based transitions available to `actor` from the current status. Empty
@@ -79,14 +82,20 @@ function resolveTransition({
   formValidated = false,
 }) {
   // Ownership first (404-over-403, Section 6): a requester must own the
-  // request; a non-oversight employee must own the task. An oversight actor
-  // owns nothing — its scope is checked as Gate 2 (subtree) in
-  // executeTransition, which needs the DB.
+  // request; a non-oversight employee must own either the request (they
+  // submitted it, e.g. Time Off) or the task (they're the assignee). An
+  // oversight actor owns nothing — its scope is checked as Gate 2 (subtree)
+  // in executeTransition, which needs the DB.
   const oversight = isOversight(user);
   if (user.role === 'user' && requestUserId !== user.id) {
     throw new WorkflowError(404, 'Not found');
   }
-  if (user.role === 'employee' && !oversight && taskEmployeeId !== user.id) {
+  if (
+    user.role === 'employee' &&
+    !oversight &&
+    requestUserId !== user.id &&
+    taskEmployeeId !== user.id
+  ) {
     throw new WorkflowError(404, 'Not found');
   }
 
@@ -101,7 +110,7 @@ function resolveTransition({
     if (!(user.capabilities instanceof Set && user.capabilities.has(t.required_capability))) {
       throw new WorkflowError(403, 'Forbidden');
     }
-  } else if (t.actor !== partyOf(user)) {
+  } else if (t.actor !== partyOf(user, requestUserId)) {
     throw new WorkflowError(403, 'Forbidden');
   }
   // Section 6: the requester may only cancel while unassigned. The cancel is
@@ -336,15 +345,6 @@ async function executeTransition({
     }
 
     await client.query('COMMIT');
-
-    // Phase 7: outbound webhooks fire AFTER commit — a subscriber being down
-    // must never roll back the transition. Fire-and-forget (fireWebhook never
-    // throws). `assigned` is data-driven off the transition's notify targets
-    // (the assign transition notifies assigned_to), so no status/transition key
-    // is hardcoded here.
-    const hook = { request_id: request.id, service_key: request.service_key, status: transition.to };
-    fireWebhook('status_changed', hook);
-    if ((transition.notify || []).includes('assigned_to')) fireWebhook('assigned', hook);
 
     return { request, task, transition, status: newStatus, extra };
   } catch (err) {

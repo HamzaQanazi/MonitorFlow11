@@ -3,18 +3,28 @@
 // from each status's `is_terminal` flag — no status key appears here (Section 9).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireCapability } = require('../middleware/auth');
+const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
 const { subtreeIds } = require('../lib/scope');
 
 const router = express.Router();
-router.use(requireAuth, requireCapability('view_all'));
+router.use(requireAuth, requireCapabilityOrAdmin('view_all'));
 
-// Gate 2: every query is scoped to the services the oversight actor's subtree
-// owns — the dashboard shows their board, not the whole organization's.
+// Gate 2: an oversight employee's queries are scoped to the services their
+// subtree owns. The admin (Owner) has no subtree — they configure the whole
+// deployment (I2) — so they see every service's data (single-org per
+// deployment, so "company-wide" is just "no owner_id filter").
+async function ownerScopeIds(user) {
+  if (user.role === 'admin') {
+    const { rows } = await pool.query('SELECT id FROM users');
+    return rows.map((r) => r.id);
+  }
+  return subtreeIds(user.id);
+}
+
 router.get('/stats', async (req, res, next) => {
   try {
-    const dept = [await subtreeIds(req.user.id)];
-    const [byState, byService, byPriority, byDepartment] = await Promise.all([
+    const dept = [await ownerScopeIds(req.user)];
+    const [byState, byService, byPriority, byDepartment, byRequesterRole] = await Promise.all([
       pool.query(
         `SELECT (s->>'is_terminal')::bool AS is_terminal, COUNT(*)::int AS count
          FROM request r
@@ -71,6 +81,18 @@ router.get('/stats', async (req, res, next) => {
          ORDER BY d.id`,
         dept
       ),
+      // Who submitted it — 'user' (external/self-registered) vs 'employee'
+      // (internal, e.g. Time Off). Generic across every service (I1): this
+      // reads the requester's role, never a service key.
+      pool.query(
+        `SELECT u.role, COUNT(*)::int AS count
+         FROM request r
+         JOIN service_type st ON st.id = r.service_type_id
+         JOIN users u ON u.id = r.user_id
+         WHERE st.owner_id = ANY($1)
+         GROUP BY u.role`,
+        dept
+      ),
     ]);
 
     // Open vs closed replaces the old six-way category breakdown (§10 dropped
@@ -83,6 +105,8 @@ router.get('/stats', async (req, res, next) => {
     }
     const priorityCounts = Object.fromEntries(byPriority.rows.map((r) => [r.priority, r.count]));
     const priorities = ['high', 'medium', 'low'];
+    const requesterRoleCounts = Object.fromEntries(byRequesterRole.rows.map((r) => [r.role, r.count]));
+    const requesterRoles = ['user', 'employee'];
 
     // Weighted overall average = total resolved minutes / total resolved count,
     // so it isn't skewed by departments with few resolutions. null when nothing
@@ -103,6 +127,7 @@ router.get('/stats', async (req, res, next) => {
       ],
       byService: byService.rows.map((r) => ({ serviceTypeId: r.id, name: r.name, count: r.count })),
       byPriority: priorities.map((p) => ({ priority: p, count: priorityCounts[p] || 0 })),
+      byRequesterRole: requesterRoles.map((role) => ({ role, count: requesterRoleCounts[role] || 0 })),
       byDepartment: byDepartment.rows.map((r) => ({
         departmentId: r.department_id,
         name: r.department_name,
@@ -132,7 +157,7 @@ router.get('/chart', async (req, res, next) => {
        WHERE r.created_at >= (CURRENT_DATE - INTERVAL '29 days')
          AND st.owner_id = ANY($1)
        GROUP BY 1`,
-      [await subtreeIds(req.user.id)]
+      [await ownerScopeIds(req.user)]
     );
     const counts = Object.fromEntries(rows.map((r) => [r.day, r.count]));
     const days = [];

@@ -13,14 +13,18 @@ const oversightNav = [
   { to: '/requests', labelKey: 'nav_requests', end: false, need: 'view_all' },
   { to: '/employees', labelKey: 'nav_employees', end: false, need: 'manage_employees' },
   { to: '/reports', labelKey: 'nav_reports', end: false, need: 'view_all' },
+  { to: '/timeclock', labelKey: 'nav_timeclock', end: false, need: 'view_all' },
+  { to: '/schedule', labelKey: 'nav_schedule', end: false, need: 'view_all' },
 ]
-// Admin manages accounts/configuration only.
+// Owner (admin role) surface. Dashboard + Employees admit the admin via the
+// backend's requireCapabilityOrAdmin (I2: admins hold no capabilities, so this
+// is a role-based allow, not a Gate-1 capability like oversightNav's items).
 const adminNav = [
-  { to: '/services', labelKey: 'nav_services', end: false },
-  { to: '/org', labelKey: 'nav_org', end: false },
-  { to: '/levels', labelKey: 'nav_levels', end: false },
+  { to: '/', labelKey: 'nav_dashboard', end: true },
+  { to: '/employees', labelKey: 'nav_employees', end: false },
+  { to: '/departments', labelKey: 'nav_departments', end: false },
+  { to: '/services/new', labelKey: 'nav_add_service', end: false },
   { to: '/audit', labelKey: 'nav_audit', end: false },
-  { to: '/webhooks', labelKey: 'nav_webhooks', end: false },
 ]
 
 export default function DashboardShell() {
@@ -34,7 +38,11 @@ export default function DashboardShell() {
   return (
     <div className="shell">
       <header className="shell-bar">
-        <Wordmark variant="shell" />
+        <Wordmark
+          variant="shell"
+          companyName={user?.onboardingCompleted ? user.companyName : null}
+          companyLogo={user?.onboardingCompleted ? user.companyLogo : null}
+        />
         <nav className="shell-nav" aria-label="Primary">
           {navItems.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end}>

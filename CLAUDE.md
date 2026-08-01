@@ -6,27 +6,44 @@ skills, style guides, and `DESIGN.md` are subordinate to this file. If a request
 contradicts a rule here, **flag the contradiction** instead of silently
 resolving it either way.
 
-**Spec version: v6 (current).** Reflects the shipped codebase after the Operiva
-migration (Phases 1–7, all complete). Supersedes the old ER v3 / API v2 spec and
-the former `combineidea.md` invariants doc, both folded into this file. The
-frozen API contract lives in `openapi.yaml` (see §12).
+**Spec version: v7 (current) — pivot in progress.** v7 begins the pivot from a
+multi-sector, config-API-driven platform to a **single-company workforce app
+provisioned with an Owner who runs a first-login onboarding wizard**. What has
+already shipped in v7: the old JSON **config API and outbound webhooks are
+removed**; the municipality seed (`company-config.js`) is gone, replaced by a seed
+that provisions **one empty company + one Owner** (§9); a `company`/`branch` schema
+and the **onboarding wizard** (backend + React) are in.
+
+**The operational engine underneath is unchanged and still live** — the dynamic
+form engine, the dynamic workflow engine, the two-gate permission model, requests/
+tasks/audit. Invariants I2–I10 (§2) still hold for that layer. The workforce
+features (time clock, schedule, etc.) the wizard lets an Owner *select* are, so
+far, **selections stored on the company** — the feature modules themselves are the
+next increment, not yet built. Where this file still describes the old
+config-driven surface, treat §1/§9/§13 as the current truth and flag any conflict.
+
+Supersedes the old ER v3 / API v2 spec. The API contract lives in `openapi.yaml`
+(§12); note it has **drifted** from the code during the pivot and is being
+reconciled (see §12).
 
 ---
 
 ## 1. What this project is
 
-MonitorFlow is a **configuration-driven** service-request and field-operations
-platform. Two mobile apps (User, Employee — Flutter) and one web dashboard
-(React) share one backend and one database.
+MonitorFlow is a **single-company workforce and field-operations platform**. Two
+mobile apps (User, Employee — Flutter) and one web dashboard (React) share one
+backend and one database. **One deployment = one company** (§13).
 
-The central claim the whole graduation project rests on:
+**How a company comes online (v7):** the buyer is **provisioned an Owner account
+at purchase** (seed/CLI — no self-registration for the Owner). On first login the
+Owner runs the **"Customize your app in 1 minute" onboarding wizard** (§9): company
+info, industry + sub-industry, branches, the **feature modules** they want, branding,
+contact. That fills the one `company` row and flips `onboarding_completed`; from
+then on the console is live and staff are added through the employee flow.
 
-> **A new service sector is onboarded by configuration, not code.**
-> No part of the codebase is specific to any one service or any one role.
-
-Municipal services, home healthcare, food delivery, an IT helpdesk — all run on
-the same unchanged engine; only the data differs. This is achieved through two
-engines plus a config surface:
+**The engine underneath stays configuration-driven and generic** — no file, table,
+route, or component is specific to any one industry (I1 still holds). It runs on two
+engines:
 
 - **Dynamic form engine** — forms render from a `field_schema` JSON stored per
   service type (`validateFormResponse.js`, `formSchema.js`, the Flutter
@@ -36,17 +53,16 @@ engines plus a config surface:
   per service type (`workflowEngine.js`). No status key ever hardcoded in app
   code — code reasons about `is_terminal`, `required_capability`, and `actor`
   only (§8).
-- **Config API** — `POST /config/services` onboards a whole sector from one JSON
-  body (§9). The proof: adding a sector touches zero `.js`/`.tsx`/`.dart` files.
 
-**The current seeded deployment is a municipality** (`company-config.js`): one
-City Manager over three departments (Public Works, Sanitation, Licensing), seven
-services, three structurally different workflows. It is *data*, not spec — the
-engine is agnostic to it.
+The onboarding **feature selections** (`time_clock`, `schedule`, …) are stored on
+the company as data; the feature modules themselves are the next build increment.
+The catalogue the wizard offers — employee ranges, industries + sub-industries,
+features — lives in one backend file (`lib/onboardingOptions.js`), the single
+source of truth the wizard fetches (thin client, I4).
 
 **Context:** graduation project, 2 students, built with heavy Claude Code
-assistance. The MVP shipped early and the Operiva migration (Phases 1–7) is
-complete. Do not re-add anything from the "removed" list (§13) without a
+assistance. The MVP shipped, the Operiva migration completed, and v7 began the
+workforce pivot. Do not re-add anything from the "removed" list (§13) without a
 deliberate, explicit decision by both students.
 
 ---
@@ -62,7 +78,11 @@ class MaintenanceRequest {}        class Request {}
 if (service === 'pothole')         (drive it from config)
 PermitForm.tsx                     DynamicForm.tsx
 ```
-Onboarding a sector is a `POST /config/services`, never a code change.
+No `if (industry === 'healthcare')` branch may ever exist. The onboarding
+catalogue (`lib/onboardingOptions.js`) *lists* industries and features as **data**
+— a picklist, like a country dropdown — and the feature list is identical for every
+industry (product rule). Listing an option is fine; branching behaviour on it is
+the violation.
 
 ### I2. "Monitor" is not a role. Exactly three account kinds.
 ```
@@ -153,9 +173,11 @@ surveillance tool. Do not add behavioural tracking, even if asked casually.
 
 ## 3. Hard constraints (in addition to the invariants)
 
-- **No visual Form Builder UI and no visual Workflow Config UI.** Definitions
-  enter only via the seed script (`company-config.js` → `seed.js`) or the JSON
-  config API (§9). There is no authoring UI and no per-field write endpoint.
+- **No visual Form Builder UI and no visual Workflow Config UI.** Form/workflow
+  definitions enter only via the seed script (`seed.js` + `formSchema.js`/
+  `workflowSchema.js` validators). There is no authoring UI and no per-field write
+  endpoint. (The onboarding wizard configures the *company*, not forms/workflows.)
+  The old JSON config API that onboarded whole sectors is **removed** (§9, §13).
 - **Definitions are immutable once any request exists** for their service type.
   No versioning system; changing a live definition means adding a new service and
   disabling the old (documented MVP limitation).
@@ -200,13 +222,23 @@ surveillance tool. Do not add behavioural tracking, even if asked casually.
   data).
 - Deactivated accounts (`is_active = false`) are rejected at JWT validation, not
   only at login.
-- `login_identifier` is deliberately generic: employees log in with a 4-digit
-  employee number, users with an email. One column, one lookup, one flow — do
-  not split into two auth paths. The number is `1000 + department_id × 100` plus
-  the lowest free offset, giving each department a block of 100 (no department →
-  `1000–1099`); the server allocates it (`lib/employeeNumber.js`), a client never
-  supplies one, and an exhausted block is a 409. Monitor/admin accounts are seed- or admin-
-  created; `POST /auth/register` creates `user` role only.
+- `login_identifier` is deliberately generic: an external `user` logs in with
+  their email; an employee logs in with a **generated company email**
+  (`lib/employeeEmail.js`: two letters of their first name + `.` + last name +
+  `@` + the company's wizard-set `email_domain`, e.g. `ha.qanazi@company.org`;
+  a colliding name gets a number inserted after the first-name part —
+  `ha2.qanazi@...` — via an advisory-lock retry, same safety shape as the
+  legacy allocator below). One column, one lookup, one flow — do not split
+  into two auth paths; this only changes what value populates that one column
+  for a new employee, not the lookup itself. Server-generated always — a
+  client never supplies one. **Superseded (2026, this deviation flagged for
+  Student 2's awareness — auth is their owned surface, §11):** employees were
+  previously allocated a 4-digit number instead (`1000 + department_id × 100`
+  plus the lowest free offset per department, `lib/employeeNumber.js`,
+  exhausted block → 409). That allocator is left in place but unused by
+  `POST /employees` — existing employee rows keep their number, only new
+  hires get the generated email. Monitor/admin accounts are seed- or
+  admin-created; `POST /auth/register` creates `user` role only.
 
 ---
 
@@ -251,12 +283,45 @@ combination gets at least one automated API test (§14).
 
 Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 
-- **department** — id, name `{en,ar}`.
-- **users** — id, name, email (nullable, unique), password_hash, role
+- **company** (v7) — id, name, address, owner_job_title (JSONB `{en,ar}`,
+  **both required** — the Owner types both halves in the wizard; unlike other
+  owner-entered tenant data, these three are shown to every console/mobile user
+  via the wordmark or future pickers regardless of *their* language, so I5's
+  rule applies here the same as a system label), employee_range, industry,
+  sub_industry, plan, email_domain (plain TEXT — genuinely Owner-only tenant
+  data nobody else's UI renders; plan is step 7, its `employeeCap`
+  server-enforced on hire — see §9; email_domain is step 5, the domain suffix
+  generated employee login emails use — see §4), features
+  (`TEXT[]` of selected feature keys), logo_file_id (FK → file_attachment, nullable),
+  phone, **onboarding_completed**
+  (bool, default false — the first-login gate), created_at. name/address/
+  owner_job_title stay nullable (the row exists pre-onboarding with no values
+  yet); the bilingual CHECK passes NULL through unchanged. At most one row per
+  deployment (single-org, §13); a table not a singleton so branches/features get
+  clean FKs and can grow to multi-tenant later.
+- **branch** (v7) — id, company_id (FK, cascade), name (JSONB `{en,ar}`, same
+  rationale as company's), created_at. One row per branch the Owner names in
+  the wizard.
+- **department** — id, name `{en,ar}`, head_user_id (FK → users, nullable —
+  Owner-only CRUD via `/departments`, §12; metadata only, display + the
+  reassignment fallback below — the real Gate-2 effect is that a
+  department's other members get `manager_id` = head_user_id). Creating a
+  department requires a head + ≥1 other employee; deactivating a head
+  auto-promotes their own manager to head (and re-points the department's
+  other members to report to them) or, if that head has no active manager,
+  refuses the deactivation (409) until the Owner reassigns the head first.
+- **users** — id, name (computed `${firstName} ${lastName}` for employees created
+  through the extended Add Employee form — see §5's login_identifier note), email
+  (nullable, unique), password_hash, role
   (`admin`/`employee`/`user`), phone (nullable), department_id (FK, nullable),
-  **login_identifier** (unique — an email, or a 4-digit employee number),
-  **manager_id** (self-FK,
+  **login_identifier** (unique — an email, a generated employee login email, or a
+  legacy 4-digit employee number — see §4), first_name, last_name, birthdate (date,
+  nullable), gender, worker_type (both plain TEXT machine keys, i18n-translated
+  client-side like `priority` — not a bilingual JSONB catalogue, since I5 doesn't
+  require one for small fixed system enums), **manager_id** (self-FK,
   nullable — the reporting tree), **level_id** (FK → employee_level, nullable),
+  **company_id** (FK → company, nullable — the account's company; nullable so the
+  Owner, created before the company row, and self-registered users stay valid),
   is_active (default true), created_at.
 - **capability** — key (PK; the fixed catalogue).
 - **employee_level** — id, name `{en,ar}`.
@@ -283,9 +348,27 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 - **request_comment** — id, request_id (FK), user_id (FK), body, created_at.
 - **notification** — id, user_id (FK), request_id (FK, nullable), type, message
   `{en,ar}`, is_read, created_at.
-- **file_attachment** — id (UUID), request_id XOR task_id (CHECK: exactly one
-  non-null), original_filename, mime_type, size_bytes, storage_path (never
-  exposed), uploaded_by (FK), uploaded_at.
+- **file_attachment** — id (UUID), request_id XOR task_id XOR time_entry_id
+  (CHECK: exactly one non-null), original_filename, mime_type, size_bytes,
+  storage_path (never exposed), uploaded_by (FK), uploaded_at.
+- **time_shift** — id, employee_id (FK), company_id (FK), clock_in_at,
+  clock_out_at (nullable), source (`clock`/`manual`), status
+  (`active`/`completed`), approval_status (`pending`/`approved`/`edited`),
+  note, approved_by/approved_at. At most one `active` shift per employee
+  (DB-enforced unique index, not app locking). **time_break** — shift_id (FK),
+  break_start_at, break_end_at (nullable, at most one active per shift).
+  **time_entry** — shift_id (FK), type (`note`/`photo`/`tip`), body, amount,
+  created_by — in-shift extras; a `photo` entry is the parent for a
+  `file_attachment`.
+- **shift_template** — id, company_id (FK), name `{en,ar}`, start_time,
+  end_time. Manager-defined named shifts (e.g. "Morning 9–5"), Schedule
+  feature. **schedule_entry** — id, employee_id (FK), company_id (FK), date,
+  shift_template_id (FK), created_by. Unique (employee_id, date) — one shift
+  per employee per day, a flat date-by-date roster with no recurrence engine.
+  This is Time Clock's late/absent/overtime baseline: `lib/timeClock.js`
+  reads the day's `schedule_entry` (if any) instead of a fixed weekly
+  pattern; no entry for a date means late/absent/overtime never fire for
+  that employee on that date.
 - **audit_event** — actor_id, action, entity_type, entity_id, detail (JSONB),
   created_at. Two families, both written via `logAudit` in the same transaction
   as the change (I9): config/admin actions (service.created, employee.created, …)
@@ -293,8 +376,6 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
   request.priority_changed) written by the workflow engine and the
   assign/priority handlers. The operational family deliberately duplicates the
   `request_status_history` timeline so the admin audit page is one feed.
-- **webhook_subscription** — id, url, secret, events (TEXT[]), is_active,
-  created_at (§9).
 
 Location is a real geography column, not a string in JSONB — spatial analysis
 later needs new *queries*, not a migration.
@@ -368,7 +449,7 @@ extra transition rows. The engine has **no concept of a loop** — do not add on
 `REQUEST.status`/`TASK.status`): lock REQUEST row → check the transition exists
 from current status → check Gate 1 (capability) and/or Gate 2 + ownership (actor)
 → check note/form requirements → write both statuses + a history row → commit →
-fire notifications + webhooks (§9). Nothing else may write status. While the
+fire notifications (§10). Nothing else may write status. While the
 current status is `is_terminal`, the task is locked (409 on further task calls);
 a reopen transition unlocks it automatically.
 
@@ -379,37 +460,69 @@ concurrent fire wins). Oversight (capability-gated) transitions fire via the
 dedicated `PATCH /requests/{id}/assign` · `/priority` · `/status`. Employee task
 actions go through `/tasks/{id}` + `/tasks/{id}/transitions`.
 
-The current seeded workflows (in `company-config.js`) prove the thesis with three
-structurally different shapes on one engine: **dispatch + hold loop** (Public
-Works), **lean scheduled pickup** (Sanitation), **approval gate + reject terminal**
-(Licensing). Same code, different JSON.
+The engine still proves the config-driven thesis: three structurally different
+workflow shapes — **dispatch + hold loop**, **lean scheduled pickup**, **approval
+gate + reject terminal** — run on one unchanged engine, same code, different JSON.
+(The v7 seed no longer ships these municipal workflows; they live in the git
+history and the demo fixtures under `docs/demo/`.)
 
 ---
 
-## 9. Config API, signed webhooks & external users (Phase 7 — admin only)
+## 9. Onboarding wizard & Owner provisioning (v7)
 
-`/api/v1/config/*`, guarded by `requireRole('admin')`.
+The old JSON config API (`POST /config/services`) and outbound webhooks are
+**removed** (§13). Sector onboarding-as-a-JSON-body is gone; a deployment is one
+company, brought online by provisioning + a wizard.
 
-- **`POST /config/services`** — onboards a whole sector from one JSON body:
-  `{ service:{key,name,department,accepts_external_users,owner?}, workflow:
-  {initial_status,statuses,transitions}, forms:{request,completion} }`. It reuses
-  the **seed-time validators verbatim** (422 on bad form/workflow), creates or
-  reuses the department, resolves the optional `owner` via `login_identifier`,
-  and 409s a duplicate `service.key`. This is the thesis in one call: a new sector
-  with **zero code change**.
-- **`GET /config/services`** — admin listing.
-- **`POST/GET/DELETE /config/webhooks`** — subscriptions (`webhook_subscription`).
-  The response never returns the secret.
+**Owner provisioning** (`seed.js`, run once per sale): TRUNCATEs, inserts the fixed
+capability catalogue, one **empty `company`** (`onboarding_completed = false`), and
+one **Owner** (`role 'admin'`, `login_identifier` = their email, `company_id` set).
+Credentials come from `SEED_OWNER_*` env vars; it refuses to run against a database
+that already has users unless `SEED_FORCE=true`. The Owner is `admin` (I2):
+configures, sits outside the reporting tree, holds no capabilities.
 
-**Outbound webhooks** (`lib/webhooks.js`): four events —
-`request_created · status_changed · assigned · sla_breached`. Fired **after
-commit**, fire-and-forget (a down subscriber can never roll back a state change),
-HMAC-SHA256 signature in `X-MonitorFlow-Signature`. `assigned` is derived from a
-transition's `notify` containing `assigned_to` — **no status/transition key
-hardcoded**. `accepts_external_users` gates the public catalogue and submission
-for self-registered `user` accounts (403 on an internal-only service).
-*(Ponytail ceiling: at-most-once delivery, no retry/queue — add a retry worker at
-that seam if subscriber uptime must be tolerated.)*
+**Onboarding endpoints** (`routes/onboarding.js`, both `requireAuth`; the save is
+`requireRole('admin')`):
+- **`GET /onboarding/options`** — the static wizard catalogue from
+  `lib/onboardingOptions.js`: employee ranges, industries + their sub-industries,
+  feature groups, and plan tiers (all `{en,ar}` labels). Thin client renders it (I4).
+- **`GET /onboarding/geocode?q=…`** — step-1 address helper. Server-side proxy to
+  OpenStreetMap Nominatim (its usage policy forbids calling it from a browser and
+  requires a descriptive User-Agent + ~1 req/sec throttling, both enforced here);
+  returns only `{ match: { city, country } | null }`, never the raw upstream
+  response. The wizard debounces on the address field and auto-appends the
+  country on an exact city match. **This is the one deliberate exception to "no
+  named vendor integrations" (§13)** — flagged and agreed as a one-off, not a
+  precedent for adding others without the same conversation.
+- **`PATCH /company/onboarding`** — the wizard's one save. Validates every pick
+  **server-side against the catalogue** (I8), writes the `company` row + its
+  `branch` rows in **one transaction**, then flips `onboarding_completed` (one-shot:
+  a second call after completion is **409**). Optional logo is a parentless
+  `file_attachment` the Owner POSTed to `/files` first (admins may create the
+  parentless company-logo upload). Step 5's `emailDomain` is validated as a bare
+  domain (no scheme/path) and is what `lib/employeeEmail.js` appends to every
+  generated employee login. Step 7's `plan` pick sets a real limit: `POST
+  /employees` (`routes/employees.js`) looks up the company's plan and, if its
+  `employeeCap` isn't null (Enterprise = unlimited), counts active employees and
+  refuses the hire with **409** once at cap — message names the plan and cap and
+  says to contact support to upgrade (no working upgrade/billing flow exists;
+  see below). Step 2's employee-range answer is only a size hint here — step 7
+  shows a non-blocking warning if a plan's cap looks too small for it, but
+  doesn't stop the Owner picking it anyway; the plan's own cap is the one real
+  gate. Each plan's **feature-group access is still record-only** — descriptive
+  text on the card, not server-enforced, same status as the step-4 feature
+  selections (the modules and any real gating there are a future increment). No
+  pricing, checkout, or billing of any kind — that stays on the "deliberately
+  NOT built" list (§13), which is why hitting the cap points the Owner to
+  support rather than an in-app upgrade action.
+
+**The first-login gate:** `onboardingCompleted` rides on the `/auth/login` and
+`/auth/me` user payloads (joined from the Owner's company). The React app routes an
+`admin` whose company is not yet onboarded to the wizard instead of the console;
+`markOnboarded()` drops the gate on save. Other account kinds never see it.
+
+*(Ponytail ceiling: single-org, one-shot onboarding, no re-run/edit UI — changing
+company details later is a direct row update for now.)*
 
 ---
 
@@ -423,8 +536,8 @@ party. Targets are the relationships in §8, resolved at fire time.
 **SLA / escalation** (`lib/escalation.js`, a periodic sweep, `ESCALATION_SWEEP_MS`,
 default 5 min): a request sitting in a status past its `sla_minutes` escalates
 **up the manager tree** (to the assignee's manager), not to a hardcoded
-department overseer, and fires the `sla_breached` webhook. Reuses the existing
-sweep worker.
+department overseer. Reuses the existing sweep worker. (The `sla_breached` webhook
+it once fired is removed — §9.)
 
 ---
 
@@ -437,22 +550,30 @@ cancel, confirm/dispute resolution, attachments, map pin).
 **Employee mobile:** Home + My Tasks · Task Details · workflow transitions ·
 Complete Task (dynamic completion form).
 
-**Monitor web:** Login · Dashboard Overview (stats grouped **open vs closed**,
-per-service + per-priority totals, 30-day chart) · Requests Management +
-Assignment (list/filters + detail pane, timeline, comments, assign/reassign,
-priority, status override, map view) · Employees Management · Reports + CSV export
-· Audit.
+**Monitor web:** Login · **First-login onboarding wizard** (v7 — the seven-step
+"Customize your app in 1 minute", gated on an un-onboarded Owner) · Dashboard
+Overview (stats grouped **open vs closed**, per-service + per-priority totals,
+30-day chart) · Requests Management + Assignment (list/filters + detail pane,
+timeline, comments, assign/reassign, priority, status override, map view) ·
+Employees Management · Reports + CSV export · Audit.
 
 **Shared component:** Notifications + Profile, reused by both mobile apps.
 
-**Branding is build-time, per deployment** (`web/src/brand.ts`, `web/.env.example`):
-the company name `{en,ar}` and an optional logo come from `VITE_BRAND_*` at build
-time, rendered by the one `<Wordmark>` component (shell + login) and used for the
-tab title. Consistent with one organisation per deployment (§13) — there is no
-branding API and no runtime lookup. Mobile app name and icon are build-time too,
-in `pubspec.yaml` / `AndroidManifest.xml` / `Info.plist`. **Never rebrand
-`X-MonitorFlow-Signature`** — that is a wire protocol subscribers verify, not a
-company name.
+**Branding has a build-time default and one runtime override, post-onboarding**
+(`web/src/brand.ts`, `web/.env.example`, `web/src/components/Wordmark.tsx`): the
+generic "MonitorFlow" name/pip come from `VITE_BRAND_*` at build time, used on
+the login page (rendered pre-auth, so it can never know a company) and the tab
+title. Once an Owner completes onboarding, `<Wordmark>` in the **console shell
+only** prefers their company's own name and uploaded logo instead — both ride
+the authenticated `/auth/login`/`/auth/me` payload (`companyName`/`companyLogo`,
+the logo inlined as a data URI by `routes/auth.js` so the `<img>` never needs
+its own authenticated fetch against the per-file-gated `GET /files/{id}`). This
+is a deliberate, scoped exception to "no branding API, no runtime lookup" for
+the shell only — the login page still never does a runtime lookup, and there is
+still no public/unauthenticated branding endpoint. Mobile app name and icon stay
+build-time only, in `pubspec.yaml` / `AndroidManifest.xml` / `Info.plist` — this
+override doesn't extend there. **Never rebrand `X-MonitorFlow-Signature`** —
+that is a wire protocol subscribers verify, not a company name.
 
 **UI-state rule (every page):** loading + empty states on every list; a
 confirmation dialog on every destructive/terminal action, with a note field where
@@ -462,16 +583,29 @@ without these.
 **Work division:** *Student 1* — Flutter User + Employee apps, shared mobile
 components, the seed/demo-data script, the Employees + Reports web pages, mobile
 testing. *Student 2* — schema + migrations, API, auth + permission middleware,
-form/workflow engines, file + notification services, config API + webhooks, the
-React scaffold + Login + Dashboard + Requests Management, deployment.
+form/workflow engines, file + notification services, the onboarding wizard
+(backend + React), the React scaffold + Login + Dashboard + Requests Management,
+deployment.
 
 ---
 
 ## 12. API contract
 
-`openapi.yaml` (repo root) is the **frozen** contract (I7) — the authoritative
-list of every endpoint, request/response shape, and status code. Do not duplicate
-it here and do not let this file contradict it. Key conventions it encodes: base
+`openapi.yaml` (repo root) is the contract (I7) — the authoritative list of every
+endpoint, request/response shape, and status code. Do not duplicate it here and do
+not let this file contradict it. **v7 reconciliation:** the pivot removed the
+`/config/*` surface and added `/onboarding/options` + `/company/onboarding`.
+Employee management is fully reconciled to the live routes — all under
+`/employees` (people tag, `manage_employees` capability); the old `/config/{org,
+levels,capabilities,employees}` paths are gone (org/capabilities have no live
+endpoint post-pivot — Gate-1 level *authoring* is seed-time only for now, but
+`GET /employee-levels` reads the catalogue, backing the Add Employee "role"
+picker). `/departments` now has full CRUD (Owner-only create/rename/delete/
+reassign-head, §6), documented in the contract. Still undocumented:
+`GET /employee-levels` (same read-only reference-data shape as departments)
+and `/users/me*`. When in doubt,
+the mounted routes in `backend/src/index.js` are ground truth. Key conventions it
+encodes: base
 path `/api/v1`; Bearer JWT on every route except register/login; standard list
 params `?page&pageSize(≤100)&status&state&serviceTypeId&priority&dateFrom&dateTo&q`;
 status codes 200/201/204/400/401/403/404/409/422/429/500 used exactly; dynamic-form
@@ -491,12 +625,17 @@ no ranking, no auto-select) · **live/continuous GPS tracking, location history,
 behavioural monitoring** (I10) · signature capture · draft saving · satisfaction
 ratings · multi-organization / true multi-tenancy (single-org per deployment;
 "many companies" = one deployment each) · payments · advanced BI · **named vendor
-integrations** (MonitorFlow emits webhooks; the deployer wires them) ·
-self-service forgot/reset password · request deadlines · form/workflow versioning
-· refresh tokens / server-side logout. The interactive **map pin picker is IN**
-(v5 amendment) and **operational audit rows are IN** (status/assign/priority
-actions now write `audit_event`, superseding the earlier "history notes suffice"
-decision); GPS tracking stays out.
+integrations** · self-service forgot/reset password · request deadlines ·
+form/workflow versioning · refresh tokens / server-side logout.
+
+**Removed in v7 (do not re-add without a deliberate decision):** the JSON **config
+API** (`POST /config/services` — sector-as-data onboarding) and **outbound signed
+webhooks** (`/config/webhooks`, `lib/webhooks.js`, the `X-MonitorFlow-Signature`
+delivery). The municipality seed (`company-config.js`) went with them.
+
+**IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
+picker** (v5) · **operational audit rows** (status/assign/priority write
+`audit_event`). GPS tracking stays out (I10).
 
 ---
 
@@ -504,7 +643,8 @@ decision); GPS tracking stays out.
 
 - **Unit (backend):** form-validation (each type × required/bounds/options/unknown
   key) · workflow transition validator (valid/invalid/wrong-capability/wrong-actor/
-  terminal-locked/stale) · webhook signing.
+  terminal-locked/stale) · onboarding-save validation (each pick against the
+  catalogue; one-shot 409).
 - **API integration (most of the budget):** happy path + negatives per endpoint
   against a test DB.
 - **Permission suite:** one test per allowed/denied combination — a capable actor
@@ -527,7 +667,7 @@ transitions → exactly one wins · cancel-vs-assign race → one wins other 409
 deactivated JWT → 401 · deactivate employee holding an open task → 409 · confirm
 before done → 409 · cross-subtree assign → refused · override to nonexistent
 status → 422 · download another user's file → 404 · user submit to internal-only
-service → 403.
+service → 403 · hire past the plan's employee cap → 409.
 
 ---
 
@@ -537,7 +677,8 @@ Redundant `TASK.status` (intentional denormalization) · immutable definitions, 
 versioning · reassignment overwrites `employee_id` (history note is the audit) ·
 polling latency · 24h JWT, no refresh/revocation · email enumeration on register ·
 single organization per deployment · temporary passwords not force-changed · no
-automated frontend E2E · webhooks at-most-once (no retry).
+automated frontend E2E · onboarding is one-shot with no in-app edit (change company
+details by direct row update).
 
 ---
 
@@ -554,8 +695,8 @@ automated frontend E2E · webhooks at-most-once (no retry).
 - Commit after each verified feature, naming the page or endpoint it implements —
   never batch features into one commit.
 - Never create test data by hand or via ad-hoc SQL — extend the seed script
-  (`company-config.js` / `seed.js`) so every developer and demo starts identical.
-  (Exception: temporarily flipping a flag for a negative test, then flipping back.)
+  (`seed.js`) so every developer and demo starts identical. (Exception:
+  temporarily flipping a flag for a negative test, then flipping back.)
 - No status keys in application code — `is_terminal`, capabilities, and actors
   only. If a task seems to need one, **flag it**.
 - If a request conflicts with the invariants (§2) or any constraint here, **say so

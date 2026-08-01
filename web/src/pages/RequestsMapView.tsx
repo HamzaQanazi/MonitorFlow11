@@ -28,6 +28,7 @@ interface Props {
   priority: string
   q: string
   employeeId: string
+  requesterRole: string
   openDetail: (id: number) => void
 }
 
@@ -65,7 +66,15 @@ function FitToMarkers({ points, fitKey }: { points: [number, number][]; fitKey: 
   return null
 }
 
-export default function RequestsMapView({ state, serviceTypeId, priority, q, employeeId, openDetail }: Props) {
+export default function RequestsMapView({
+  state,
+  serviceTypeId,
+  priority,
+  q,
+  employeeId,
+  requesterRole,
+  openDetail,
+}: Props) {
   // The module already binds Leaflet to `L`; alias the i18n picker as `loc`.
   const { t, L: loc } = useI18n()
   const [rows, setRows] = useState<MapRow[] | null>(null)
@@ -81,6 +90,7 @@ export default function RequestsMapView({ state, serviceTypeId, priority, q, emp
       if (priority) qs.set('priority', priority)
       if (q) qs.set('q', q)
       if (employeeId) qs.set('employeeId', employeeId)
+      if (requesterRole) qs.set('requesterRole', requesterRole)
       apiFetch<{ requests: MapRow[]; total: number }>(`/requests?${qs.toString()}`)
         .then((res) => {
           if (cancelled) return
@@ -100,7 +110,7 @@ export default function RequestsMapView({ state, serviceTypeId, priority, q, emp
       cancelled = true
       clearInterval(timer)
     }
-  }, [state, serviceTypeId, priority, q, employeeId])
+  }, [state, serviceTypeId, priority, q, employeeId, requesterRole])
 
   if (rows === null) {
     return error ? (
@@ -120,7 +130,7 @@ export default function RequestsMapView({ state, serviceTypeId, priority, q, emp
   const located = rows.filter((r) => r.location !== null)
   const missing = rows.length - located.length
   const points = located.map((r) => [r.location!.lat, r.location!.lng] as [number, number])
-  const fitKey = [state, serviceTypeId, priority, q, employeeId].join('|')
+  const fitKey = [state, serviceTypeId, priority, q, employeeId, requesterRole].join('|')
 
   return (
     <div className="req-mapwrap">

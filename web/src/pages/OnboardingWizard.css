@@ -1,0 +1,317 @@
+/* First-login onboarding wizard — a full-screen modal over the console.
+   Logical properties only (I6): flips LTR/RTL with the document dir. */
+
+.ob-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: oklch(0.21 0.02 57 / 0.55);
+}
+
+.ob-card {
+  inline-size: 100%;
+  max-inline-size: 520px;
+  max-block-size: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-radius: var(--radius-md);
+  box-shadow: 0 20px 60px oklch(0.21 0.02 57 / 0.35);
+  overflow: hidden;
+}
+
+.ob-card-msg {
+  min-block-size: 220px;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+  padding: 32px;
+}
+
+.ob-head {
+  padding: 24px 28px 16px;
+  border-block-end: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+}
+
+.ob-head h1 {
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.ob-progress-label {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.ob-progress {
+  display: flex;
+  gap: 6px;
+  margin-block-start: 4px;
+}
+
+.ob-seg {
+  block-size: 4px;
+  flex: 1;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background-color var(--dur-base) var(--ease-out);
+}
+
+.ob-seg-on {
+  background: var(--amber-600);
+}
+
+.ob-body {
+  padding: 24px 28px;
+  overflow-y: auto;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.ob-body h2 {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.ob-hint {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.ob-field {
+  display: grid;
+  gap: 6px;
+}
+
+/* Each branch's English/Arabic name pair, grouped and separated from the next. */
+.ob-branch-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  padding-block-end: 12px;
+  margin-block-end: 12px;
+  border-block-end: 1px solid var(--border);
+}
+
+.ob-branch-pair:last-child {
+  border-block-end: none;
+  padding-block-end: 0;
+  margin-block-end: 0;
+}
+
+.ob-field label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ob-field input,
+.ob-field select {
+  block-size: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.ob-field input:hover:not(:disabled),
+.ob-field select:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.ob-field input:focus-visible,
+.ob-field select:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.ob-field input[aria-invalid],
+.ob-field select[aria-invalid] {
+  border-color: var(--error);
+}
+
+.ob-field select:disabled {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.ob-field-error {
+  color: var(--error);
+  font-size: 13px;
+}
+
+/* File input: hide the native control, style its label as a button-ish box. */
+.ob-file {
+  display: flex;
+  align-items: center;
+  block-size: 42px;
+  padding: 0 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.ob-file input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ob-feature-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.ob-feature-group legend {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+  padding-inline: 4px;
+}
+
+.ob-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.ob-check input {
+  inline-size: 18px;
+  block-size: 18px;
+  accent-color: var(--amber-600);
+}
+
+.ob-plan-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ob-plan-card {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding-block: 14px;
+  padding-inline: 44px 16px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.ob-plan-card:hover {
+  border-color: var(--muted);
+}
+
+.ob-plan-card-on {
+  border-color: var(--amber-600);
+  background: color-mix(in oklch, var(--amber-600) 8%, transparent);
+}
+
+.ob-plan-card input {
+  position: absolute;
+  inset-inline-start: 16px;
+  inset-block-start: 16px;
+  inline-size: 18px;
+  block-size: 18px;
+  accent-color: var(--amber-600);
+}
+
+.ob-plan-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.ob-plan-cap {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ob-plan-includes {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Soft, non-blocking — the plan is still pickable, just flagged. */
+.ob-plan-warning {
+  font-size: 13px;
+  color: var(--amber-700);
+}
+
+.ob-error {
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.ob-foot {
+  padding: 16px 28px;
+  border-block-start: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ob-btn {
+  block-size: 42px;
+  padding: 0 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+
+.ob-btn:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.ob-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ob-btn-primary {
+  border-color: transparent;
+  background: var(--amber-600);
+  color: oklch(1 0 0);
+}
+
+.ob-btn-primary:hover:not(:disabled) {
+  background: var(--amber-700);
+  border-color: transparent;
+}
+
+@media (max-width: 560px) {
+  .ob-head,
+  .ob-body,
+  .ob-foot {
+    padding-inline: 20px;
+  }
+}

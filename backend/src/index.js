@@ -6,13 +6,16 @@ const dashboardRoutes = require('./routes/dashboard');
 const requestRoutes = require('./routes/requests');
 const taskRoutes = require('./routes/tasks');
 const employeeRoutes = require('./routes/employees');
+const employeeLevelRoutes = require('./routes/employeeLevels');
 const auditEventRoutes = require('./routes/auditEvents');
 const fileRoutes = require('./routes/files');
 const notificationRoutes = require('./routes/notifications');
 const userRoutes = require('./routes/users');
 const departmentRoutes = require('./routes/departments');
 const reportRoutes = require('./routes/reports');
-const configRoutes = require('./routes/config');
+const onboardingRoutes = require('./routes/onboarding');
+const timeClockRoutes = require('./routes/timeclock');
+const scheduleRoutes = require('./routes/schedule');
 
 const app = express();
 
@@ -40,13 +43,17 @@ app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/requests', requestRoutes);
 app.use('/api/v1/tasks', taskRoutes);
 app.use('/api/v1/employees', employeeRoutes);
+app.use('/api/v1/employee-levels', employeeLevelRoutes);
 app.use('/api/v1/audit-events', auditEventRoutes);
 app.use('/api/v1/files', fileRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/departments', departmentRoutes);
 app.use('/api/v1/reports', reportRoutes);
-app.use('/api/v1/config', configRoutes);
+// Onboarding wizard: GET /onboarding/options + PATCH /company/onboarding.
+app.use('/api/v1', onboardingRoutes);
+app.use('/api/v1/timeclock', timeClockRoutes);
+app.use('/api/v1/schedule', scheduleRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 

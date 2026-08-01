@@ -222,7 +222,6 @@ const Map<String, Map<String, String>> _dict = {
   'eh_needs_response': {'en': 'Needs response', 'ar': 'بحاجة إلى رد'},
   'eh_in_progress': {'en': 'In progress', 'ar': 'قيد التنفيذ'},
   'eh_history': {'en': 'History', 'ar': 'السجل'},
-  'eh_task_gone': {'en': 'This task is no longer assigned to you.', 'ar': 'لم تعُد هذه المهمة مُسنَدة إليك.'},
   'eh_task': {'en': 'Task', 'ar': 'مهمة'},
   'eh_request': {'en': 'Request', 'ar': 'طلب'},
 
@@ -283,6 +282,43 @@ const Map<String, Map<String, String>> _dict = {
   'df_set_location': {'en': 'Set location', 'ar': 'تحديد الموقع'},
   'df_change': {'en': 'Change', 'ar': 'تغيير'},
   'df_unsupported': {'en': 'This field type is not supported in this app version', 'ar': 'نوع الحقل هذا غير مدعوم في هذا الإصدار'},
+
+  // time clock (employee self-service — clock in/out, breaks, manual hours)
+  'tc_title': {'en': 'Time Clock', 'ar': 'ساعة الدوام'},
+  'tc_load_fail': {'en': 'Could not load your time clock status.', 'ar': 'تعذّر تحميل حالة ساعة الدوام.'},
+  'tc_not_clocked_in': {'en': 'Not clocked in', 'ar': 'لم تسجّل حضورًا'},
+  'tc_clocked_in': {'en': 'Clocked in', 'ar': 'مسجَّل حضور'},
+  'tc_on_break': {'en': 'On break', 'ar': 'في استراحة'},
+  'tc_since': {'en': 'since', 'ar': 'منذ'},
+  'tc_clock_in': {'en': 'Clock in', 'ar': 'تسجيل حضور'},
+  'tc_clock_out': {'en': 'Clock out', 'ar': 'تسجيل انصراف'},
+  'tc_start_break': {'en': 'Start break', 'ar': 'بدء الاستراحة'},
+  'tc_end_break': {'en': 'End break', 'ar': 'إنهاء الاستراحة'},
+  'tc_end_break_first': {'en': 'End your break before clocking out.', 'ar': 'أنهِ استراحتك قبل تسجيل الانصراف.'},
+  'tc_log_manual': {'en': 'Log hours manually', 'ar': 'تسجيل ساعات يدويًا'},
+  'tc_manual_title': {'en': 'Log hours manually', 'ar': 'تسجيل ساعات يدويًا'},
+  'tc_manual_hint': {
+    'en': 'Forgot to clock in? Log the hours here — a manager reviews and approves it.',
+    'ar': 'نسيت تسجيل الحضور؟ سجّل الساعات هنا — سيراجعها المدير ويعتمدها.',
+  },
+  'tc_note_optional': {'en': 'Note (optional)', 'ar': 'ملاحظة (اختياري)'},
+  'tc_submit_manual': {'en': 'Submit', 'ar': 'إرسال'},
+  'tc_submitting': {'en': 'Submitting…', 'ar': 'جارٍ الإرسال…'},
+  'tc_manual_submitted': {'en': 'Submitted — pending manager approval', 'ar': 'تم الإرسال — بانتظار موافقة المدير'},
+  'tc_err_required': {'en': 'Required', 'ar': 'مطلوب'},
+
+  // my schedule (employee self-service, read-only — a manager assigns shifts on web)
+  'sc_title': {'en': 'Schedule', 'ar': 'الجدولة'},
+  'sc_load_fail': {'en': 'Could not load your schedule.', 'ar': 'تعذّر تحميل جدولك.'},
+  'sc_no_shift': {'en': 'No shift scheduled', 'ar': 'لا وردية مجدولة'},
+
+  // time off (employee self-service — submit, list, detail)
+  'to_title': {'en': 'My Time Off', 'ar': 'إجازاتي'},
+  'to_detail_title': {'en': 'Time Off', 'ar': 'إجازة'},
+  'to_new': {'en': 'Request time off', 'ar': 'طلب إجازة'},
+  'to_load_fail': {'en': 'Could not load your time off requests.', 'ar': 'تعذّر تحميل طلبات إجازتك.'},
+  'to_none_title': {'en': 'No time off requests yet', 'ar': 'لا طلبات إجازة بعد'},
+  'to_none_sub': {'en': 'Your submitted time off requests will appear here.', 'ar': 'ستظهر هنا طلبات الإجازة التي أرسلتها.'},
 
   // form response view (shared)
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},

@@ -16,21 +16,27 @@ import type { Loc } from './i18n'
 
 const env = import.meta.env
 
-// The defaults below brand THIS deployment, matching the municipality the seed
-// script sets up (company-config.js). They are deployment data in exactly the
-// same sense the seeded services are — the engine itself stays sector-agnostic
-// (I1). Another customer overrides all three via .env; nothing here is
-// referenced by name anywhere else in the codebase.
+// The defaults below are the generic product name shown pre-onboarding (login
+// page, and the console shell before the Owner's company has a name) and are
+// deployment data in exactly the same sense the seeded services are — the
+// engine itself stays sector-agnostic (I1). Another customer overrides all
+// three via .env; nothing here is referenced by name anywhere else in the
+// codebase. Once an Owner completes onboarding, <Wordmark> in the console
+// shell prefers their company's name (from /auth/me) over this default — see
+// Wordmark.tsx. The login page never gets that override (no session yet), so
+// it always shows this default.
 export const brand: { name: Loc; logo: string | null } = {
   // Both languages required (I5). A deployment that sets only one falls back to
   // the default for the other rather than rendering an empty wordmark.
   name: {
-    en: env.VITE_BRAND_NAME_EN || 'Municipality of Nablus',
-    ar: env.VITE_BRAND_NAME_AR || 'بلدية نابلس',
+    en: env.VITE_BRAND_NAME_EN || 'MonitorFlow',
+    ar: env.VITE_BRAND_NAME_AR || 'مونيتر فلو',
   },
-  // Path to a logo under web/public. Set VITE_BRAND_LOGO='' to fall back to the
-  // accent pip. The shipped file is the municipal crest, cropped to its content
-  // and downscaled to 216px tall — supply replacements the same way, or the CSS
-  // heights below will not match what is actually visible.
-  logo: env.VITE_BRAND_LOGO ?? '/logo.png',
+  // Path to a logo under web/public. Unset (the default) falls back to the
+  // plain accent pip — the normal MonitorFlow look, no specific crest baked
+  // in. A deployment that wants a static logo sets VITE_BRAND_LOGO; an Owner
+  // who uploads one in the onboarding wizard gets that instead, at runtime,
+  // once onboarding completes (Wordmark.tsx's companyLogo prop) — this value
+  // only matters pre-onboarding and for deployments that never use the wizard.
+  logo: env.VITE_BRAND_LOGO || null,
 }

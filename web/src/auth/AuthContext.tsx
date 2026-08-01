@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ApiError, apiFetch, clearToken, getToken, setToken } from '../lib/api'
+import type { Loc } from '../i18n'
 
 export interface AuthUser {
   id: number
@@ -14,6 +15,16 @@ export interface AuthUser {
   // console shows an admin (kind) or an oversight employee (holds view_all);
   // the server still enforces every capability with 403s.
   capabilities: string[]
+  // First-login gate: false for an Owner (admin) whose company hasn't run the
+  // "Customize your app" wizard yet; null for accounts with no company.
+  onboardingCompleted: boolean | null
+  // The company's bilingual name (CLAUDE.md §6 — shown to every console/mobile
+  // user regardless of their language, via the wordmark). NULL until the
+  // onboarding wizard's save writes it.
+  companyName: Loc | null
+  // The uploaded company logo as a data URI (auth.js inlines the file so the
+  // wordmark never needs its own authenticated fetch). NULL if none uploaded.
+  companyLogo: string | null
 }
 
 // Who may use the web console: the admin, or an oversight employee (view_all).
@@ -29,6 +40,13 @@ interface AuthContextValue {
   user: AuthUser | null
   login: (identifier: string, password: string) => Promise<void>
   logout: () => void
+  // Called by the onboarding wizard on its final save so the gate stops
+  // intercepting and the console renders. Takes the company name (and a data
+  // URI preview of the logo, if one was picked) the Owner just entered so the
+  // shell wordmark switches immediately, without waiting on a fresh /auth/me
+  // round-trip — the real, server-inlined logo replaces this preview on the
+  // next login/restore anyway, so it doesn't need to be exact.
+  markOnboarded: (companyName: Loc, companyLogo: string | null) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -81,6 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearToken()
         setUser(null)
         setStatus('signedOut')
+      },
+      markOnboarded(companyName, companyLogo) {
+        setUser((u) => (u ? { ...u, onboardingCompleted: true, companyName, companyLogo } : u))
       },
     }),
     [status, user],

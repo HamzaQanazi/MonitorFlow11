@@ -1,0 +1,84 @@
+/* Add Service builder — logical properties only (I6). */
+
+.svc-body {
+  display: grid;
+  gap: 16px;
+  padding-block: 16px;
+  max-inline-size: 900px;
+}
+
+.svc-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.svc-check input {
+  inline-size: 16px;
+  block-size: 16px;
+  accent-color: var(--amber-600);
+}
+
+.svc-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.svc-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.svc-section-head h3 {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.svc-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.svc-row-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  align-items: center;
+}
+
+.svc-row-grid input,
+.svc-row-grid select {
+  block-size: 34px;
+  padding-inline: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+.svc-options {
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--border);
+  display: grid;
+  gap: 8px;
+}
+
+.svc-review {
+  display: grid;
+  gap: 8px;
+}
+
+.svc-foot {
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--border);
+}

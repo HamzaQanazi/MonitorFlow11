@@ -143,6 +143,25 @@ test('employee not assigned to the task → 404', () => {
   );
 });
 
+test('employee requester (Time Off style, no task) can fire their own cancel', () => {
+  const EMPLOYEE_REQUESTER = { id: 42, role: 'employee', capabilities: new Set() };
+  const noTask = { ...base, requestUserId: EMPLOYEE_REQUESTER.id, taskEmployeeId: null };
+  const t = resolveTransition({
+    ...noTask, currentStatus: 'submitted', user: EMPLOYEE_REQUESTER, transitionKey: 'cancel', note: 'plans changed',
+  });
+  assert.equal(t.to, 'cancelled');
+});
+
+test('employee who owns neither the request nor the task → 404', () => {
+  const outsider = { id: 43, role: 'employee', capabilities: new Set() };
+  throwsWith(404, () =>
+    resolveTransition({
+      ...base, requestUserId: OWNER.id, taskEmployeeId: EMPLOYEE.id,
+      currentStatus: 'submitted', user: outsider, transitionKey: 'cancel', note: 'x',
+    })
+  );
+});
+
 test('override: cancel and reopen resolve; task-lock release follows is_terminal', () => {
   const cancel = resolveOverride({
     statuses, currentStatus: 'working', user: MONITOR, to: 'cancelled', note: 'duplicate request',

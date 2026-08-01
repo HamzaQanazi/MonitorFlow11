@@ -73,8 +73,9 @@ async function createFile(req, res, next) {
       if (!rows.length || rows[0].employee_id !== req.user.id) {
         return res.status(404).json({ error: 'Not found' });
       }
-    } else if (req.user.role !== 'user') {
-      // Pending uploads are the user-side photo contract only.
+    } else if (req.user.role !== 'user' && req.user.role !== 'admin') {
+      // Parentless uploads: a user's pending request photo, or the Owner's
+      // company logo (onboarding step 5). Employees never upload parentless.
       return res.status(403).json({ error: 'Forbidden' });
     }
 

@@ -15,8 +15,12 @@ import '../shared/profile_screen.dart';
 import '../theme.dart';
 import '../widgets/state_chips.dart';
 import '../widgets/states.dart';
+import 'schedule_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_map_view.dart';
+import 'time_clock_screen.dart';
+import 'time_off_detail_screen.dart';
+import 'time_off_screen.dart';
 
 class EmployeeHomeScreen extends StatefulWidget {
   const EmployeeHomeScreen({super.key});
@@ -73,31 +77,35 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     return counts;
   }
 
-  /// An employee notification points at a request; find their task for it.
+  /// An employee notification points at a request. Usually that's a task
+  /// they're assigned to; but it may instead be a status change on a request
+  /// they submitted themselves (e.g. their own Time Off being approved) —
+  /// those have no task at all. Try the task first, then fall back to the
+  /// employee's own-request detail view; that view's own 404 handling covers
+  /// the genuine "not yours" case.
   Future<void> _openTaskForRequest(BuildContext ctx, int requestId) async {
     final match = _tasks?.where((t) => t.requestId == requestId).toList();
-    if (match == null || match.isEmpty) {
-      // Not in the cached list (e.g. rejected away) — refresh and retry once.
-      await _load(silent: true);
-      final retry = _tasks?.where((t) => t.requestId == requestId).toList();
-      if (retry == null || retry.isEmpty) {
-        if (ctx.mounted) {
-          ScaffoldMessenger.of(ctx).showSnackBar(
-            SnackBar(content: Text(ctx.read<I18n>().tr('eh_task_gone'))),
-          );
-        }
-        return;
-      }
+    if (match != null && match.isNotEmpty) {
+      await Navigator.of(ctx).push(
+        MaterialPageRoute(builder: (_) => TaskDetailScreen(taskId: match.first.id)),
+      );
+      _load(silent: true);
+      return;
+    }
+    // Not in the cached list (e.g. rejected away) — refresh and retry once.
+    await _load(silent: true);
+    final retry = _tasks?.where((t) => t.requestId == requestId).toList();
+    if (retry != null && retry.isNotEmpty) {
       if (!ctx.mounted) return;
       await Navigator.of(ctx).push(
         MaterialPageRoute(builder: (_) => TaskDetailScreen(taskId: retry.first.id)),
       );
       return;
     }
+    if (!ctx.mounted) return;
     await Navigator.of(ctx).push(
-      MaterialPageRoute(builder: (_) => TaskDetailScreen(taskId: match.first.id)),
+      MaterialPageRoute(builder: (_) => TimeOffDetailScreen(requestId: requestId)),
     );
-    _load(silent: true);
   }
 
   @override
@@ -110,6 +118,27 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       appBar: AppBar(
         title: Text('${i18n.tr('eh_title')} — $firstName'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.access_time_filled_outlined),
+            tooltip: i18n.tr('tc_title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TimeClockScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.calendar_month_outlined),
+            tooltip: i18n.tr('sc_title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ScheduleScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.beach_access_outlined),
+            tooltip: i18n.tr('to_title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TimeOffScreen()),
+            ),
+          ),
           NotificationBell(
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
