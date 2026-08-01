@@ -341,9 +341,27 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 - **request_comment** — id, request_id (FK), user_id (FK), body, created_at.
 - **notification** — id, user_id (FK), request_id (FK, nullable), type, message
   `{en,ar}`, is_read, created_at.
-- **file_attachment** — id (UUID), request_id XOR task_id (CHECK: exactly one
-  non-null), original_filename, mime_type, size_bytes, storage_path (never
-  exposed), uploaded_by (FK), uploaded_at.
+- **file_attachment** — id (UUID), request_id XOR task_id XOR time_entry_id
+  (CHECK: exactly one non-null), original_filename, mime_type, size_bytes,
+  storage_path (never exposed), uploaded_by (FK), uploaded_at.
+- **time_shift** — id, employee_id (FK), company_id (FK), clock_in_at,
+  clock_out_at (nullable), source (`clock`/`manual`), status
+  (`active`/`completed`), approval_status (`pending`/`approved`/`edited`),
+  note, approved_by/approved_at. At most one `active` shift per employee
+  (DB-enforced unique index, not app locking). **time_break** — shift_id (FK),
+  break_start_at, break_end_at (nullable, at most one active per shift).
+  **time_entry** — shift_id (FK), type (`note`/`photo`/`tip`), body, amount,
+  created_by — in-shift extras; a `photo` entry is the parent for a
+  `file_attachment`.
+- **shift_template** — id, company_id (FK), name `{en,ar}`, start_time,
+  end_time. Manager-defined named shifts (e.g. "Morning 9–5"), Schedule
+  feature. **schedule_entry** — id, employee_id (FK), company_id (FK), date,
+  shift_template_id (FK), created_by. Unique (employee_id, date) — one shift
+  per employee per day, a flat date-by-date roster with no recurrence engine.
+  This is Time Clock's late/absent/overtime baseline: `lib/timeClock.js`
+  reads the day's `schedule_entry` (if any) instead of a fixed weekly
+  pattern; no entry for a date means late/absent/overtime never fire for
+  that employee on that date.
 - **audit_event** — actor_id, action, entity_type, entity_id, detail (JSONB),
   created_at. Two families, both written via `logAudit` in the same transaction
   as the change (I9): config/admin actions (service.created, employee.created, …)
