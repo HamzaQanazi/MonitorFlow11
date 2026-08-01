@@ -1,19 +1,19 @@
-# Handoff — Time Clock + Schedule (shipped), Time Off (engine + service live, mobile next) — 2026-08-01
+# Handoff — Time Clock + Schedule + Time Off (all shipped) — 2026-08-01
 
 ## Where things stand
 
-**Time Clock** and **Schedule** are fully built, shipped, committed, and
-pushed to `main`: backend (self-service + manager API for both), web console
-(Time Clock's Today + Timesheets tabs, Schedule's Roster + Templates tabs),
-and mobile (employee clock in/out screen, employee read-only "My Schedule").
+**Time Clock**, **Schedule**, and **Time Off** are all fully built and
+committed: backend (self-service + manager API for all three), web console
+(Time Clock's Today + Timesheets tabs, Schedule's Roster + Templates tabs;
+Time Off needed zero new web code — Requests Management already renders it),
+and mobile (employee clock in/out, read-only "My Schedule", and now Request
+Time Off + My Time Off list/detail).
 
-**Time Off**: the engine change is committed, and the service itself is
-seeded and live-verified end-to-end (submit → approve, via the same calls
-the web console makes). **Mobile screens are the only thing left** — see
-"Next up: Time Off" below. Nothing has been committed for the service data
-itself yet (it was created live through the admin API, not via seed.js —
-see "How Time Off was actually seeded" below) — decide whether that matters
-before the next session.
+**One thing not committed anywhere**: Time Off's actual service/form/
+workflow definition lives only in the dev DB (created live through the
+admin API, not seed.js — see "How Time Off was actually seeded" below).
+Everything else — the engine change, the mobile screens — is committed.
+Decide before reseeding whether to port Time Off into `seed.js` for real.
 
 Dropped from scope (deliberate, discussed with the user):
 - **NFC clock-in** — hardware-dependent, no testable path in this environment.
@@ -113,13 +113,14 @@ cd mobile && flutter run -d chrome --web-port=8765   # mobile app in Chrome
 no VS toolchain) and Chrome/Edge web — no Android emulator. Chrome is the
 only working target here.
 
-## Next up: Time Off
+## Time Off — DONE (all 3 steps)
 
-**Steps 1–2 are done.** Step 1 (engine change) is committed. Step 2 (the
-Time Off service itself) is live in the dev DB and verified end-to-end —
-but **not committed anywhere**, because it was created live through the
-admin API rather than seed.js (see "How Time Off was actually seeded"
-below). **Step 3 (mobile) is the only thing left, not started.**
+Kept as a detailed record below (the finding that changed the plan, the
+capability mismatch discovered by live-testing, exact seed payload) since
+it's useful precedent for the next feature, not because anything here is
+still pending. Step 1 (engine change) and step 3 (mobile) are committed;
+step 2 (the service definition) is live in the dev DB but **not committed
+anywhere** — see "How Time Off was actually seeded" below.
 
 ### Step 1 — done: employees can now own/submit requests
 
@@ -285,20 +286,36 @@ no cross-field validation (a documented exclusion, not a bug) — nothing
 stops a submitted `end_date` before `start_date`. The approver just sees a
 nonsensical range and rejects it manually.
 
-### Mobile (Employee app) — new screens needed
+### Mobile (Employee app) — DONE
 
-No generic multi-service catalogue needed since Time Off is the only thing
-employees submit — smaller than porting the User app's full flow:
-- One **"Request Time Off"** screen reusing the existing shared
-  `mobile/lib/forms/dynamic_form.dart` widget (already used by both
-  `user/create_request_screen.dart` and `employee/complete_task_screen.dart`
-  — this is real, already-proven reuse, not aspirational).
-- One **"My Time Off"** list + detail/timeline screen, trimmed down from
-  `user/my_requests_screen.dart` + `user/request_detail_screen.dart` (don't
-  port the full generic multi-service version — Time Off is the only
-  service in scope, keep it single-purpose).
+- **`employee/time_off_screen.dart`** ("My Time Off"): list of the
+  employee's own submitted requests (`GET /requests` — now correctly scoped
+  to own rows for a non-oversight employee, no Time-Off-specific filtering
+  needed) plus an app-bar "+" that opens the existing, unmodified
+  **`user/create_request_screen.dart`** (`DynamicForm`) configured for
+  whichever service has `acceptsEmployeeSubmitters: true` — no separate
+  "Request Time Off" screen was needed, `CreateRequestScreen` was already
+  fully generic and its copy (`create_hint`/`create_submit`/…) already
+  fit. `ServiceType` gained `acceptsEmployeeSubmitters` so the app finds
+  the right service without hardcoding an id.
+- **`employee/time_off_detail_screen.dart`**: a *trimmed sibling* of
+  `user/request_detail_screen.dart`, not a reuse of it — Time Off has no
+  confirm/dispute/"resolved?" step (no task), so that copy doesn't fit.
+  Renders status, timeline, form answers, and whatever
+  `GET /requests/{id}/transitions` actually returns (today just `cancel`
+  while pending) — no transition key hardcoded (I4).
+- Extracted the shared timeline rendering (previously private to
+  `request_detail_screen.dart`) into **`widgets/timeline.dart`**
+  (`RequestTimeline`) so both detail screens use one copy — avoided an
+  ~80-line duplication.
 - Reached via an app-bar icon on Employee Home, same pattern as Time
   Clock/Schedule (`mobile/lib/employee/employee_home.dart`).
+- `flutter analyze`: clean. `flutter build web`: succeeds. Every endpoint
+  both screens call was live-verified against the real backend this
+  session. **Not click-tested in a running browser** — same limitation as
+  Time Clock/Schedule's mobile screens (Chrome DevTools MCP tools
+  unavailable). Click through both screens once if you get working browser
+  automation before calling this fully done.
 
 ### Web
 
@@ -312,20 +329,22 @@ Wire an approved Time Off day into Time Clock: suppress the `absent` flag in
 value-add, not required for a working first cut — don't bundle it into the
 same PR/commit as the base Time Off flow.
 
-### Suggested build order (matches how Time Clock/Schedule were built)
+### Build order followed (all done)
 
-1. ~~Engine change~~ — **done, committed** (see "Step 1 — done" above).
-2. ~~Seed the Time Off service~~ — **done, live-verified, but not
-   committed** (it's dev-DB-only data — see "How Time Off was actually
-   seeded" above). Decide before the next session whether to port it into
-   `seed.js` for real, or leave it as a one-off demo artifact.
-3. ~~Web~~ — **confirmed, nothing to build.**
-4. Mobile: Request Time Off screen, then My Time Off list/detail screen.
-   This is the only remaining work.
-5. Commit the mobile screens as their own commit, never batched — same
-   discipline as Time Clock and Schedule's commits.
-6. Optional: the Time Clock absence-suppression follow-up, as its own
-   commit, only if there's time.
+1. ~~Engine change~~ — done, committed.
+2. ~~Seed the Time Off service~~ — done, live-verified, **but not
+   committed** (dev-DB-only data — see "How Time Off was actually seeded"
+   above). Decide before the next reseed whether to port it into `seed.js`
+   for real, or leave it as a one-off demo artifact.
+3. ~~Web~~ — confirmed, nothing to build.
+4. ~~Mobile~~ — Request Time Off (via the reused `CreateRequestScreen`) +
+   My Time Off list/detail screen, done, committed.
+5. Commits kept separate per layer throughout (engine / capability grant /
+   docs / mobile), never batched.
+6. **Not done, optional**: the Time Clock absence-suppression follow-up
+   (suppress `absent` in `lib/timeClock.js` for a date covered by an
+   approved Time Off request) — real value-add, deliberately deferred as
+   its own future commit.
 
 Chat/Directory/Events/Knowledge Base/Hiring/Training/Recognitions were
 recommended **against** in an earlier session — separate product domains,
@@ -343,8 +362,9 @@ payoff for a 2-student grad project.
    route files are the most-commented if you need a design decision (UTC
    bucketing, the "first break only" simplification on the Today tab, why
    Schedule's roster is a flat grid with no recurrence engine).
-3. Time Off's engine change and service are done and live-verified; only
-   the mobile screens are left (see "Suggested build order" above). Note
-   the service data lives only in the dev DB, not in a migration or
+3. Time Off is fully shipped (engine, service, web, mobile) — the next
+   task is whatever the user asks for next; the "Optional follow-up"
+   (Time Clock absence-suppression) is the only known loose thread. Note
+   Time Off's service data lives only in the dev DB, not in a migration or
    seed.js — check it's still there (`GET /services` as any staff account)
    before assuming it exists on whatever DB you're pointed at.
