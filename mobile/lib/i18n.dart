@@ -222,7 +222,6 @@ const Map<String, Map<String, String>> _dict = {
   'eh_needs_response': {'en': 'Needs response', 'ar': 'بحاجة إلى رد'},
   'eh_in_progress': {'en': 'In progress', 'ar': 'قيد التنفيذ'},
   'eh_history': {'en': 'History', 'ar': 'السجل'},
-  'eh_task_gone': {'en': 'This task is no longer assigned to you.', 'ar': 'لم تعُد هذه المهمة مُسنَدة إليك.'},
   'eh_task': {'en': 'Task', 'ar': 'مهمة'},
   'eh_request': {'en': 'Request', 'ar': 'طلب'},
 
