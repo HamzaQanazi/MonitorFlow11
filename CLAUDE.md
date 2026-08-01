@@ -302,7 +302,14 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 - **branch** (v7) — id, company_id (FK, cascade), name (JSONB `{en,ar}`, same
   rationale as company's), created_at. One row per branch the Owner names in
   the wizard.
-- **department** — id, name `{en,ar}`.
+- **department** — id, name `{en,ar}`, head_user_id (FK → users, nullable —
+  Owner-only CRUD via `/departments`, §12; metadata only, display + the
+  reassignment fallback below — the real Gate-2 effect is that a
+  department's other members get `manager_id` = head_user_id). Creating a
+  department requires a head + ≥1 other employee; deactivating a head
+  auto-promotes their own manager to head (and re-points the department's
+  other members to report to them) or, if that head has no active manager,
+  refuses the deactivation (409) until the Owner reassigns the head first.
 - **users** — id, name (computed `${firstName} ${lastName}` for employees created
   through the extended Add Employee form — see §5's login_identifier note), email
   (nullable, unique), password_hash, role
@@ -593,8 +600,9 @@ Employee management is fully reconciled to the live routes — all under
 levels,capabilities,employees}` paths are gone (org/capabilities have no live
 endpoint post-pivot — Gate-1 level *authoring* is seed-time only for now, but
 `GET /employee-levels` reads the catalogue, backing the Add Employee "role"
-picker). Still undocumented in the contract: `GET /departments`,
-`GET /employee-levels` (same read-only reference-data shape as departments),
+picker). `/departments` now has full CRUD (Owner-only create/rename/delete/
+reassign-head, §6), documented in the contract. Still undocumented:
+`GET /employee-levels` (same read-only reference-data shape as departments)
 and `/users/me*`. When in doubt,
 the mounted routes in `backend/src/index.js` are ground truth. Key conventions it
 encodes: base

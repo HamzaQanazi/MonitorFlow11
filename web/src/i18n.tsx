@@ -27,6 +27,7 @@ const dict: Record<string, Loc> = {
   nav_schedule: { en: 'Schedule', ar: 'الجدولة' },
   nav_audit: { en: 'Audit Log', ar: 'سجل التدقيق' },
   nav_add_service: { en: 'Add Service', ar: 'إضافة خدمة' },
+  nav_departments: { en: 'Departments', ar: 'الدوائر' },
   sign_out: { en: 'Sign out', ar: 'تسجيل الخروج' },
   lang_toggle: { en: 'العربية', ar: 'English' }, // shows the OTHER language
 
@@ -66,6 +67,8 @@ const dict: Record<string, Loc> = {
   requests_word: { en: 'requests', ar: 'طلبات' },
   employee_word: { en: 'employee', ar: 'موظف' },
   employees_word: { en: 'employees', ar: 'موظفين' },
+  department_word: { en: 'department', ar: 'دائرة' },
+  departments_word: { en: 'departments', ar: 'دوائر' },
   event_word: { en: 'event', ar: 'حدث' },
   events_word: { en: 'events', ar: 'أحداث' },
   task_word: { en: 'task', ar: 'مهمة' },
@@ -333,6 +336,39 @@ const dict: Record<string, Loc> = {
   col_assigned: { en: 'Assigned', ar: 'مُسنَد' },
   col_avg_resolution: { en: 'Avg. resolution', ar: 'متوسط زمن الحل' },
   emp_no_resolved: { en: '—', ar: '—' },
+
+  // departments (Owner-only)
+  dept_title: { en: 'Departments', ar: 'الدوائر' },
+  dept_add: { en: 'New department', ar: 'دائرة جديدة' },
+  dept_load_err: { en: 'Couldn’t load departments:', ar: 'تعذّر تحميل الدوائر:' },
+  dept_loading: { en: 'Loading departments…', ar: 'جارٍ تحميل الدوائر…' },
+  dept_none_h: { en: 'No departments yet', ar: 'لا توجد دوائر بعد' },
+  dept_none_p: {
+    en: 'Create your first department — pick a head and at least one other employee.',
+    ar: 'أنشئ أول دائرة — اختر رئيسًا وموظفًا آخر واحدًا على الأقل.',
+  },
+  col_head: { en: 'Head', ar: 'الرئيس' },
+  col_members: { en: 'Employees', ar: 'الموظفون' },
+  dept_no_head: { en: 'No head', ar: 'بلا رئيس' },
+  dept_create_h: { en: 'New department', ar: 'دائرة جديدة' },
+  dept_name_en: { en: 'Name (English)', ar: 'الاسم (إنجليزي)' },
+  dept_name_ar: { en: 'Name (Arabic)', ar: 'الاسم (عربي)' },
+  dept_head_label: { en: 'Head', ar: 'الرئيس' },
+  dept_head_ph: { en: 'Choose an employee…', ar: 'اختر موظفًا…' },
+  dept_members_label: { en: 'Other employees (at least one)', ar: 'موظفون آخرون (واحد على الأقل)' },
+  dept_create: { en: 'Create department', ar: 'إنشاء الدائرة' },
+  dept_rename: { en: 'Rename', ar: 'إعادة تسمية' },
+  dept_rename_h: { en: 'Rename department', ar: 'إعادة تسمية الدائرة' },
+  dept_reassign_head: { en: 'Change head', ar: 'تغيير الرئيس' },
+  dept_reassign_head_h: { en: 'Change department head', ar: 'تغيير رئيس الدائرة' },
+  dept_delete: { en: 'Delete', ar: 'حذف' },
+  dept_delete_q_pre: { en: 'Delete', ar: 'حذف' },
+  dept_delete_warn: {
+    en: 'This cannot be undone. A department with employees or services still assigned to it can’t be deleted.',
+    ar: 'لا يمكن التراجع عن هذا. لا يمكن حذف دائرة لا يزال بها موظفون أو خدمات مُسنَدة إليها.',
+  },
+  dept_err_save: { en: 'Couldn’t save this department. Check your answers and try again.', ar: 'تعذّر حفظ الدائرة. تحقّق من إجاباتك وحاول مجددًا.' },
+  dept_err_delete: { en: 'Couldn’t delete this department.', ar: 'تعذّر حذف الدائرة.' },
 
   // reports
   rep_title: { en: 'Reports', ar: 'التقارير' },

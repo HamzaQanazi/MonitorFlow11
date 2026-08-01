@@ -11,6 +11,7 @@ const { subtreeIds } = require('../lib/scope');
 const { withTx, logAudit } = require('../lib/audit');
 const { allocateEmployeeEmail } = require('../lib/employeeEmail');
 const { PLANS } = require('../lib/onboardingOptions');
+const { reassignDepartmentHead } = require('../lib/departmentHead');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -61,7 +62,8 @@ async function loadEmployee(id, actor) {
     `${sub}
      SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
             u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type,
-            u.department_id, d.name AS department_name, u.level_id, l.name AS level_name
+            u.department_id, d.name AS department_name, u.level_id, l.name AS level_name,
+            u.manager_id
      FROM users u
      LEFT JOIN department d ON d.id = u.department_id
      LEFT JOIN employee_level l ON l.id = u.level_id
@@ -350,6 +352,15 @@ router.patch('/:id/activate', async (req, res, next) => {
 // PATCH /employees/{id}/deactivate — 409 if the employee holds any task whose
 // current status is non-final (Section 5). Finality is read from the workflow
 // data, not a hardcoded status key: reassign the open task first.
+//
+// Department-head fallback: if this employee currently heads a department,
+// deactivating them auto-promotes THEIR OWN manager to head (and re-points
+// the department's other members to report to that new head — see
+// lib/departmentHead.js), so oversight of the department never has a gap. If
+// they have no manager of their own, there's no one to fall back to — the
+// deactivation is refused (409) until the Owner reassigns the department's
+// head (or gives this employee a manager) first, same "fix the tree before
+// you leave it broken" spirit as the open-task check above.
 router.patch('/:id/deactivate', async (req, res, next) => {
   try {
     const emp = await loadEmployee(Number(req.params.id), req.user);
@@ -371,7 +382,34 @@ router.patch('/:id/deactivate', async (req, res, next) => {
       return res.status(409).json({ error: 'Employee has open tasks — reassign them before deactivating' });
     }
 
+    const { rows: headOf } = await pool.query('SELECT id FROM department WHERE head_user_id = $1', [emp.id]);
+    if (headOf.length) {
+      // The fallback must be an active employee — a null manager_id, or one
+      // pointing at an already-inactive account, both leave nobody who can
+      // actually operate as head (an inactive account can't log in).
+      const { rows: fallback } = emp.manager_id == null
+        ? { rows: [] }
+        : await pool.query(
+            "SELECT id FROM users WHERE id = $1 AND role = 'employee' AND is_active = TRUE",
+            [emp.manager_id]
+          );
+      if (!fallback.length) {
+        return res.status(409).json({
+          error: 'Employee heads a department and has no active manager to fall back to — reassign the department’s head first',
+        });
+      }
+    }
+
     await withTx(async (tx) => {
+      if (headOf.length) {
+        for (const dept of headOf) {
+          await reassignDepartmentHead(tx, dept.id, emp.manager_id, { moveIntoDepartment: false });
+          await logAudit(tx, req.user.id, 'department.head_auto_promoted', 'department', dept.id, {
+            firedHeadId: emp.id,
+            newHeadId: emp.manager_id,
+          });
+        }
+      }
       await tx.query('UPDATE users SET is_active = FALSE WHERE id = $1', [emp.id]);
       await logAudit(tx, req.user.id, 'employee.deactivated', 'user', emp.id);
     });
