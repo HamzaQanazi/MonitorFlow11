@@ -46,7 +46,8 @@ router.get('/', async (req, res, next) => {
     );
 
     const agg = await pool.query(
-      `SELECT (s->>'is_terminal')::bool AS is_terminal, r.priority, st.name->>'en' AS service_type_name
+      `SELECT (s->>'is_terminal')::bool AS is_terminal, r.priority, st.name->>'en' AS service_type_name,
+              u.role AS requester_role
        ${FROM} ${whereSql}`,
       params
     );
@@ -54,11 +55,13 @@ router.get('/', async (req, res, next) => {
     const byState = { open: 0, closed: 0 };
     const byPriority = {};
     const byService = {};
+    const byRequesterRole = { user: 0, employee: 0 };
     for (const row of agg.rows) {
       if (row.is_terminal) byState.closed += 1;
       else byState.open += 1;
       byPriority[row.priority] = (byPriority[row.priority] || 0) + 1;
       byService[row.service_type_name] = (byService[row.service_type_name] || 0) + 1;
+      byRequesterRole[row.requester_role] = (byRequesterRole[row.requester_role] || 0) + 1;
     }
 
     res.json({
@@ -75,7 +78,7 @@ router.get('/', async (req, res, next) => {
       page,
       pageSize,
       total: list.rows.length ? list.rows[0].total : 0,
-      aggregates: { total: agg.rows.length, byState, byPriority, byService },
+      aggregates: { total: agg.rows.length, byState, byPriority, byService, byRequesterRole },
     });
   } catch (err) {
     next(err);
@@ -99,7 +102,7 @@ router.get('/export.csv', requireCapability('export'), async (req, res, next) =>
     const { rows } = await pool.query(
       `SELECT r.id, st.name->>'en' AS service_type_name,
               s->'label'->>'en' AS status_label, (s->>'is_terminal')::bool AS is_terminal,
-              r.priority, u.name AS requester_name,
+              r.priority, u.name AS requester_name, u.role AS requester_role,
               emp.name AS employee_name, r.created_at,
               comp.completed_at
        ${FROM}
@@ -121,12 +124,12 @@ router.get('/export.csv', requireCapability('export'), async (req, res, next) =>
     );
 
     const header = ['id', 'service_type', 'status_label', 'state', 'priority',
-      'requester_name', 'employee_name', 'created_at', 'completed_at'];
+      'requester_name', 'requester_role', 'employee_name', 'created_at', 'completed_at'];
     const lines = [header.join(',')];
     for (const r of rows) {
       lines.push([
         r.id, r.service_type_name, r.status_label, r.is_terminal ? 'closed' : 'open', r.priority,
-        r.requester_name, r.employee_name,
+        r.requester_name, r.requester_role, r.employee_name,
         r.created_at ? r.created_at.toISOString() : '',
         r.completed_at ? r.completed_at.toISOString() : '',
       ].map(csvCell).join(','));

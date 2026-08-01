@@ -457,6 +457,13 @@ paths:
         - { $ref: '#/components/parameters/pageSize' }
         - { name: status, in: query, schema: { type: string } }
         - { name: serviceKey, in: query, schema: { type: string } }
+        - name: requesterRole
+          in: query
+          schema: { type: string, enum: [user, employee] }
+          description: >
+            Who submitted the request — external `user` vs internal `employee`
+            (e.g. Time Off). Shared by GET /requests, GET /reports, and the
+            CSV export via the one requestQuery.js filter engine.
       responses:
         '200':
           description: OK

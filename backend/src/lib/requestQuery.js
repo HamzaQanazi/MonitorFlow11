@@ -4,6 +4,10 @@
 // clause + bound params; each caller appends its own SELECT / pagination.
 const PRIORITIES = ['low', 'medium', 'high'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// A request's requester is always a `user` or `employee` account (I2) —
+// filters on who submitted it, not what it's about, so this stays generic
+// across every service (I1).
+const REQUESTER_ROLES = ['user', 'employee'];
 
 // Returns { error } (a 400 message) on invalid known params, else
 // { where, params, page, pageSize }. `where` refers to aliases r (request),
@@ -28,6 +32,7 @@ function buildRequestFilter(q, user, ownerScope = null) {
   if (q.dateTo !== undefined && !DATE_RE.test(q.dateTo)) bad.push('dateTo');
   // Phase 4: `state` (open|closed, from is_terminal) replaces `category`.
   if (q.state !== undefined && !['open', 'closed'].includes(q.state)) bad.push('state');
+  if (q.requesterRole !== undefined && !REQUESTER_ROLES.includes(q.requesterRole)) bad.push('requesterRole');
   if (bad.length) return { error: `Invalid query params: ${bad.join(', ')}` };
 
   const where = [];
@@ -54,6 +59,10 @@ function buildRequestFilter(q, user, ownerScope = null) {
     add('r.id IN (SELECT request_id FROM task WHERE employee_id = ?)', Number(q.employeeId));
   }
   if (q.priority !== undefined) add('r.priority = ?', q.priority);
+  // Who submitted it — 'user' (external/self-registered) vs 'employee'
+  // (internal, e.g. Time Off). Independent of the caller's own scope above:
+  // an oversight employee can narrow their subtree view to just one kind.
+  if (q.requesterRole !== undefined) add('u.role = ?', q.requesterRole);
   if (q.dateFrom !== undefined) add('r.created_at >= ?::date', q.dateFrom);
   if (q.dateTo !== undefined) add("r.created_at < ?::date + INTERVAL '1 day'", q.dateTo);
   // st.name is bilingual JSONB (Phase 3) — search both language values.
@@ -62,4 +71,4 @@ function buildRequestFilter(q, user, ownerScope = null) {
   return { where, params, page, pageSize };
 }
 
-module.exports = { buildRequestFilter, PRIORITIES, DATE_RE };
+module.exports = { buildRequestFilter, PRIORITIES, DATE_RE, REQUESTER_ROLES };

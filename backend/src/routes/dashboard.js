@@ -24,7 +24,7 @@ async function ownerScopeIds(user) {
 router.get('/stats', async (req, res, next) => {
   try {
     const dept = [await ownerScopeIds(req.user)];
-    const [byState, byService, byPriority, byDepartment] = await Promise.all([
+    const [byState, byService, byPriority, byDepartment, byRequesterRole] = await Promise.all([
       pool.query(
         `SELECT (s->>'is_terminal')::bool AS is_terminal, COUNT(*)::int AS count
          FROM request r
@@ -81,6 +81,18 @@ router.get('/stats', async (req, res, next) => {
          ORDER BY d.id`,
         dept
       ),
+      // Who submitted it — 'user' (external/self-registered) vs 'employee'
+      // (internal, e.g. Time Off). Generic across every service (I1): this
+      // reads the requester's role, never a service key.
+      pool.query(
+        `SELECT u.role, COUNT(*)::int AS count
+         FROM request r
+         JOIN service_type st ON st.id = r.service_type_id
+         JOIN users u ON u.id = r.user_id
+         WHERE st.owner_id = ANY($1)
+         GROUP BY u.role`,
+        dept
+      ),
     ]);
 
     // Open vs closed replaces the old six-way category breakdown (§10 dropped
@@ -93,6 +105,8 @@ router.get('/stats', async (req, res, next) => {
     }
     const priorityCounts = Object.fromEntries(byPriority.rows.map((r) => [r.priority, r.count]));
     const priorities = ['high', 'medium', 'low'];
+    const requesterRoleCounts = Object.fromEntries(byRequesterRole.rows.map((r) => [r.role, r.count]));
+    const requesterRoles = ['user', 'employee'];
 
     // Weighted overall average = total resolved minutes / total resolved count,
     // so it isn't skewed by departments with few resolutions. null when nothing
@@ -113,6 +127,7 @@ router.get('/stats', async (req, res, next) => {
       ],
       byService: byService.rows.map((r) => ({ serviceTypeId: r.id, name: r.name, count: r.count })),
       byPriority: priorities.map((p) => ({ priority: p, count: priorityCounts[p] || 0 })),
+      byRequesterRole: requesterRoles.map((role) => ({ role, count: requesterRoleCounts[role] || 0 })),
       byDepartment: byDepartment.rows.map((r) => ({
         departmentId: r.department_id,
         name: r.department_name,
