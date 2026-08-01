@@ -86,6 +86,7 @@ tags:
   - name: notifications
   - name: files
   - name: timeclock       # employee self-service: clock in/out, breaks, manual hours, in-shift entries
+  - name: schedule        # manager roster (shift templates + per-date assignment) + employee "my schedule"
 
 paths:
   # ── Auth ───────────────────────────────────────────────────────────────────
@@ -963,6 +964,149 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: Shift is not pending approval }
 
+  /schedule/templates:
+    get:
+      tags: [schedule]
+      summary: List the company's shift templates. Requires view_all.
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { templates: { type: array, items: { $ref: '#/components/schemas/ShiftTemplate' } } } } } } }
+    post:
+      tags: [schedule]
+      summary: Create a shift template. Requires manage_employees.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, startTime, endTime]
+              properties:
+                name: { $ref: '#/components/schemas/LocalizedText' }
+                startTime: { type: string, example: "09:00" }
+                endTime: { type: string, example: "17:00" }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { type: object, properties: { template: { $ref: '#/components/schemas/ShiftTemplate' } } } } } }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /schedule/templates/{id}:
+    patch:
+      tags: [schedule]
+      summary: Edit a shift template. Requires manage_employees.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { $ref: '#/components/schemas/LocalizedText' }
+                startTime: { type: string }
+                endTime: { type: string }
+      responses:
+        '200': { description: Updated, content: { application/json: { schema: { type: object, properties: { template: { $ref: '#/components/schemas/ShiftTemplate' } } } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [schedule]
+      summary: Delete a shift template. 409 if it's used by any schedule_entry. Requires manage_employees.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Template is used by scheduled shifts }
+
+  /schedule/roster:
+    get:
+      tags: [schedule]
+      summary: >
+        Manager roster grid — one row per subtree employee with every
+        schedule_entry in [from, to]. Requires view_all (Gate 1) + subtree
+        scope (Gate 2).
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  employees:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        employeeId: { type: integer }
+                        name: { type: string }
+                        entries:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              date: { type: string, format: date }
+                              templateId: { type: integer }
+                              templateName: { $ref: '#/components/schemas/LocalizedText' }
+                              startTime: { type: string }
+                              endTime: { type: string }
+        '400': { description: from/to missing or malformed }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [schedule]
+      summary: >
+        Bulk upsert roster entries for subtree employees. templateId: null
+        clears that employee's day. 404 if any employeeId is outside the
+        caller's subtree. Requires manage_employees.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries]
+              properties:
+                entries:
+                  type: array
+                  items:
+                    type: object
+                    required: [employeeId, date, templateId]
+                    properties:
+                      employeeId: { type: integer }
+                      date: { type: string, format: date }
+                      templateId: { type: integer, nullable: true }
+      responses:
+        '204': { description: Saved }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /schedule/mine:
+    get:
+      tags: [schedule]
+      summary: The caller's own upcoming schedule entries in [from, to]. Employee only.
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: { type: string, format: date }
+                        templateId: { type: integer }
+                        templateName: { $ref: '#/components/schemas/LocalizedText' }
+                        startTime: { type: string }
+                        endTime: { type: string }
+        '400': { description: from/to missing or malformed }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -1232,7 +1376,7 @@ components:
         approvalStatus: { type: string, enum: [pending, approved, edited], nullable: true }
         source: { type: string, enum: [clock, manual], nullable: true }
         totalHours: { type: number, nullable: true }
-        overtimeHours: { type: number, nullable: true, description: "null when no employee_default_shift baseline is set" }
+        overtimeHours: { type: number, nullable: true, description: "null when no schedule_entry exists for this date" }
         lateClockIn: { type: boolean }
         lateClockOut: { type: boolean }
         absent: { type: boolean }
@@ -1266,6 +1410,14 @@ components:
                     source: { type: string, enum: [clock, manual] }
         weeklyTotalHours: { type: number }
         weeklyOvertimeHours: { type: number }
+
+    ShiftTemplate:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { $ref: '#/components/schemas/LocalizedText' }
+        startTime: { type: string, example: "09:00:00" }
+        endTime: { type: string, example: "17:00:00" }
 
     Notification:
       type: object

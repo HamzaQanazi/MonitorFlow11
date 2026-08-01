@@ -42,19 +42,18 @@ function expectedSecondsFromDefault(defaultShift) {
 }
 
 // Today-tab attendance for one employee: at most one (the most recent) shift
-// on the given date, plus their default-shift baseline for late/overtime. No
-// baseline set → absent is never flagged and late/overtime stay null (§9's
+// on the given date, plus that date's schedule_entry baseline for late/overtime
+// (defaultShift is already resolved per-date by the caller). No schedule entry
+// for the date → absent is never flagged and late/overtime stay null (§9's
 // "record-only until a manager configures it" shape, same as feature flags).
-function computeAttendance({ shift, breakSeconds = 0, defaultShift, date, now = new Date() }) {
-  const isExpectedDay = !!defaultShift?.expectedDays?.includes(date.getUTCDay());
-
+function computeAttendance({ shift, breakSeconds = 0, defaultShift, now = new Date() }) {
   if (!shift) {
     return {
       totalHours: null,
       overtimeHours: null,
       lateClockIn: false,
       lateClockOut: false,
-      absent: isExpectedDay,
+      absent: !!defaultShift,
       currentlyWorking: false,
     };
   }

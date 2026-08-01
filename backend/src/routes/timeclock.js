@@ -272,12 +272,13 @@ router.get('/today', requireCapability('view_all'), async (req, res, next) => {
 
     const { rows } = await pool.query(
       `SELECT u.id AS employee_id, u.name,
-              ds.expected_start_time, ds.expected_end_time, ds.expected_days,
+              st.start_time AS expected_start_time, st.end_time AS expected_end_time,
               sh.id AS shift_id, sh.clock_in_at, sh.clock_out_at, sh.status, sh.approval_status, sh.source,
               COALESCE(brk.break_seconds, 0) AS break_seconds,
               fb.break_start_at, fb.break_end_at
        FROM users u
-       LEFT JOIN employee_default_shift ds ON ds.employee_id = u.id
+       LEFT JOIN schedule_entry se ON se.employee_id = u.id AND se.date = $2::date
+       LEFT JOIN shift_template st ON st.id = se.shift_template_id
        -- AT TIME ZONE 'UTC' forces the day boundary to match the UTC calendar
        -- math in lib/timeClock.js — a bare ::date cast uses the DB session's
        -- timezone (this deployment runs Asia/Gaza), which silently shifts
@@ -303,15 +304,14 @@ router.get('/today', requireCapability('view_all'), async (req, res, next) => {
       [ids, date]
     );
 
-    const dateObj = new Date(`${date}T00:00:00Z`);
     const employees = rows.map((r) => {
       const shift = r.shift_id
         ? { clockInAt: r.clock_in_at, clockOutAt: r.clock_out_at, status: r.status }
         : null;
       const defaultShift = r.expected_start_time
-        ? { expectedStartTime: r.expected_start_time, expectedEndTime: r.expected_end_time, expectedDays: r.expected_days }
+        ? { expectedStartTime: r.expected_start_time, expectedEndTime: r.expected_end_time }
         : null;
-      const attendance = computeAttendance({ shift, breakSeconds: r.break_seconds, defaultShift, date: dateObj });
+      const attendance = computeAttendance({ shift, breakSeconds: r.break_seconds, defaultShift });
       return {
         employeeId: r.employee_id,
         name: r.name,
@@ -345,7 +345,7 @@ router.get('/today', requireCapability('view_all'), async (req, res, next) => {
 
 // Shared by GET /timesheets and its CSV export — one weekly grid, two renderings.
 async function buildTimesheets(weekStart, ids) {
-  const [{ rows: employees }, { rows: shiftRows }, { rows: defaults }] = await Promise.all([
+  const [{ rows: employees }, { rows: shiftRows }, { rows: scheduleRows }] = await Promise.all([
     pool.query(
       `SELECT id, name FROM users WHERE id = ANY($1::int[]) AND role = 'employee' AND is_active ORDER BY name`,
       [ids]
@@ -366,13 +366,15 @@ async function buildTimesheets(weekStart, ids) {
       [ids, weekStart]
     ),
     pool.query(
-      `SELECT employee_id, expected_start_time, expected_end_time FROM employee_default_shift
-       WHERE employee_id = ANY($1::int[])`,
-      [ids]
+      `SELECT se.employee_id, se.date::text AS date, st.start_time AS expected_start_time, st.end_time AS expected_end_time
+       FROM schedule_entry se
+       JOIN shift_template st ON st.id = se.shift_template_id
+       WHERE se.employee_id = ANY($1::int[])
+         AND se.date >= $2::date AND se.date < ($2::date + 7)`,
+      [ids, weekStart]
     ),
   ]);
 
-  const defaultByEmployee = new Map(defaults.map((d) => [d.employee_id, d]));
   const weekStartMs = new Date(`${weekStart}T00:00:00Z`).getTime();
   const shiftsByEmployeeDay = new Map();
   for (const s of shiftRows) {
@@ -388,17 +390,22 @@ async function buildTimesheets(weekStart, ids) {
       source: s.source,
     });
   }
+  const scheduleByEmployeeDay = new Map();
+  for (const d of scheduleRows) {
+    const dayIndex = Math.round((new Date(`${d.date}T00:00:00Z`).getTime() - weekStartMs) / 86400000);
+    scheduleByEmployeeDay.set(`${d.employee_id}:${dayIndex}`, {
+      expectedStartTime: d.expected_start_time,
+      expectedEndTime: d.expected_end_time,
+    });
+  }
 
   return employees.map((emp) => {
-    const d = defaultByEmployee.get(emp.id);
-    const defaultShift = d?.expected_start_time
-      ? { expectedStartTime: d.expected_start_time, expectedEndTime: d.expected_end_time }
-      : null;
     let weeklyTotal = 0;
     let weeklyOvertime = 0;
     const days = [];
     for (let i = 0; i < 7; i++) {
       const dayShifts = shiftsByEmployeeDay.get(`${emp.id}:${i}`) || [];
+      const defaultShift = scheduleByEmployeeDay.get(`${emp.id}:${i}`) || null;
       const { totalHours, overtimeHours } = computeTimesheetDay({ shifts: dayShifts, defaultShift });
       days.push({
         totalHours,

@@ -15,6 +15,7 @@ const departmentRoutes = require('./routes/departments');
 const reportRoutes = require('./routes/reports');
 const onboardingRoutes = require('./routes/onboarding');
 const timeClockRoutes = require('./routes/timeclock');
+const scheduleRoutes = require('./routes/schedule');
 
 const app = express();
 
@@ -52,6 +53,7 @@ app.use('/api/v1/reports', reportRoutes);
 // Onboarding wizard: GET /onboarding/options + PATCH /company/onboarding.
 app.use('/api/v1', onboardingRoutes);
 app.use('/api/v1/timeclock', timeClockRoutes);
+app.use('/api/v1/schedule', scheduleRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
