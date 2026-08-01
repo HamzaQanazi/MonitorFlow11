@@ -308,6 +308,11 @@ const Map<String, Map<String, String>> _dict = {
   'tc_manual_submitted': {'en': 'Submitted — pending manager approval', 'ar': 'تم الإرسال — بانتظار موافقة المدير'},
   'tc_err_required': {'en': 'Required', 'ar': 'مطلوب'},
 
+  // my schedule (employee self-service, read-only — a manager assigns shifts on web)
+  'sc_title': {'en': 'Schedule', 'ar': 'الجدولة'},
+  'sc_load_fail': {'en': 'Could not load your schedule.', 'ar': 'تعذّر تحميل جدولك.'},
+  'sc_no_shift': {'en': 'No shift scheduled', 'ar': 'لا وردية مجدولة'},
+
   // form response view (shared)
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},
   'fr_no': {'en': 'No', 'ar': 'لا'},

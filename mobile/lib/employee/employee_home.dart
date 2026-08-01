@@ -15,6 +15,7 @@ import '../shared/profile_screen.dart';
 import '../theme.dart';
 import '../widgets/state_chips.dart';
 import '../widgets/states.dart';
+import 'schedule_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_map_view.dart';
 import 'time_clock_screen.dart';
@@ -116,6 +117,13 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             tooltip: i18n.tr('tc_title'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const TimeClockScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.calendar_month_outlined),
+            tooltip: i18n.tr('sc_title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ScheduleScreen()),
             ),
           ),
           NotificationBell(
