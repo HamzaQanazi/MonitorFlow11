@@ -12,6 +12,7 @@ import './RequestsPage.css'
 const STATES = ['open', 'closed'] as const
 
 const PRIORITIES = ['high', 'medium', 'low'] as const
+const REQUESTER_ROLES = ['user', 'employee'] as const
 
 const PAGE_SIZE = 20
 const POLL_MS = 30_000
@@ -78,9 +79,10 @@ export default function RequestsPage() {
   const priority = params.get('priority') ?? ''
   const q = params.get('q') ?? ''
   const employeeId = params.get('employee') ?? ''
+  const requesterRole = params.get('requester') ?? ''
   // v5: list ⇄ map over the same filters (no new page — a view mode).
   const view = params.get('view') === 'map' ? 'map' : 'list'
-  const hasFilters = Boolean(state || serviceTypeId || priority || q || employeeId)
+  const hasFilters = Boolean(state || serviceTypeId || priority || q || employeeId || requesterRole)
 
   const [data, setData] = useState<ListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -136,11 +138,12 @@ export default function RequestsPage() {
     if (priority) qs.set('priority', priority)
     if (q) qs.set('q', q)
     if (employeeId) qs.set('employeeId', employeeId)
+    if (requesterRole) qs.set('requesterRole', requesterRole)
     const res = await apiFetch<ListResponse>(`/requests?${qs.toString()}`)
     setData(res)
     setUpdatedAt(new Date())
     setError(null)
-  }, [page, state, serviceTypeId, priority, q, employeeId])
+  }, [page, state, serviceTypeId, priority, q, employeeId, requesterRole])
 
   useEffect(() => {
     let cancelled = false
@@ -285,6 +288,19 @@ export default function RequestsPage() {
               </option>
             ))}
           </select>
+          <select
+            className="req-select"
+            aria-label={t('req_filter_requester')}
+            value={requesterRole}
+            onChange={(e) => setFilter('requester', e.target.value)}
+          >
+            <option value="">{t('req_all_requesters')}</option>
+            {REQUESTER_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {t(`requester_${r}`)}
+              </option>
+            ))}
+          </select>
           <div className="view-toggle" role="group" aria-label={t('req_view_as')}>
             <button
               type="button"
@@ -318,6 +334,7 @@ export default function RequestsPage() {
           priority={priority}
           q={q}
           employeeId={employeeId}
+          requesterRole={requesterRole}
           openDetail={openDetail}
         />
       ) : error ? (

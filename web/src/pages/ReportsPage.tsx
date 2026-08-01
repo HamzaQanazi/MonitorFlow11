@@ -12,6 +12,7 @@ import './ReportsPage.css'
 
 const STATES = ['open', 'closed'] as const
 const PRIORITIES = ['high', 'medium', 'low'] as const
+const REQUESTER_ROLES = ['user', 'employee'] as const
 const PAGE_SIZE = 20
 
 interface ReportRow {
@@ -29,6 +30,7 @@ interface Aggregates {
   // byService is keyed by the English service name (backend resolves it) — a
   // documented Phase-3 gap: these keys stay English even in the Arabic view.
   byService: Record<string, number>
+  byRequesterRole: Record<string, number>
 }
 interface ReportResponse {
   requests: ReportRow[]
@@ -63,7 +65,10 @@ export default function ReportsPage() {
   const dateFrom = params.get('dateFrom') ?? ''
   const dateTo = params.get('dateTo') ?? ''
   const q = params.get('q') ?? ''
-  const hasFilters = Boolean(state || serviceTypeId || employeeId || priority || dateFrom || dateTo || q)
+  const requesterRole = params.get('requester') ?? ''
+  const hasFilters = Boolean(
+    state || serviceTypeId || employeeId || priority || dateFrom || dateTo || q || requesterRole,
+  )
 
   const [data, setData] = useState<ReportResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -105,8 +110,9 @@ export default function ReportsPage() {
     if (dateFrom) qs.set('dateFrom', dateFrom)
     if (dateTo) qs.set('dateTo', dateTo)
     if (q) qs.set('q', q)
+    if (requesterRole) qs.set('requesterRole', requesterRole)
     return qs
-  }, [state, serviceTypeId, employeeId, priority, dateFrom, dateTo, q])
+  }, [state, serviceTypeId, employeeId, priority, dateFrom, dateTo, q, requesterRole])
 
   const load = useCallback(async () => {
     const qs = backendQuery()
@@ -179,6 +185,7 @@ export default function ReportsPage() {
     priority && `${t('col_priority')}: ${t(`pri_${priority}`)}`,
     dateFrom && `${t('rep_from')} ${dateFrom}`,
     dateTo && `${t('rep_to')} ${dateTo}`,
+    requesterRole && `${t('req_filter_requester')}: ${t(`requester_${requesterRole}`)}`,
     q && `“${q}”`,
   ]
     .filter(Boolean)
@@ -278,6 +285,19 @@ export default function ReportsPage() {
               </option>
             ))}
           </select>
+          <select
+            className="req-select"
+            aria-label={t('req_filter_requester')}
+            value={requesterRole}
+            onChange={(e) => setFilter('requester', e.target.value)}
+          >
+            <option value="">{t('req_all_requesters')}</option>
+            {REQUESTER_ROLES.map((r) => (
+              <option key={r} value={r}>
+                {t(`requester_${r}`)}
+              </option>
+            ))}
+          </select>
           <label className="date-field">
             <span>{t('rep_from')}</span>
             <input type="date" className="req-select" value={dateFrom} max={dateTo || undefined} onChange={(e) => setFilter('dateFrom', e.target.value)} />
@@ -363,6 +383,20 @@ export default function ReportsPage() {
                 {Object.keys(agg.byService).length === 0 && <li className="rep-none">{t('no_data')}</li>}
               </ul>
             </div>
+            <div className="rep-card">
+              <h3>{t('rep_by_requester')}</h3>
+              <ul className="rep-breakdown">
+                {REQUESTER_ROLES.filter((r) => agg.byRequesterRole[r]).map((r) => (
+                  <li key={r}>
+                    <span>{t(`requester_${r}`)}</span>
+                    <b>{agg.byRequesterRole[r]}</b>
+                  </li>
+                ))}
+                {REQUESTER_ROLES.every((r) => !agg.byRequesterRole[r]) && (
+                  <li className="rep-none">{t('no_data')}</li>
+                )}
+              </ul>
+            </div>
           </section>
 
           {agg.total > 0 && (
@@ -386,6 +420,17 @@ export default function ReportsPage() {
                 <Donut
                   title={t('rep_by_service')}
                   slices={Object.entries(agg.byService).map(([name, n]) => ({ key: name, label: name, value: n }))}
+                />
+              </div>
+              <div className="rep-chart-card">
+                <h3>{t('rep_by_requester')}</h3>
+                <Donut
+                  title={t('rep_by_requester')}
+                  slices={REQUESTER_ROLES.map((r) => ({
+                    key: r,
+                    label: t(`requester_${r}`),
+                    value: agg.byRequesterRole[r] || 0,
+                  }))}
                 />
               </div>
             </section>

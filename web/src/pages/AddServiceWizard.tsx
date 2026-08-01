@@ -120,6 +120,7 @@ export default function AddServiceWizard() {
   const [departmentId, setDepartmentId] = useState('')
   const [defaultPriority, setDefaultPriority] = useState<(typeof PRIORITIES)[number]>('medium')
   const [acceptsExternalUsers, setAcceptsExternalUsers] = useState(true)
+  const [acceptsEmployeeSubmitters, setAcceptsEmployeeSubmitters] = useState(false)
   const [ownerId, setOwnerId] = useState('')
   // Step 2 / 3
   const [requestFields, setRequestFields] = useState<FieldRow[]>([newFieldRow()])
@@ -151,6 +152,7 @@ export default function AddServiceWizard() {
           departmentId: Number(departmentId),
           defaultPriority,
           acceptsExternalUsers,
+          acceptsEmployeeSubmitters,
           ownerId: Number(ownerId),
           requestFields: requestFields.map(toFieldSchema),
           completionFields: completionFields.map(toFieldSchema),
@@ -258,6 +260,14 @@ export default function AddServiceWizard() {
                 onChange={(e) => setAcceptsExternalUsers(e.target.checked)}
               />
               <span>{t('svc_accepts_external')}</span>
+            </label>
+            <label className="svc-check">
+              <input
+                type="checkbox"
+                checked={acceptsEmployeeSubmitters}
+                onChange={(e) => setAcceptsEmployeeSubmitters(e.target.checked)}
+              />
+              <span>{t('svc_accepts_employee')}</span>
             </label>
             <label className="field">
               <span>{t('svc_owner')}</span>

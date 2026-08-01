@@ -20,6 +20,7 @@ interface Stats {
   byService: { serviceTypeId: number; name: Loc; count: number }[]
   byPriority: { priority: string; count: number }[]
   byDepartment: { departmentId: number; name: Loc; count: number; avgResolutionMinutes: number | null }[]
+  byRequesterRole: { role: string; count: number }[]
 }
 
 interface Chart {
@@ -295,6 +296,21 @@ export default function DashboardPage() {
                   <span className="break-count">{p.count}</span>
                   <div className="break-bar" aria-hidden="true">
                     <div style={{ width: `${stats.total ? (p.count / stats.total) * 100 : 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </section>
+
+            <section className="dash-panel" aria-labelledby="requester-heading">
+              <div className="panel-head">
+                <h2 id="requester-heading">{t('dash_by_requester')}</h2>
+              </div>
+              {stats.byRequesterRole.map((r) => (
+                <div className="break-row" key={r.role}>
+                  <span className="break-label">{t(`requester_${r.role}`)}</span>
+                  <span className="break-count">{r.count}</span>
+                  <div className="break-bar" aria-hidden="true">
+                    <div style={{ width: `${stats.total ? (r.count / stats.total) * 100 : 0}%` }} />
                   </div>
                 </div>
               ))}
