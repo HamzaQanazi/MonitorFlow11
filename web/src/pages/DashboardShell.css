@@ -75,6 +75,9 @@
 
 .shell-nav a {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   font-size: 14px;
@@ -83,6 +86,10 @@
   text-decoration: none;
   white-space: nowrap;
   transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.nav-icon {
+  flex-shrink: 0;
 }
 
 .shell-nav a:hover {
@@ -112,34 +119,66 @@
   flex-direction: column;
   align-items: stretch;
   gap: 10px;
-  padding: 14px 20px 18px;
+  padding: 14px 16px 16px;
   border-block-start: 1px solid var(--border);
 }
 
-.shell-session-row {
+.shell-session-user {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.shell-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--amber-500);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .shell-user {
   font-size: 14px;
   color: var(--muted);
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.shell-signout {
+.shell-session-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Matches .bell-button's footprint exactly — the language toggle and sign
+   out sit right beside the notification bell, same size and hover style. */
+.shell-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
   height: 34px;
-  padding: 0 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  font-size: 14px;
-  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
   cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-out);
 }
 
-.shell-signout:hover {
-  border-color: var(--muted);
+.shell-icon-btn:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.shell-icon-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .shell-main {
@@ -233,13 +272,15 @@
   .shell-session {
     flex-direction: row;
     align-items: center;
-    gap: 14px;
+    gap: 4px;
     margin-inline-start: auto;
     padding: 0;
     border-block-start: 0;
   }
 
-  .shell-user {
+  /* Avatar + name give way to the icon actions at this width — same trade
+     the old bar made (.shell-user used to just display:none here). */
+  .shell-session-user {
     display: none;
   }
 }

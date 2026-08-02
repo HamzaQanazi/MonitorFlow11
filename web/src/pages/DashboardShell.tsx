@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import NotificationBell from '../components/NotificationBell'
+import { NavIcon } from '../components/NavIcons'
 import { Wordmark } from '../components/Wordmark'
 import './DashboardShell.css'
 
@@ -80,6 +81,7 @@ export default function DashboardShell() {
                 <div className="shell-nav-group-label">{t(GROUP_LABEL_KEY[group])}</div>
                 {items.map((item) => (
                   <NavLink key={item.to} to={item.to} end={item.end}>
+                    <NavIcon name={item.labelKey.replace('nav_', '')} />
                     {t(item.labelKey)}
                   </NavLink>
                 ))}
@@ -88,17 +90,34 @@ export default function DashboardShell() {
           })}
         </nav>
         <div className="shell-session">
-          {/* No notification triggers target the admin — an always-empty bell is noise. */}
-          {!isAdmin && <NotificationBell />}
-          <div className="shell-session-row">
-            <button type="button" className="shell-signout" onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}>
-              {t('lang_toggle')}
+          <div className="shell-session-user">
+            <span className="shell-avatar" aria-hidden="true">
+              {(user?.name ?? '?').trim().charAt(0).toUpperCase()}
+            </span>
+            <span className="shell-user">{user?.name}</span>
+          </div>
+          <div className="shell-session-actions">
+            {/* No notification triggers target the admin — an always-empty bell is noise. */}
+            {!isAdmin && <NotificationBell />}
+            <button
+              type="button"
+              className="shell-icon-btn"
+              title={t('lang_toggle')}
+              aria-label={t('lang_toggle')}
+              onClick={() => setLang(lang === 'ar' ? 'en' : 'ar')}
+            >
+              <NavIcon name="globe" />
+            </button>
+            <button
+              type="button"
+              className="shell-icon-btn"
+              title={t('sign_out')}
+              aria-label={t('sign_out')}
+              onClick={logout}
+            >
+              <NavIcon name="signout" />
             </button>
           </div>
-          <span className="shell-user">{user?.name}</span>
-          <button className="shell-signout" type="button" onClick={logout}>
-            {t('sign_out')}
-          </button>
         </div>
       </aside>
 
