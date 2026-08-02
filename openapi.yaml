@@ -51,7 +51,10 @@ openapi: 3.0.3
 #     (people tag, manage_employees capability). The old /config/{org,levels,
 #     capabilities,employees} paths are removed — levels/org/capabilities have no
 #     live endpoint post-pivot (Gate-1 level config is seed-time only for now).
-#     Still undocumented (out of this pass): GET /departments, /users/me*.
+#     Still undocumented (out of this pass): /users/me*.
+#   • /departments: full CRUD (Owner-only create/rename/delete/reassign-head,
+#     read open to admin + view_all) documented alongside the department-head
+#     fallback added to PATCH /employees/{id}/deactivate.
 #
 # PHASE 7 (2026-07-17) — SUPERSEDED by the v7 pivot (config API + webhooks removed).
 #
@@ -687,7 +690,13 @@ paths:
       summary: >
         Deactivate an employee. 409 if they still hold a task in a non-terminal
         status (finality read from the workflow data, no status key hardcoded) —
-        reassign it first. A deactivated account's JWT stops working immediately.
+        reassign it first. If this employee heads a department, their own
+        manager is auto-promoted to head (department.head_user_id) and every
+        other department member's manager_id is re-pointed to the new head, so
+        oversight never has a gap; if they have no active manager to fall back
+        to, deactivation is refused (409) until the Owner reassigns the
+        department's head first (PATCH /departments/{id}/head). A deactivated
+        account's JWT stops working immediately.
       parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
         '200':
@@ -700,7 +709,9 @@ paths:
                   employee: { $ref: '#/components/schemas/Employee' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { description: Employee still holds an open task — reassign first }
+        '409': {
+          description: Employee still holds an open task, or heads a department with no active manager to fall back to — reassign first,
+        }
 
   /employees/{id}/reset-password:
     patch:
@@ -748,6 +759,117 @@ paths:
                         assignedAt: { type: string, format: date-time }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /departments:
+    get:
+      tags: [people]
+      summary: >
+        List departments. The admin sees all (with head + member count, for
+        the Owner-only Departments page); an oversight employee (view_all)
+        sees only their own department — keeps every department picker
+        correct without client-side filtering.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  departments:
+                    type: array
+                    items: { $ref: '#/components/schemas/Department' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [people]
+      summary: >
+        Create a department (admin-only). Requires a head and at least one
+        other employee — both are moved into the new department
+        (department_id); every member other than the head also gets
+        manager_id = head (Gate 2 — this is what gives the head real
+        oversight of them). The head's own manager_id is left untouched.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, headEmployeeId, memberEmployeeIds]
+              properties:
+                name: { $ref: '#/components/schemas/LocalizedText' }
+                headEmployeeId: { type: integer }
+                memberEmployeeIds:
+                  type: array
+                  items: { type: integer }
+                  minItems: 1
+                  description: must not include headEmployeeId
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  departmentId: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /departments/{id}:
+    patch:
+      tags: [people]
+      summary: Rename a department (admin-only). Bilingual name only.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { $ref: '#/components/schemas/LocalizedText' }
+      responses:
+        '204': { description: Updated }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [people]
+      summary: >
+        Delete a department (admin-only). Refused (409) while any employee or
+        service_type still references it — move/reassign them first.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Department still has employees or services assigned to it }
+
+  /departments/{id}/head:
+    patch:
+      tags: [people]
+      summary: >
+        Manually reassign a department's head (admin-only) — e.g. after the
+        automatic on-deactivation fallback (PATCH /employees/{id}/deactivate)
+        picked the outgoing head's manager and the Owner wants someone else.
+        Moves the new head into the department and re-points every other
+        current member's manager_id to them.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [headEmployeeId]
+              properties:
+                headEmployeeId: { type: integer }
+      responses:
+        '204': { description: Updated }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
 
   # ── Notifications ────────────────────────────────────────────────────────────
   /notifications:
@@ -1183,6 +1305,15 @@ components:
       properties:
         en: { type: string }
         ar: { type: string }
+
+    Department:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { $ref: '#/components/schemas/LocalizedText' }
+        headUserId: { type: integer, nullable: true }
+        headName: { type: string, nullable: true }
+        memberCount: { type: integer }
 
     Point:
       type: object

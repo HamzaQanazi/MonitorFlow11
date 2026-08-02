@@ -11,6 +11,7 @@ import DashboardShell from './pages/DashboardShell'
 import DashboardPage from './pages/DashboardPage'
 import RequestsPage from './pages/RequestsPage'
 import EmployeesPage from './pages/EmployeesPage'
+import DepartmentsPage from './pages/DepartmentsPage'
 import ReportsPage from './pages/ReportsPage'
 import TimeClockPage from './pages/TimeClockPage'
 import SchedulePage from './pages/SchedulePage'
@@ -80,6 +81,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="requests" element={<Guard need="view_all"><RequestsPage /></Guard>} />
             <Route path="requests/:id" element={<Guard need="view_all"><RequestsPage /></Guard>} />
             <Route path="employees" element={<Guard need="manage_employees" orAdmin><EmployeesPage /></Guard>} />
+            <Route path="departments" element={<Guard need="admin"><DepartmentsPage /></Guard>} />
             <Route path="reports" element={<Guard need="view_all"><ReportsPage /></Guard>} />
             <Route path="timeclock" element={<Guard need="view_all"><TimeClockPage /></Guard>} />
             <Route path="schedule" element={<Guard need="view_all"><SchedulePage /></Guard>} />
