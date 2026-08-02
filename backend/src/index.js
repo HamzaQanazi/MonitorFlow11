@@ -25,6 +25,21 @@ const trainingRoutes = require('./routes/training');
 
 const app = express();
 
+// Every /api/v1 response is live, per-request data (auth-scoped, polled every
+// 30s per CLAUDE.md §3 — there is no "this hasn't changed" concept a browser
+// should get to decide on its own). Express's default weak ETag otherwise
+// invites the browser to conditionally-cache these with If-None-Match, which
+// found a real bug live: a corrupted disk-cache entry served a 200 with an
+// all-null body that silently broke the dashboard (apiFetch swallowed the
+// JSON parse failure, leaving stats stuck on null with no error shown).
+// no-store is the actual fix — it stops the browser from attempting HTTP
+// caching on these routes at all, not just this one corrupted instance of it.
+app.disable('etag');
+app.use('/api/v1', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 // ponytail: dev-only CORS so a Flutter *web* build (served on another
 // localhost port) can reach this API. Native mobile/desktop builds don't need
 // it; the React dashboard uses a Vite proxy. Localhost origins only. Remove if
