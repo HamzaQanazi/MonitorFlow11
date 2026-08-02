@@ -17,6 +17,7 @@ const oversightNav = [
   { to: '/schedule', labelKey: 'nav_schedule', end: false, need: 'view_all' },
   { to: '/checklists', labelKey: 'nav_checklists', end: false, need: 'view_all' },
   { to: '/directory', labelKey: 'nav_directory', end: false, need: 'view_all' },
+  { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, need: 'view_all' },
 ]
 // Owner (admin role) surface. Dashboard + Employees admit the admin via the
 // backend's requireCapabilityOrAdmin (I2: admins hold no capabilities, so this
@@ -28,6 +29,7 @@ const adminNav = [
   { to: '/services/new', labelKey: 'nav_add_service', end: false },
   { to: '/checklists', labelKey: 'nav_checklists', end: false },
   { to: '/directory', labelKey: 'nav_directory', end: false },
+  { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false },
   { to: '/audit', labelKey: 'nav_audit', end: false },
 ]
 

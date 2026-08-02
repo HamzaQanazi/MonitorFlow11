@@ -1,0 +1,12 @@
+/* Knowledge Base article editor textareas. */
+.kb-textarea {
+  min-height: 140px;
+  resize: vertical;
+  font: inherit;
+  font-size: 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink);
+}

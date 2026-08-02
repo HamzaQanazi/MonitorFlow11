@@ -91,6 +91,7 @@ tags:
   - name: timeclock       # employee self-service: clock in/out, breaks, manual hours, in-shift entries
   - name: schedule        # manager roster (shift templates + per-date assignment) + employee "my schedule"
   - name: directory       # company-wide staff directory (communication feature group) — deliberately not Gate-2 scoped
+  - name: knowledge-base  # company article list (communication feature group) — read company-wide, write needs view_all/admin
 
 paths:
   # ── Auth ───────────────────────────────────────────────────────────────────
@@ -943,6 +944,101 @@ paths:
         '400': { description: Invalid query params }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  # ── Knowledge Base (communication feature group) ────────────────────────────
+  # Read: company-wide, any admin/employee account (mobile employees have no
+  # capabilities at all). Write: view_all or admin, same gate the console's
+  # other authoring surfaces use.
+  /knowledge-base:
+    get:
+      tags: [knowledge-base]
+      summary: All of this company's articles, newest-updated first.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  articles:
+                    type: array
+                    items: { $ref: '#/components/schemas/KbArticle' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [knowledge-base]
+      summary: Create an article (view_all or admin).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, body]
+              properties:
+                title: { $ref: '#/components/schemas/LocalizedText' }
+                body: { $ref: '#/components/schemas/LocalizedText' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  article: { $ref: '#/components/schemas/KbArticle' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /knowledge-base/{id}:
+    get:
+      tags: [knowledge-base]
+      summary: One article.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  article: { $ref: '#/components/schemas/KbArticle' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [knowledge-base]
+      summary: Edit an article's title and/or body (view_all or admin).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { $ref: '#/components/schemas/LocalizedText' }
+                body: { $ref: '#/components/schemas/LocalizedText' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  article: { $ref: '#/components/schemas/KbArticle' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [knowledge-base]
+      summary: Delete an article (view_all or admin).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   # ── Notifications ────────────────────────────────────────────────────────────
   /notifications:
     get:
@@ -1377,6 +1473,17 @@ components:
       properties:
         en: { type: string }
         ar: { type: string }
+
+    KbArticle:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { $ref: '#/components/schemas/LocalizedText' }
+        body: { $ref: '#/components/schemas/LocalizedText' }
+        createdBy: { type: integer }
+        createdByName: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
 
     Department:
       type: object

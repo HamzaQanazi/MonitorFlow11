@@ -19,6 +19,7 @@ const timeClockRoutes = require('./routes/timeclock');
 const scheduleRoutes = require('./routes/schedule');
 const checklistsRoutes = require('./routes/checklists');
 const directoryRoutes = require('./routes/directory');
+const knowledgeBaseRoutes = require('./routes/knowledgeBase');
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use('/api/v1/timeclock', timeClockRoutes);
 app.use('/api/v1/schedule', scheduleRoutes);
 app.use('/api/v1/checklists', checklistsRoutes);
 app.use('/api/v1/directory', directoryRoutes);
+app.use('/api/v1/knowledge-base', knowledgeBaseRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 

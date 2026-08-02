@@ -339,6 +339,11 @@ const Map<String, Map<String, String>> _dict = {
   'dir_email': {'en': 'Email', 'ar': 'بريد إلكتروني'},
   'dir_no_phone': {'en': 'Could not open the phone dialer', 'ar': 'تعذّر فتح تطبيق الاتصال'},
 
+  // knowledge base (communication feature group — read-only on mobile)
+  'kb_title': {'en': 'Knowledge Base', 'ar': 'قاعدة المعرفة'},
+  'kb_load_fail': {'en': 'Could not load the knowledge base.', 'ar': 'تعذّر تحميل قاعدة المعرفة.'},
+  'kb_none_title': {'en': 'No articles yet', 'ar': 'لا مقالات بعد'},
+
   // form response view (shared)
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},
   'fr_no': {'en': 'No', 'ar': 'لا'},

@@ -17,6 +17,7 @@ import TimeClockPage from './pages/TimeClockPage'
 import SchedulePage from './pages/SchedulePage'
 import ChecklistsPage from './pages/ChecklistsPage'
 import DirectoryPage from './pages/DirectoryPage'
+import KnowledgeBasePage from './pages/KnowledgeBasePage'
 import AuditPage from './pages/AuditPage'
 import AddServiceWizard from './pages/AddServiceWizard'
 
@@ -88,6 +89,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="schedule" element={<Guard need="view_all"><SchedulePage /></Guard>} />
             <Route path="checklists" element={<Guard need="view_all" orAdmin><ChecklistsPage /></Guard>} />
             <Route path="directory" element={<Guard need="view_all" orAdmin><DirectoryPage /></Guard>} />
+            <Route path="knowledge-base" element={<Guard need="view_all" orAdmin><KnowledgeBasePage /></Guard>} />
             <Route path="audit" element={<Guard need="admin"><AuditPage /></Guard>} />
             <Route path="services/new" element={<Guard need="admin"><AddServiceWizard /></Guard>} />
           </Route>
