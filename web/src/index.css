@@ -22,7 +22,12 @@ body {
 }
 
 #root {
-  min-height: 100svh;
+  /* height, not min-height: gives flex:1 descendants (the dashboard shell's
+     sidebar/main split) a real, stable number to size against instead of
+     "auto." overflow stays the default (visible), so a page taller than the
+     viewport still just grows the document and scrolls normally — this only
+     changes what a flex:1 child computes its share as. */
+  height: 100svh;
   display: flex;
   flex-direction: column;
 }

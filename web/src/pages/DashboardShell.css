@@ -1,15 +1,27 @@
 .shell {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  /* flex-direction: row respects the document's dir attribute (I6) — the
+     sidebar lands at inline-start automatically in both LTR and RTL, no
+     manual flip needed. */
+  flex-direction: row;
+  /* #root now has a real height (index.css), so flex:1 gives this a stable
+     number instead of "auto" — that's what lets .shell-sidebar/.shell-main's
+     overflow-y:auto scroll independently instead of growing the whole page. */
+  min-height: 0;
 }
 
-.shell-bar {
+.shell-sidebar {
+  flex: 0 0 236px;
   display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 12px 24px;
-  border-bottom: 1px solid var(--border);
+  flex-direction: column;
+  border-inline-end: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.shell-sidebar-top {
+  padding: 16px 20px;
+  border-block-end: 1px solid var(--border);
 }
 
 .shell-wordmark {
@@ -22,9 +34,9 @@
 }
 
 /* Shown instead of the pip when the deployment configures VITE_BRAND_LOGO.
-   Height-constrained so any aspect ratio fits the bar without reflowing it.
-   Taller than the wordmark text because a crest-style mark is unreadable at
-   text height; a wide lockup is held back by max-inline-size instead. */
+   Height-constrained so any aspect ratio fits the sidebar without reflowing
+   it. Taller than the wordmark text because a crest-style mark is unreadable
+   at text height; a wide lockup is held back by max-inline-size instead. */
 .shell-logo {
   block-size: 32px;
   inline-size: auto;
@@ -41,9 +53,24 @@
 
 .shell-nav {
   display: flex;
-  gap: 4px;
-  min-width: 0;
-  overflow-x: auto;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 12px;
+}
+
+.shell-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shell-nav-group-label {
+  padding: 0 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
 }
 
 .shell-nav a {
@@ -55,38 +82,48 @@
   color: var(--muted);
   text-decoration: none;
   white-space: nowrap;
-  transition: color var(--dur-fast) var(--ease-out);
+  transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 }
 
 .shell-nav a:hover {
   color: var(--ink);
+  background: var(--surface);
 }
 
 .shell-nav a.active {
   color: var(--ink);
+  background: var(--surface);
 }
 
-/* Current-page marker — the accent's job (selection), kept to a hairline. */
-.shell-nav a.active::after {
+/* Current-page marker — a hairline bar at the inline-start edge, the vertical
+   nav's equivalent of the old top bar's bottom underline. */
+.shell-nav a.active::before {
   content: '';
   position: absolute;
-  inset-inline: 10px;
-  bottom: 1px;
-  height: 2px;
-  border-radius: 1px;
+  inset-block: 6px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 2px;
   background: var(--amber-600);
 }
 
 .shell-session {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-inline-start: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 14px 20px 18px;
+  border-block-start: 1px solid var(--border);
+}
+
+.shell-session-row {
+  display: flex;
 }
 
 .shell-user {
   font-size: 14px;
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .shell-signout {
@@ -109,6 +146,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow-y: auto;
 }
 
 /* Centered message block — used by not-yet-built pages */
@@ -137,15 +176,67 @@
   line-height: 1.5;
 }
 
+/* Narrow viewports: the fixed-width sidebar would eat too much of the
+   screen, so it collapses back into a horizontal top bar (the pre-sidebar
+   layout), nav items wrapping into one flow instead of grouped columns. */
 @media (max-width: 720px) {
-  .shell-bar {
+  .shell {
+    flex-direction: column;
+  }
+
+  .shell-sidebar {
+    flex: 0 0 auto;
+    flex-direction: row;
     flex-wrap: wrap;
+    align-items: center;
     gap: 8px 16px;
+    padding: 8px 16px;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border);
+    overflow-y: visible;
+  }
+
+  .shell-sidebar-top {
+    padding: 0;
+    border-block-end: 0;
   }
 
   .shell-nav {
+    flex: 1 1 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    padding: 0;
     order: 3;
-    flex-basis: 100%;
+    overflow-y: visible;
+  }
+
+  .shell-nav-group {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+
+  .shell-nav-group-label {
+    display: none;
+  }
+
+  .shell-nav a.active::before {
+    inset-block: auto;
+    inset-inline: 10px;
+    bottom: 1px;
+    top: auto;
+    width: auto;
+    height: 2px;
+  }
+
+  .shell-session {
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+    margin-inline-start: auto;
+    padding: 0;
+    border-block-start: 0;
   }
 
   .shell-user {

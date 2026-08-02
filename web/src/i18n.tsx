@@ -35,6 +35,11 @@ const dict: Record<string, Loc> = {
   nav_departments: { en: 'Departments', ar: 'الدوائر' },
   nav_levels: { en: 'Levels & Capabilities', ar: 'المستويات والصلاحيات' },
   sign_out: { en: 'Sign out', ar: 'تسجيل الخروج' },
+  nav_group_overview: { en: 'Overview', ar: 'نظرة عامة' },
+  nav_group_people: { en: 'People', ar: 'الأفراد' },
+  nav_group_operations: { en: 'Operations', ar: 'العمليات' },
+  nav_group_communication: { en: 'Communication', ar: 'التواصل' },
+  nav_group_setup: { en: 'Setup', ar: 'الإعداد' },
   lang_toggle: { en: 'العربية', ar: 'English' }, // shows the OTHER language
 
   // common
