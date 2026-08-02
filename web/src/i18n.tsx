@@ -151,6 +151,11 @@ const dict: Record<string, Loc> = {
   dash_overall: { en: 'Overall', ar: 'الإجمالي' },
   dash_no_resolved: { en: 'Nothing resolved yet', ar: 'لا شيء محلول بعد' },
   dash_loading: { en: 'Loading dashboard…', ar: 'جارٍ تحميل لوحة القيادة…' },
+  dash_health: { en: 'Health alerts', ar: 'تنبيهات الأداء' },
+  dash_sla_breaches: { en: 'SLA breaches', ar: 'تجاوزات المهلة' },
+  dash_of_open: { en: 'of open', ar: 'من المفتوحة' },
+  dash_reopen_rate: { en: 'Reopen rate', ar: 'معدل إعادة الفتح' },
+  dash_workload: { en: 'Workload', ar: 'عبء العمل' },
 
   // requests
   req_title: { en: 'Requests', ar: 'الطلبات' },

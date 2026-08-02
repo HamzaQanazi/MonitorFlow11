@@ -12,7 +12,7 @@ router.use(requireAuth, requireCapabilityOrAdmin('view_all'));
 router.get('/stats', async (req, res, next) => {
   try {
     const dept = [await ownerScopeIds(req.user)];
-    const [byState, byService, byPriority, byDepartment, byRequesterRole] = await Promise.all([
+    const [byState, byService, byPriority, byDepartment, byRequesterRole, slaBreach, reopen, workload] = await Promise.all([
       pool.query(
         `SELECT (s->>'is_terminal')::bool AS is_terminal, COUNT(*)::int AS count
          FROM request r
@@ -81,6 +81,64 @@ router.get('/stats', async (req, res, next) => {
          GROUP BY u.role`,
         dept
       ),
+      // SLA breaches (I10 outcome metric, §10/§14): same is_terminal + sla_minutes
+      // reasoning as lib/escalation.js's sweep, just counted instead of notified —
+      // a currently-open request whose time in its current status has passed that
+      // status's sla_minutes. No status key involved (§8/§9).
+      pool.query(
+        `SELECT COUNT(*)::int AS count
+         FROM request r
+         JOIN service_type st ON st.id = r.service_type_id
+         JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+         JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
+         WHERE st.owner_id = ANY($1)
+           AND s->>'sla_minutes' IS NOT NULL
+           AND NOT (s->>'is_terminal')::bool
+           AND r.updated_at < now() - (s->>'sla_minutes')::int * INTERVAL '1 minute'`,
+        dept
+      ),
+      // Reopen rate (I10 outcome metric): a request "reopened" if its status
+      // history ever moves from an is_terminal status back to a non-terminal one
+      // (LAG over the timeline, same is_terminal-only reasoning — never a status
+      // key). Rate is of requests that were ever closed at least once.
+      pool.query(
+        `WITH hist AS (
+           SELECT h.request_id, h.changed_at,
+                  (s->>'is_terminal')::bool AS is_terminal,
+                  LAG((s->>'is_terminal')::bool) OVER (
+                    PARTITION BY h.request_id ORDER BY h.changed_at
+                  ) AS prev_terminal
+           FROM request_status_history h
+           JOIN request r ON r.id = h.request_id
+           JOIN service_type st ON st.id = r.service_type_id
+           JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+           JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = h.status
+           WHERE st.owner_id = ANY($1)
+         )
+         SELECT
+           COUNT(DISTINCT request_id) FILTER (WHERE is_terminal)::int AS ever_closed,
+           COUNT(DISTINCT request_id) FILTER (WHERE prev_terminal AND NOT is_terminal)::int AS reopened
+         FROM hist`,
+        dept
+      ),
+      // Open workload per employee (I10 outcome metric: "open workload", not
+      // behaviour) — count of each employee's non-terminal tasks, scoped to the
+      // actor's subtree (Gate 2, same `dept` scope array as everything above).
+      // Top 8 by load; employees with zero open tasks just don't appear.
+      pool.query(
+        `SELECT u.id AS employee_id, u.name AS employee_name, COUNT(*)::int AS open_count
+         FROM task t
+         JOIN request r ON r.id = t.request_id
+         JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+         JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = t.status
+         JOIN users u ON u.id = t.employee_id
+         WHERE NOT (s->>'is_terminal')::bool
+           AND u.id = ANY($1)
+         GROUP BY u.id, u.name
+         ORDER BY open_count DESC
+         LIMIT 8`,
+        dept
+      ),
     ]);
 
     // Open vs closed replaces the old six-way category breakdown (§10 dropped
@@ -106,6 +164,9 @@ router.get('/stats', async (req, res, next) => {
       resolvedCount += r.completed_count;
     }
 
+    const slaBreachCount = slaBreach.rows[0].count;
+    const { ever_closed: everClosed, reopened } = reopen.rows[0];
+
     res.json({
       total: open + closed,
       avgResolutionMinutes: resolvedCount ? Math.round(totalMinutes / resolvedCount) : null,
@@ -124,6 +185,13 @@ router.get('/stats', async (req, res, next) => {
           ? Math.round(Number(r.total_minutes) / r.completed_count)
           : null,
       })),
+      slaBreaches: { count: slaBreachCount, rate: open ? slaBreachCount / open : null },
+      reopenRate: { reopened, everClosed, rate: everClosed ? reopened / everClosed : null },
+      workload: workload.rows.map((r) => ({
+        employeeId: r.employee_id,
+        employeeName: r.employee_name,
+        openCount: r.open_count,
+      })),
     });
   } catch (err) {
     next(err);
@@ -139,21 +207,30 @@ function localDayKey(d) {
 
 router.get('/chart', async (req, res, next) => {
   try {
+    // Per day, split by the request's CURRENT status is_terminal (same
+    // reasoning as byState above) — of what was created that day, how much has
+    // since been resolved vs is still open. Never a status key (§8/§9).
     const { rows } = await pool.query(
-      `SELECT to_char(r.created_at::date, 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
-       FROM request r JOIN service_type st ON st.id = r.service_type_id
+      `SELECT to_char(r.created_at::date, 'YYYY-MM-DD') AS day,
+              COUNT(*) FILTER (WHERE (s->>'is_terminal')::bool)::int AS closed,
+              COUNT(*) FILTER (WHERE NOT (s->>'is_terminal')::bool)::int AS open
+       FROM request r
+       JOIN service_type st ON st.id = r.service_type_id
+       JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+       JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
        WHERE r.created_at >= (CURRENT_DATE - INTERVAL '29 days')
          AND st.owner_id = ANY($1)
        GROUP BY 1`,
       [await ownerScopeIds(req.user)]
     );
-    const counts = Object.fromEntries(rows.map((r) => [r.day, r.count]));
+    const byDay = Object.fromEntries(rows.map((r) => [r.day, { open: r.open, closed: r.closed }]));
     const days = [];
     for (let i = 29; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = localDayKey(d);
-      days.push({ date: key, count: counts[key] || 0 });
+      const { open = 0, closed = 0 } = byDay[key] || {};
+      days.push({ date: key, open, closed, count: open + closed });
     }
     res.json({ days });
   } catch (err) {

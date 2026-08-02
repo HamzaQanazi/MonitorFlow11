@@ -21,10 +21,13 @@ interface Stats {
   byPriority: { priority: string; count: number }[]
   byDepartment: { departmentId: number; name: Loc; count: number; avgResolutionMinutes: number | null }[]
   byRequesterRole: { role: string; count: number }[]
+  slaBreaches: { count: number; rate: number | null }
+  reopenRate: { reopened: number; everClosed: number; rate: number | null }
+  workload: { employeeId: number; employeeName: string; openCount: number }[]
 }
 
 interface Chart {
-  days: { date: string; count: number }[]
+  days: { date: string; open: number; closed: number; count: number }[]
 }
 
 const POLL_MS = 30_000
@@ -122,11 +125,15 @@ export default function DashboardPage() {
   const mid = chart.days[Math.floor(chart.days.length / 2)]
   const last = chart.days[chart.days.length - 1]
 
-  function showTip(e: React.MouseEvent<HTMLDivElement>, day: { date: string; count: number }) {
+  function showTip(e: React.MouseEvent<HTMLDivElement>, day: Chart['days'][number]) {
     const col = e.currentTarget
     const width = chartRef.current?.clientWidth ?? 0
     const x = Math.max(44, Math.min(width - 44, col.offsetLeft + col.offsetWidth / 2))
-    setTip({ x, text: `${formatDay(day.date)} · ${day.count}` })
+    const text =
+      day.count === 0
+        ? `${formatDay(day.date)} · 0`
+        : `${formatDay(day.date)} · ${day.count} (${day.open} ${t('state_open')}, ${day.closed} ${t('state_closed')})`
+    setTip({ x, text })
   }
 
   return (
@@ -181,6 +188,31 @@ export default function DashboardPage() {
         )}
       </section>
 
+      {stats.total > 0 && (
+        <section className="dash-alerts" aria-label={t('dash_health')}>
+          <div className={`alert-tile${stats.slaBreaches.count > 0 ? ' is-breach' : ''}`}>
+            <span className="alert-count">{stats.slaBreaches.count}</span>
+            <span className="alert-label">
+              {t('dash_sla_breaches')}
+              {stats.slaBreaches.rate != null && (
+                <> · {Math.round(stats.slaBreaches.rate * 100)}% {t('dash_of_open')}</>
+              )}
+            </span>
+          </div>
+          <div className="alert-tile">
+            <span className="alert-count">
+              {stats.reopenRate.rate != null ? `${Math.round(stats.reopenRate.rate * 100)}%` : '—'}
+            </span>
+            <span className="alert-label">
+              {t('dash_reopen_rate')}
+              {stats.reopenRate.everClosed > 0 && (
+                <> · {stats.reopenRate.reopened}/{stats.reopenRate.everClosed}</>
+              )}
+            </span>
+          </div>
+        </section>
+      )}
+
       {stats.total === 0 ? (
         <div className="dash-empty">
           <h2>{t('dash_clear_h')}</h2>
@@ -210,10 +242,18 @@ export default function DashboardPage() {
             >
               {chart.days.map((d) => (
                 <div className="chart-col" key={d.date} onMouseEnter={(e) => showTip(e, d)}>
-                  <div
-                    className={`chart-bar${d.count === 0 ? ' is-zero' : ''}`}
-                    style={{ height: d.count === 0 ? undefined : `${(d.count / max) * 100}%` }}
-                  />
+                  {d.count === 0 ? (
+                    <div className="chart-bar is-zero" />
+                  ) : (
+                    <div className="chart-stack" style={{ height: `${(d.count / max) * 100}%` }}>
+                      {d.open > 0 && (
+                        <div className="chart-seg is-open" style={{ flexGrow: d.open }} />
+                      )}
+                      {d.closed > 0 && (
+                        <div className="chart-seg is-closed" style={{ flexGrow: d.closed }} />
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
               {tip && (
@@ -315,6 +355,27 @@ export default function DashboardPage() {
                 </div>
               ))}
             </section>
+
+            {stats.workload.length > 0 && (
+              <section className="dash-panel" aria-labelledby="workload-heading">
+                <div className="panel-head">
+                  <h2 id="workload-heading">{t('dash_workload')}</h2>
+                </div>
+                {stats.workload.map((w) => (
+                  <div className="break-row" key={w.employeeId}>
+                    <span className="break-label">{w.employeeName}</span>
+                    <span className="break-count">{w.openCount}</span>
+                    <div className="break-bar" aria-hidden="true">
+                      <div
+                        style={{
+                          width: `${(w.openCount / stats.workload[0].openCount) * 100}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </section>
+            )}
           </div>
         </div>
       )}

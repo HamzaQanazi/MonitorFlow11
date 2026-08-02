@@ -94,6 +94,7 @@ tags:
   - name: knowledge-base  # company article list (communication feature group) — read company-wide, write needs view_all/admin
   - name: events          # company calendar + self-service RSVP (communication feature group)
   - name: training        # training modules + self-service completion tracking (hr_skills feature group)
+  - name: dashboard       # oversight overview: stats + 30-day chart (view_all/admin)
 
 paths:
   # ── Auth ───────────────────────────────────────────────────────────────────
@@ -991,6 +992,109 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: Level still has active employees assigned to it }
+
+  # ── Dashboard (oversight overview) ───────────────────────────────────────────
+  /dashboard/stats:
+    get:
+      tags: [dashboard]
+      summary: >
+        Oversight overview stats, scoped to the actor's authority (Gate 2:
+        subtree for an employee, company-wide for admin). Cross-service counts
+        reason only on is_terminal, never a status key (§8/§9).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  avgResolutionMinutes: { type: integer, nullable: true }
+                  byState:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        state: { type: string, enum: [open, closed] }
+                        count: { type: integer }
+                  byService:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        serviceTypeId: { type: integer }
+                        name: { $ref: '#/components/schemas/LocalizedText' }
+                        count: { type: integer }
+                  byPriority:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        priority: { type: string, enum: [low, medium, high] }
+                        count: { type: integer }
+                  byDepartment:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        departmentId: { type: integer }
+                        name: { $ref: '#/components/schemas/LocalizedText' }
+                        count: { type: integer }
+                        avgResolutionMinutes: { type: integer, nullable: true }
+                  byRequesterRole:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        role: { type: string, enum: [user, employee] }
+                        count: { type: integer }
+                  slaBreaches:
+                    type: object
+                    description: Currently-open requests past their status's sla_minutes.
+                    properties:
+                      count: { type: integer }
+                      rate: { type: number, nullable: true, description: "count / open total" }
+                  reopenRate:
+                    type: object
+                    description: A request "reopened" if its history ever moves from an is_terminal status back to non-terminal.
+                    properties:
+                      reopened: { type: integer }
+                      everClosed: { type: integer }
+                      rate: { type: number, nullable: true }
+                  workload:
+                    type: array
+                    description: Top employees by open (non-terminal) task count, subtree-scoped.
+                    items:
+                      type: object
+                      properties:
+                        employeeId: { type: integer }
+                        employeeName: { type: string }
+                        openCount: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /dashboard/chart:
+    get:
+      tags: [dashboard]
+      summary: Requests created per day, last 30 days, split open/closed by current status.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  days:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: { type: string, format: date }
+                        open: { type: integer }
+                        closed: { type: integer }
+                        count: { type: integer, description: "open + closed" }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   # ── Directory (communication feature group) ─────────────────────────────────
   # Deliberate exception to the Gate-2 subtree model everywhere else in this

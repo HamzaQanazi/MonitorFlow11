@@ -102,6 +102,44 @@
 .cat-seg.is-open { background: var(--state-open); }
 .cat-seg.is-closed { background: var(--state-closed); }
 
+/* --- Health alerts: SLA breaches + reopen rate --- */
+
+.dash-alerts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.alert-tile {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.alert-tile.is-breach {
+  background: var(--error-bg);
+  box-shadow: inset 0 0 0 1px var(--error-border);
+}
+
+.alert-count {
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.alert-tile.is-breach .alert-count {
+  color: var(--error);
+}
+
+.alert-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 /* --- Two-column zone below the strip --- */
 
 .dash-grid {
@@ -177,6 +215,23 @@
   height: 3px;
   background: var(--border);
 }
+
+.chart-stack {
+  width: 100%;
+  min-height: 3px;
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+}
+
+.chart-seg {
+  width: 100%;
+  min-height: 2px;
+}
+
+.chart-seg.is-open { background: var(--state-open); }
+.chart-seg.is-closed { background: var(--state-closed); }
 
 .chart-tip {
   position: absolute;
@@ -377,5 +432,9 @@
 
   .chart {
     height: 140px;
+  }
+
+  .dash-alerts {
+    grid-template-columns: 1fr;
   }
 }
