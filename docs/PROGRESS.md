@@ -30,6 +30,27 @@ Automated checks (the 2026-07-19 run predates the pivot — the config/webhook/p
 
 Known demo residue: `Root Operator` (user id 12) is left over from testing `POST /config/employees` and appears on the Org page as a second all-capability root. There is no delete, so deactivate it before a demo.
 
+**2026-08-03 addendum — this whole file predates the v7 pivot and is stale**
+(config API, webhooks, `test/permissions.test.js` / `workflowNegatives.test.js`
+/ `submissionNegatives.test.js`, the 98/98 · 22/22 numbers above — none of
+that exists post-pivot; see `CLAUDE.md` for current truth). Full rewrite of
+this file is out of scope for today's pass. What was actually done today:
+`docs/WEB_E2E_CHECKLIST.md` was reconciled to v7 (removed the config/webhooks
+sections, fixed the account matrix, added Onboarding/Departments/Time Clock/
+Schedule/Checklists/Directory/Knowledge Base/Events/Training sections, updated
+the Dashboard section for the new SLA-breach/reopen-rate/workload panels), and
+a partial live pass was run against the local dev build (English + Arabic):
+Dashboard (all panels, both languages) — pass; Directory (admin happy path) —
+pass; a Staff-level employee (`ti.clocker@adad.ada`, reset via the Employees
+page) is refused at the **login page itself** with an inline message ("This
+dashboard is for oversight and admin accounts...") rather than reaching any
+gated page — pass, and arguably a cleaner mechanism than the checklist
+assumed (worth reflecting in the doc if this becomes the permanent behavior).
+The rest of the checklist (every other page, every other negative, RTL beyond
+Dashboard) is still unrun — this was a partial, not a full, pass. One residue
+note: a "Time Clocker" employee's password was reset to a temporary value
+during this check (`Temp-QYh4wAK0`) — reset it again before any real demo.
+
 ---
 
 ## Tech stack
