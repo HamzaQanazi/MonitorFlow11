@@ -50,6 +50,19 @@ async function adminQuery(sql) {
   }
 }
 
+// Same as adminQuery, but against the suite's own test DB — for fixture setup
+// that has no API surface at all (level-capability grants, id lookups), never
+// for anything a real deployment could do through the API.
+async function query(sql, params) {
+  const c = new Client({ connectionString: testDbUrl() });
+  await c.connect();
+  try {
+    return await c.query(sql, params);
+  } finally {
+    await c.end();
+  }
+}
+
 function run(cmd, args, env) {
   return new Promise((resolve, reject) => {
     // No shell: spawning through cmd.exe on Windows would make the child a
@@ -119,14 +132,6 @@ function stopServer() {
   server = null;
 }
 
-// One-shot setup for a test file: canonical database + running server.
-// `name` isolates this suite's database and port from every other suite.
-async function setup(name) {
-  useSuite(name);
-  await resetTestDb();
-  await startServer();
-}
-
 // Thin fetch wrapper. Returns { status, body } rather than throwing, because
 // these tests assert on status codes far more often than on payloads.
 async function api(method, pathname, { token, body } = {}) {
@@ -150,20 +155,20 @@ async function api(method, pathname, { token, body } = {}) {
 
 const SEED_PASSWORD = 'Password123!';
 
-// Seeded logins, by the role each plays in the permission matrix. Employees
-// sign in with their allocated 4-digit number (migration 011); these are the
-// numbers a fresh seed produces.
-const WHO = {
-  admin: 'admin@city.gov',        // configures; holds NO capabilities
-  root: '1000',                   // Maya — Manager level, org root, sees all
-  worksHead: '1100',              // Rami — Manager, Public Works
-  worksField: '1101',             // Ziad — Field Officer (no capabilities), PW
-  worksField2: '1102',            // Zaid — Field Officer, PW
-  wasteHead: '1200',              // Widad — Manager, Sanitation (other subtree)
-  wasteField: '1201',             // Sami — Field Officer, Sanitation
-  licenceHead: '1300',            // Peter — Manager, Licensing
-  resident: 'resident@city.gov',  // external user
-};
+// v7's seed.js provisions the Owner with these — see backend/src/seed.js.
+// Overridable the same way seed.js's own defaults are, via the same env vars.
+const OWNER_EMAIL = (process.env.SEED_OWNER_EMAIL || 'owner@company.com').toLowerCase();
+const OWNER_PASSWORD = process.env.SEED_OWNER_PASSWORD || 'Password123!';
+
+// Seeded/fixture logins, by the role each plays in the permission matrix.
+// Populated by buildFixtures() during setup() — empty until then. Employees
+// sign in with their generated company email (lib/employeeEmail.js); `admin`
+// and `resident` sign in with a plain email.
+const WHO = {};
+
+// Ids and other identifiers a test might need beyond a login — also populated
+// by buildFixtures().
+const fixtures = {};
 
 async function login(identifier, password = SEED_PASSWORD) {
   const { status, body } = await api('POST', '/auth/login', {
@@ -218,11 +223,193 @@ async function submitRequest(token, serviceTypeId) {
   return res.body.request;
 }
 
+// v7's seed (backend/src/seed.js) provisions a bare Owner + one empty company
+// — no employees beyond the Owner, no departments beyond a "General" stub, no
+// service types/forms/workflows (the old municipal company-config.js seed is
+// removed, CLAUDE.md §13). Everything a test needs beyond that is built here,
+// through the real API wherever one exists, so the suite exercises the same
+// validated code paths a real deployment would (onboarding, hiring, the Add
+// Service builder) rather than hand-inserted rows. Runs once per setup().
+async function buildFixtures() {
+  const ownerToken = await login(OWNER_EMAIL, OWNER_PASSWORD);
+  WHO.admin = OWNER_EMAIL;
+
+  // Onboarding first — POST /employees and POST /services both 422/403 on an
+  // un-onboarded company. `plan: 'enterprise'` keeps the seat cap out of the
+  // way for every suite except the one that deliberately tests it (which
+  // lowers its own company's plan directly, see employees.api.test.js).
+  const onboard = await api('PATCH', '/company/onboarding', {
+    token: ownerToken,
+    body: {
+      name: { en: 'Fixture Co', ar: 'شركة تجريبية' },
+      address: { en: '1 Test St', ar: 'شارع الاختبار 1' },
+      ownerJobTitle: { en: 'Owner', ar: 'المالك' },
+      phone: '0590000000',
+      emailDomain: 'fixture.test',
+      employeeRange: '11-30',
+      industry: 'field_services',
+      subIndustry: 'maintenance',
+      branches: [{ en: 'Main', ar: 'الرئيسي' }],
+      features: ['time_clock'],
+      plan: 'enterprise',
+    },
+  });
+  if (onboard.status !== 200) {
+    throw new Error(`fixture onboarding failed: ${onboard.status} ${JSON.stringify(onboard.body)}`);
+  }
+
+  // No level-authoring endpoint exists post-pivot (CLAUDE.md §12 — Gate-1
+  // level grants are seed-time only). The seeded "Manager" level deliberately
+  // holds only view_all/manage_employees/override (seed.js's product
+  // default); the permission suite needs one role that holds every
+  // capability to drive full happy paths, so this grants the rest directly.
+  // Test-DB-only — resetTestDb() rebuilds from a clean seed every run, so
+  // this never touches what a real deployment ships.
+  const { rows: levels } = await query(`SELECT id, name->>'en' AS name FROM employee_level`);
+  const managerLevelId = levels.find((l) => l.name === 'Manager').id;
+  const staffLevelId = levels.find((l) => l.name === 'Staff').id;
+  await query(
+    `INSERT INTO level_capability (level_id, capability_key)
+     SELECT $1, key FROM capability
+     WHERE key NOT IN (SELECT capability_key FROM level_capability WHERE level_id = $1)`,
+    [managerLevelId]
+  );
+
+  const { rows: depts } = await query(`SELECT id FROM department LIMIT 1`);
+  const departmentId = depts[0].id;
+
+  async function hire(firstName, lastName, { levelId = null, managerId = null } = {}) {
+    const res = await api('POST', '/employees', {
+      token: ownerToken,
+      body: {
+        firstName,
+        lastName,
+        email: `${firstName}.${lastName}@fixture.test`.toLowerCase(),
+        password: SEED_PASSWORD,
+        departmentId,
+        levelId,
+        managerId,
+      },
+    });
+    if (res.status !== 201) throw new Error(`hire ${firstName}: ${res.status} ${JSON.stringify(res.body)}`);
+    return res.body.employee; // { id, loginIdentifier, ... }
+  }
+
+  // Two independent subtrees (root/field1/field2 vs head2 alone), mirroring
+  // the shape a cross-subtree-refusal test needs: an actor in one tree must
+  // never reach a resource owned by the other.
+  const root = await hire('Root', 'Manager', { levelId: managerLevelId });
+  const head2 = await hire('Head', 'Second', { levelId: managerLevelId });
+  const field1 = await hire('Field', 'One', { levelId: staffLevelId, managerId: root.id });
+  const field2 = await hire('Field', 'Two', { levelId: staffLevelId, managerId: root.id });
+
+  WHO.root = root.loginIdentifier;
+  WHO.head2 = head2.loginIdentifier;
+  WHO.field1 = field1.loginIdentifier;
+  WHO.field2 = field2.loginIdentifier;
+
+  fixtures.departmentId = departmentId;
+  fixtures.levelIds = { manager: managerLevelId, staff: staffLevelId };
+  fixtures.employeeIds = { root: root.id, head2: head2.id, field1: field1.id, field2: field2.id };
+
+  // External submitter (the old `resident`). /auth/register creates a `user`
+  // account keyed by email (routes/auth.js) — no login_identifier field.
+  const RESIDENT_EMAIL = 'resident@fixture.test';
+  const reg = await api('POST', '/auth/register', {
+    body: { name: 'Resident Fixture', email: RESIDENT_EMAIL, password: SEED_PASSWORD },
+  });
+  if (reg.status !== 201) throw new Error(`register resident: ${reg.status} ${JSON.stringify(reg.body)}`);
+  WHO.resident = RESIDENT_EMAIL;
+
+  // One fixture service — a real form + workflow, adapted from
+  // docs/demo/home_nursing.json (a shape already proven valid against the
+  // seed-time validators) into the POST /services payload. Exercises a
+  // capability-gated transition (schedule), two actor-gated transitions
+  // (cancel/confirm as requester, complete as assignee), a required
+  // completion form, and an SLA'd status — enough surface for the requests/
+  // tasks suites without trying to replicate all three old municipal
+  // workflow shapes.
+  const svc = await api('POST', '/services', {
+    token: ownerToken,
+    body: {
+      name: { en: 'Home Nursing Visit', ar: 'زيارة تمريض منزلي' },
+      departmentId,
+      defaultPriority: 'medium',
+      acceptsExternalUsers: true,
+      acceptsEmployeeSubmitters: false,
+      featureKey: null,
+      ownerId: root.id,
+      requestFields: [
+        { id: 'patient_name', label: { en: 'Patient Name', ar: 'اسم المريض' }, type: 'text', required: true },
+        {
+          id: 'care_type',
+          label: { en: 'Care Needed', ar: 'نوع الرعاية المطلوبة' },
+          type: 'dropdown',
+          required: true,
+          options: [
+            { value: 'wound', label: { en: 'Wound Care', ar: 'عناية بالجروح' } },
+            { value: 'vitals', label: { en: 'Vitals Check', ar: 'فحص العلامات الحيوية' } },
+          ],
+        },
+        { id: 'address', label: { en: 'Visit Address', ar: 'عنوان الزيارة' }, type: 'location', required: true },
+      ],
+      completionFields: [
+        { id: 'notes', label: { en: 'Visit Notes', ar: 'ملاحظات الزيارة' }, type: 'multiline', required: true },
+      ],
+      statuses: [
+        { key: 'requested', label: { en: 'Requested', ar: 'مطلوب' }, is_initial: true, is_terminal: false, sla_minutes: 240 },
+        { key: 'scheduled', label: { en: 'Scheduled', ar: 'مجدول' }, is_initial: false, is_terminal: false, sla_minutes: 1440 },
+        { key: 'visited', label: { en: 'Visit Complete', ar: 'اكتملت الزيارة' }, is_initial: false, is_terminal: false },
+        { key: 'confirmed', label: { en: 'Confirmed', ar: 'مؤكد' }, is_initial: false, is_terminal: true },
+        { key: 'cancelled', label: { en: 'Cancelled', ar: 'ملغي' }, is_initial: false, is_terminal: true },
+      ],
+      transitions: [
+        {
+          key: 'schedule', from: 'requested', to: 'scheduled',
+          label: { en: 'Schedule Visit', ar: 'جدولة الزيارة' },
+          required_capability: 'assign', actor: null, requires_note: false,
+          notify: ['created_by', 'assigned_to'],
+        },
+        {
+          key: 'cancel', from: 'requested', to: 'cancelled',
+          label: { en: 'Cancel', ar: 'إلغاء' },
+          required_capability: null, actor: 'requester', requires_note: true,
+          notify: ['created_by'],
+        },
+        {
+          key: 'complete', from: 'scheduled', to: 'visited',
+          label: { en: 'Complete Visit', ar: 'إنهاء الزيارة' },
+          required_capability: null, actor: 'assignee', required_form_key: 'completion', requires_note: false,
+          notify: ['created_by'],
+        },
+        {
+          key: 'confirm', from: 'visited', to: 'confirmed',
+          label: { en: 'Confirm', ar: 'تأكيد' },
+          required_capability: null, actor: 'requester', requires_note: false,
+          notify: [],
+        },
+      ],
+    },
+  });
+  if (svc.status !== 201) throw new Error(`fixture service failed: ${svc.status} ${JSON.stringify(svc.body)}`);
+  fixtures.serviceTypeId = svc.body.serviceTypeId;
+}
+
+// One-shot setup for a test file: canonical database + running server +
+// fixture org/service built through the real API. `name` isolates this
+// suite's database and port from every other suite.
+async function setup(name) {
+  useSuite(name);
+  await resetTestDb();
+  await startServer();
+  await buildFixtures();
+}
+
 // BASE is rebound by useSuite() during setup(), so it can only be read through
 // a function — a destructured copy taken at require time is the stale default.
 const apiUrl = (pathname) => `${BASE}${pathname}`;
 
 module.exports = {
-  setup, stopServer, api, apiUrl, login, loginAll, WHO, SEED_PASSWORD, testDbUrl,
+  setup, stopServer, api, apiUrl, login, loginAll, WHO, fixtures, SEED_PASSWORD, testDbUrl, query,
   formPayload, submitRequest,
 };
