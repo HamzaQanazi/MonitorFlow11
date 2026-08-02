@@ -299,7 +299,7 @@ router.patch('/:id', async (req, res, next) => {
     const emp = await loadEmployee(Number(req.params.id), req.user);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
-    const { name, phone, departmentId } = req.body || {};
+    const { name, phone, departmentId, levelId } = req.body || {};
     const errors = {};
     if (name !== undefined && (typeof name !== 'string' || !name.trim())) errors.name = 'Name cannot be empty';
     if (phone !== undefined && phone !== null && typeof phone !== 'string') errors.phone = 'Phone must be text';
@@ -314,18 +314,39 @@ router.patch('/:id', async (req, res, next) => {
       return res.status(422).json({ errors: { departmentId: 'Must be your own department' } });
     }
 
+    // Changing a level is real Gate-1 power (same reasoning as levelId at
+    // creation — POST /employees) — admin-only. A non-admin actor's levelId
+    // is silently ignored, same as the creation path, not a 403: this endpoint
+    // is otherwise open to any manage_employees holder for name/phone/dept.
+    let applyLevelId = false;
+    let resolvedLevelId = null;
+    if (req.user.role === 'admin' && levelId !== undefined) {
+      applyLevelId = true;
+      if (levelId !== null) {
+        if (!Number.isInteger(levelId)) {
+          return res.status(422).json({ errors: { levelId: 'Invalid level' } });
+        }
+        const { rows: levelRows } = await pool.query('SELECT 1 FROM employee_level WHERE id = $1', [levelId]);
+        if (!levelRows.length) return res.status(422).json({ errors: { levelId: 'Invalid level' } });
+        resolvedLevelId = levelId;
+      }
+    }
+
     await withTx(async (tx) => {
       await tx.query(
         `UPDATE users SET
            name = COALESCE($1, name),
            phone = CASE WHEN $2::boolean THEN $3 ELSE phone END,
-           department_id = COALESCE($4, department_id)
-         WHERE id = $5`,
+           department_id = COALESCE($4, department_id),
+           level_id = CASE WHEN $5::boolean THEN $6 ELSE level_id END
+         WHERE id = $7`,
         [
           name === undefined ? null : name.trim(),
           phone !== undefined,
           phone === undefined ? null : phone,
           departmentId === undefined ? null : departmentId,
+          applyLevelId,
+          resolvedLevelId,
           emp.id,
         ]
       );
@@ -333,6 +354,7 @@ router.patch('/:id', async (req, res, next) => {
         ...(name !== undefined ? { name: name.trim() } : {}),
         ...(phone !== undefined ? { phone } : {}),
         ...(departmentId !== undefined ? { departmentId } : {}),
+        ...(applyLevelId ? { levelId: resolvedLevelId } : {}),
       });
     });
     res.json({ employee: publicEmployee(await loadEmployee(emp.id, req.user)) });

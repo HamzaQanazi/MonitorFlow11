@@ -399,7 +399,7 @@ function EmployeeForm({
   const [workerType, setWorkerType] = useState('')
   const [depId, setDepId] = useState(String(employee?.departmentId ?? departments[0]?.id ?? ''))
   const [managerId, setManagerId] = useState('')
-  const [levelId, setLevelId] = useState('')
+  const [levelId, setLevelId] = useState(employee?.levelId ? String(employee.levelId) : '')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
   const [createdLogin, setCreatedLogin] = useState<string | null>(null)
@@ -418,7 +418,12 @@ function EmployeeForm({
       if (isEdit) {
         await apiFetch(`/employees/${employee!.id}`, {
           method: 'PATCH',
-          body: { name, phone: phone || null, departmentId: Number(depId) },
+          body: {
+            name,
+            phone: phone || null,
+            departmentId: Number(depId),
+            ...(isAdmin ? { levelId: levelId ? Number(levelId) : null } : {}),
+          },
         })
         onDone()
       } else {
@@ -552,32 +557,32 @@ function EmployeeForm({
           {errors.departmentId && <em className="field-err">{errors.departmentId}</em>}
         </label>
         {!isEdit && isAdmin && (
-          <>
-            <label className="field">
-              <span>{t('emp_manager_optional')}</span>
-              <select className="req-select" value={managerId} onChange={(e) => setManagerId(e.target.value)}>
-                <option value="">{t('emp_manager_none')}</option>
-                {managers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-              {errors.managerId && <em className="field-err">{errors.managerId}</em>}
-            </label>
-            <label className="field">
-              <span>{t('emp_role_optional')}</span>
-              <select className="req-select" value={levelId} onChange={(e) => setLevelId(e.target.value)}>
-                <option value="">{t('ob_select')}</option>
-                {levels.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {L(l.name)}
-                  </option>
-                ))}
-              </select>
-              {errors.levelId && <em className="field-err">{errors.levelId}</em>}
-            </label>
-          </>
+          <label className="field">
+            <span>{t('emp_manager_optional')}</span>
+            <select className="req-select" value={managerId} onChange={(e) => setManagerId(e.target.value)}>
+              <option value="">{t('emp_manager_none')}</option>
+              {managers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+            {errors.managerId && <em className="field-err">{errors.managerId}</em>}
+          </label>
+        )}
+        {isAdmin && (
+          <label className="field">
+            <span>{t('emp_role_optional')}</span>
+            <select className="req-select" value={levelId} onChange={(e) => setLevelId(e.target.value)}>
+              <option value="">{t('ob_select')}</option>
+              {levels.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {L(l.name)}
+                </option>
+              ))}
+            </select>
+            {errors.levelId && <em className="field-err">{errors.levelId}</em>}
+          </label>
         )}
         {errors._ && <p className="assign-error">{errors._}</p>}
         <div className="dialog-actions">

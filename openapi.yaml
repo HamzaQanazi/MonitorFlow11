@@ -644,9 +644,12 @@ paths:
     patch:
       tags: [people]
       summary: >
-        Edit an employee's name, phone, or department. departmentId, if given, must
-        equal the caller's own department (cross-department moves need an org-level
-        actor that does not exist today).
+        Edit an employee's name, phone, department, or level. departmentId, if
+        given, must equal the caller's own department (cross-department moves
+        need an org-level actor that does not exist today). levelId is
+        admin-only — silently ignored for any other caller, same as at
+        creation (POST /employees) — and, if given, must reference an
+        existing level; null clears it.
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
@@ -658,6 +661,7 @@ paths:
                 name: { type: string }
                 phone: { type: string, nullable: true }
                 departmentId: { type: integer }
+                levelId: { type: integer, nullable: true, description: admin-only }
       responses:
         '200':
           description: Updated
