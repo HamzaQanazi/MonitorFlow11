@@ -2,54 +2,33 @@
 
 Single-company workforce and field-operations platform: two Flutter mobile apps (User, Employee) and one React web console on one Node/Express + Postgres backend. One deployment = one company.
 
-> **Pivot in progress (v7, 2026-07).** MonitorFlow is moving from a multi-sector, config-API-driven platform to a single-company workforce app. **Shipped in v7:** the JSON config API and outbound webhooks are **removed**; the municipality seed is replaced by an **Owner-provisioning seed**; a `company`/`branch` schema and a **first-login onboarding wizard** (backend + React) are in. The operational engine underneath is unchanged. See `CLAUDE.md` §1/§9/§13 for the current truth.
+> **v7 (current).** MonitorFlow moved from a multi-sector, config-API-driven platform to a single-company workforce app provisioned with an Owner who runs a first-login onboarding wizard. **Shipped:** the JSON config API and outbound webhooks are **removed**; the municipality seed is replaced by an **Owner-provisioning seed** (`backend/src/seed.js` — one empty company + one Owner, nothing else); a `company`/`branch` schema and the **onboarding wizard** (backend + React) are in; and the **workforce feature modules** the wizard lets an Owner select — Time Clock, Schedule, Checklists, Directory, Knowledge Base, Events, Training — have since shipped (web + mobile + backend for all seven). See `CLAUDE.md` for the authoritative spec.
 
-**The engine's thesis (still true):** structurally different service sectors — different form fields, different workflow shapes, different approval rules — run through the *same* code via JSON configuration. Two engines make this true: a **dynamic form engine** (forms rendered and validated from a JSON `field_schema`) and a **dynamic workflow engine** (transitions validated against a JSON workflow). No status key is ever hardcoded in application code — code reasons only about `is_terminal`, capabilities, and actors.
+**The engine's thesis (still true):** structurally different service sectors — different form fields, different workflow shapes, different approval rules — run through the *same* code via JSON configuration. Two engines make this true: a **dynamic form engine** (forms rendered and validated from a JSON `field_schema`) and a **dynamic workflow engine** (transitions validated against a JSON workflow). No status key is ever hardcoded in application code — code reasons only about `is_terminal`, capabilities, and actors. The demo of that thesis no longer lives in seed data (the v7 seed ships zero services) — it's the **Add Service** wizard (`web/src/pages/AddServiceWizard.tsx`, admin-only, `POST /services`), which builds a service + both forms + a workflow through the same seed-time validators the old config API used, with a live 5-step UI instead of a JSON body.
 
-`CLAUDE.md` is the authoritative spec. `openapi.yaml` is the API contract (v7 note: config paths stripped, onboarding added; full reconciliation to live routes pending). This file is the feature/status reference and operator guide, written against the **shipped code**.
+`CLAUDE.md` is the authoritative spec. `openapi.yaml` is the API contract. This file is the feature/status reference and operator guide, written against the **shipped code**.
 
 ---
 
 ## Status
 
-**Operational engine feature-complete; v7 workforce pivot underway.** Three account kinds, capability + subtree permissions, `is_terminal` instead of status categories — all unchanged. The v7 pivot added first-login onboarding and removed the config API/webhooks (see the pivot note above).
+**Operational engine feature-complete; v7 workforce pivot shipped.** Three account kinds, capability + subtree permissions, `is_terminal` instead of status categories — all unchanged. v7 added first-login onboarding, removed the config API/webhooks, and shipped seven workforce feature modules beyond the original request/task engine.
 
-Automated checks (the 2026-07-19 run predates the pivot — the config/webhook/permission-negative suites were removed in v7 Phase A, so **re-run before quoting numbers**):
+Automated checks, current as of 2026-08-03:
 
 | Suite | Result |
 |---|---|
-| Backend, unit + API (`cd backend && npm test`) | re-run (pre-pivot: 98/98) |
-| Flutter widget (`cd mobile && flutter test`) | 22/22 |
-| Web build (`cd web && npm run build`) | green |
+| Backend, unit + API/permission (`cd backend && npm test`) | **92/92** |
+| Flutter widget (`cd mobile && flutter test` / `flutter analyze`) | **22/22**, 0 analyze issues |
+| Web build + lint (`cd web && npm run build && npm run lint`) | green |
+| CI | `.github/workflows/test.yml` runs all three on push/PR |
 
-**Not done, and required before submission:**
+**Not done, and worth doing before submission:**
 
-1. **The automated release gate is closed.** Every §14 must-pass negative now has a test (98 backend, 22 Flutter). What remains is human, and only on the web app, which has no automated coverage. Its **happy path is verified** — every page was walked through by hand against seeded data (English, local build, as of 2026-07-19) and behaved correctly. What that pass does *not* reach, and `docs/WEB_E2E_CHECKLIST.md` exists to cover: **Arabic / RTL** on every page (I6), **server-side refusals** for each denied action (a hidden button is not authorisation — I3), and the **loading / empty / error** states, which a seeded database and a running backend never show. *Why this matters, concretely: on 2026-07-18 a change shipped that made the web console impossible to log into for every employee (`type="email"` rejecting a numeric login). The page looked fine; it was found by eye during unrelated work.*
+1. **The web app's manual E2E checklist is only partially run.** `docs/WEB_E2E_CHECKLIST.md` was reconciled to v7 (2026-08-03: removed the config/webhooks sections, fixed the account matrix, added sections for every page that had none — Onboarding Wizard, Departments, Time Clock, Schedule, Checklists, Directory, Knowledge Base, Events, Training). A partial live pass ran the same day: Dashboard (all panels, English + Arabic) — pass; Directory (admin happy path) — pass; one permission negative (a Staff-level employee is refused **at the login page itself**, not bounced from a gated page) — pass. Every other page, every other negative, and RTL beyond Dashboard are still unrun. *Why this matters, concretely: on 2026-07-18 a change shipped that made the web console impossible to log into for every employee (`type="email"` rejecting a numeric login). The page looked fine; it was found by eye during unrelated work — automated checks would not have caught it.*
 2. **Not deployed.** No host configuration exists (`render.yaml` / `Procfile` / `Dockerfile` — none). CLAUDE.md §4 asks for one free-tier cloud host; §14 wants manual acceptance run on the deployed build.
-3. **Manual acceptance not recorded.** §14 asks that the core flows be run on every seeded service by the student who did *not* write that layer. No record of that run exists.
-
-Known demo residue: `Root Operator` (user id 12) is left over from testing `POST /config/employees` and appears on the Org page as a second all-capability root. There is no delete, so deactivate it before a demo.
-
-**2026-08-03 addendum — this whole file predates the v7 pivot and is stale**
-(config API, webhooks, `test/permissions.test.js` / `workflowNegatives.test.js`
-/ `submissionNegatives.test.js`, the 98/98 · 22/22 numbers above — none of
-that exists post-pivot; see `CLAUDE.md` for current truth). Full rewrite of
-this file is out of scope for today's pass. What was actually done today:
-`docs/WEB_E2E_CHECKLIST.md` was reconciled to v7 (removed the config/webhooks
-sections, fixed the account matrix, added Onboarding/Departments/Time Clock/
-Schedule/Checklists/Directory/Knowledge Base/Events/Training sections, updated
-the Dashboard section for the new SLA-breach/reopen-rate/workload panels), and
-a partial live pass was run against the local dev build (English + Arabic):
-Dashboard (all panels, both languages) — pass; Directory (admin happy path) —
-pass; a Staff-level employee (`ti.clocker@adad.ada`, reset via the Employees
-page) is refused at the **login page itself** with an inline message ("This
-dashboard is for oversight and admin accounts...") rather than reaching any
-gated page — pass, and arguably a cleaner mechanism than the checklist
-assumed (worth reflecting in the doc if this becomes the permanent behavior).
-The rest of the checklist (every other page, every other negative, RTL beyond
-Dashboard) is still unrun — this was a partial, not a full, pass. One residue
-note: a "Time Clocker" employee's password was reset to a temporary value
-during this check (`Temp-QYh4wAK0`) — reset it again before any real demo.
+3. **Manual acceptance not recorded.** §14 asks that the core flows be run on every seeded service by the student who did *not* write that layer. No record of that run exists — and there's no seeded service to run it against until one is created via the Add Service wizard (see below).
+4. **The onboarding wizard's feature-module selection doesn't gate access.** `company.features` (the Owner's step-4 picks) is stored but never checked — every module route/page is reachable by capability alone, regardless of what was selected in the wizard (CLAUDE.md §15).
 
 ---
 
@@ -58,8 +37,8 @@ during this check (`Temp-QYh4wAK0`) — reset it again before any real demo.
 - **Mobile:** Flutter, single codebase, role-routed after login (`user` / `employee`; admins are web-only).
 - **Web:** React + Vite + TypeScript. Design tokens in `web/src/styles/tokens.css` (OKLCH). Dev proxy `/api` → `:3000` (the backend has no CORS by design).
 - **Backend:** Node.js + Express, plain JavaScript, REST under `/api/v1`. Raw SQL via `pg` — no ORM. JWT HS256 24h, bcrypt cost 10, login rate limit, deactivated accounts rejected at JWT validation.
-- **Database:** PostgreSQL + PostGIS. JSONB for form/workflow definitions and responses; `SELECT … FOR UPDATE` on every status-mutating operation; the request pin is `GEOGRAPHY(Point,4326)` (reads alias `ST_Y`/`ST_X` back to `lat`/`lng`, so the API shape and both map clients are unchanged).
-- **Migrations:** 11 plain `.sql` files in `backend/migrations/`, applied in filename order by `src/migrate.js`.
+- **Database:** PostgreSQL + PostGIS. JSONB for form/workflow definitions and responses; `SELECT … FOR UPDATE` on every status-mutating operation; the request pin is `GEOGRAPHY(Point,4326)`.
+- **Migrations:** 26 plain `.sql` files in `backend/migrations/`, applied in filename order by `src/migrate.js` — spanning the original engine through the v7 pivot (company/onboarding, employee generated-email logins, department heads/branches) and the seven workforce modules (time clock, schedule, knowledge base, events, training, module capabilities).
 - **Files:** local disk under gitignored `backend/uploads/`, UUID names, DB stores metadata only.
 
 ---
@@ -68,74 +47,61 @@ during this check (`Temp-QYh4wAK0`) — reset it again before any real demo.
 
 Three account kinds only — `admin`, `employee`, `user`. **There is no "monitor" role.** Oversight is an employee whose level grants oversight capabilities.
 
-- **Gate 1 — capability.** Fixed catalogue in `backend/src/lib/capabilities.js`: `view_all · assign · set_priority · override · manage_employees · export`. An `employee_level` grants a subset through `level_capability`.
+- **Gate 1 — capability.** Fixed catalogue in `backend/src/lib/capabilities.js`: `view_all · assign · set_priority · override · manage_employees · export · manage_events · manage_knowledge_base · manage_training`. The last three let a level author one workforce module without also holding `view_all`'s general oversight. An `employee_level` grants a subset through `level_capability`.
 - **Gate 2 — subtree scope.** `users.manager_id` is a self-reference; a recursive CTE (`lib/scope.js`) yields self + all descendants. An employee sees the requests whose service `owner_id` sits in their subtree, and can assign only to employees in it. Assignment is therefore downward-only.
 
 Admins gate by role (`requireRole('admin')`) and hold **no** capabilities — they configure, they do not work the queue. Both gates are enforced server-side on every guarded action. "Own only" resources add an ownership check, and a valid ID owned by someone else returns **404**, not 403, so IDs cannot be probed.
 
 ---
 
-## The seeded deployment (the thesis, proven)
+## How a deployment comes online (v7)
 
-The seed sets up a **municipality**: one City Manager over three departments, seven services, three structurally different workflows. This is *data*, not spec — the engine is agnostic to it.
+`backend/src/seed.js`, run once per sale (`SEED_OWNER_EMAIL` / `SEED_OWNER_PASSWORD` env vars, defaults `owner@company.com` / `Password123!`): TRUNCATEs, inserts the fixed capability catalogue, one starter "General" department, two starter employee levels (**Staff** — no capabilities; **Manager** — `view_all` / `manage_employees` / `override`), one empty `company` row (`onboarding_completed = false`), and the Owner (`role: admin`). Nothing else — no employees, no services, no requests.
 
-| Department | Services | Workflow shape | Statuses / transitions |
-|---|---|---|---|
-| Public Works | `pothole`, `streetlight`, `water_leak` | dispatch + hold loop | 9 / 13 |
-| Sanitation | `bulky_waste`, `missed_collection` | lean scheduled pickup | 6 / 9 |
-| Licensing | `building_permit`, `business_license` | approval gate + reject terminal | 9 / 14 |
-
-The structural differences are what the demo points at: Licensing has a third terminal status (`rejected`) that the others do not; Sanitation has no hold loop and three fewer statuses; Public Works has an `awaiting_materials` hold. Same code, different JSON.
-
-All seven accept external users. A service with `accepts_external_users = false` is hidden from the `user` catalogue and rejects a `user` submission with 403.
+The Owner logs in, the "Customize your app in 1 minute" wizard appears (`OnboardingWizard.tsx`, gated on `onboardingCompleted`), and `PATCH /company/onboarding` (one-shot — a second call 409s) fills in company name/address/industry/branches/features/plan/branding. From there the console is live: the Owner hires staff (`POST /employees`, generated login email per `lib/employeeEmail.js`) and, if the demo needs a working service, builds one through **Add Service** (`POST /services`) — see `docs/demo/home_nursing.json` for a proven-valid form+workflow shape to adapt.
 
 ---
 
 ## Features
 
 ### Auth
-- `POST /auth/register` (creates the `user` kind only), `POST /auth/login`, `GET /auth/me`. No API path creates an admin.
-- **One login column, one lookup, one flow.** `login_identifier` holds an email (admins, external users) or a **4-digit employee number**. Employees are numbered `1000 + department_id × 100` plus the lowest free offset — a block of 100 per department, `1000–1099` for employees with no department. The server allocates it (`lib/employeeNumber.js`, advisory lock per block, 409 when a block is full); a client never supplies one. Migration 011 renumbered accounts in place.
-- Standard list params on every list endpoint: `page` / `pageSize` (≤100) / `status` / `state` / `serviceTypeId` / `priority` / `dateFrom` / `dateTo` / `q`. **`state` is `open|closed`, derived from `is_terminal`** — the old six-way `category` enum is gone.
+- `POST /auth/register` (creates the `user` kind only), `POST /auth/login` (body: `identifier` + `password` — accepts either an email or a generated employee login), `GET /auth/me`. No API path creates an admin outside the seed.
+- **One login column, one lookup, one flow.** `login_identifier` holds an email (admins, external users) or a **generated company email** for employees: two letters of the first name + `.` + last name + `@` + the company's wizard-set `email_domain` (e.g. `ha.qanazi@company.org`; a colliding name gets a number inserted, `ha2.qanazi@...`, via an advisory-lock retry — `lib/employeeEmail.js`). The server generates it; a client never supplies one. *(A legacy 4-digit-number allocator, `lib/employeeNumber.js`, is superseded and unused by `POST /employees` — pre-pivot rows keep their number.)*
+- Standard list params on every list endpoint: `page` / `pageSize` (≤100) / `status` / `state` / `serviceTypeId` / `priority` / `dateFrom` / `dateTo` / `q`. **`state` is `open|closed`, derived from `is_terminal`.**
 
 ### Dynamic form engine
 - 9 field types: `text`, `multiline`, `number`, `date`, `dropdown`, `radio`, `checkbox`, `photo`, `location`.
 - One generic backend validator (`lib/validateFormResponse.js`): required / type / min-max / option-membership, rejects unknown keys, errors keyed by field `id` (422). `photo` verifies attachment ownership; `location` must be exactly `{lat, lng}` in range.
-- The Flutter renderer draws any schema with zero per-service code. Client validation mirrors the server; the server's 422 is authoritative. An unknown field type renders a disabled placeholder and blocks submit if required.
+- The Flutter renderer (`mobile/lib/forms/dynamic_form.dart`) draws any schema with zero per-service code. Client validation mirrors the server; the server's 422 is authoritative. An unknown field type renders a disabled placeholder and blocks submit if required.
 - Seed-time validation (`lib/formSchema.js`) runs before any insert: unique ids, valid types, options present exactly when required, min ≤ max, bilingual labels, at most one location field per form.
 
 ### Dynamic workflow engine
-- **One module** (`lib/workflowEngine.js`) writes every `request.status` / `task.status`. Order: lock the request row → transition exists from the current status → Gate 1 (capability) and/or Gate 2 + ownership (actor) → note / completion-form requirements → write both statuses and a history row in one transaction → commit → fire notifications and webhooks.
+- **One module** (`lib/workflowEngine.js`) writes every `request.status` / `task.status`. Order: lock the request row → transition exists from the current status → Gate 1 (capability) and/or Gate 2 + ownership (actor) → note / completion-form requirements → write both statuses and a history row in one transaction → commit → fire notifications.
 - A transition is gated by **exactly one** of `required_capability` (oversight) or `actor` (`requester` | `assignee`). Transitions are one-way; a reassign or reopen is just another transition row. The engine has no concept of a loop.
-- All cross-service logic — dashboard open/closed grouping, filters, the task lock, cancel gating — reads **`is_terminal`**, never a status key. While the current status is terminal the task is locked (409); a reopen transition unlocks it.
+- All cross-service logic — dashboard open/closed grouping, filters, the task lock, cancel gating, SLA escalation — reads **`is_terminal`**, never a status key. While the current status is terminal the task is locked (409); a reopen transition unlocks it.
 - Generic `GET`/`POST /requests/{id}/transitions` serve actor-gated transitions with `expected_status` for optimistic concurrency (409 on stale — exactly one concurrent fire wins). Oversight actions use `PATCH /requests/{id}/assign` · `/priority` · `/status`.
 
 ### User app (Flutter)
 Login/registration · Home · Service catalogue · Create Request (dynamic form, map pin picker) · My Requests · Request Details with timeline, comments, attachments, cancel, confirm/dispute. 30s polling on lists; detail pages refresh on focus.
 
 ### Employee app (Flutter)
-Home + My Tasks (list ⇄ map toggle) · Task Details · workflow transitions · Complete Task (completion form through the same renderer). `GET /tasks/{id}` embeds the requester's name and phone but **never their email**, and strips every `form_response` field whose schema sets `visible_to_employee: false`.
+Home + My Tasks · Task Details · workflow transitions · Complete Task (completion form through the same renderer) · plus the seven workforce modules: Time Clock, Schedule, Time Off (a normal service type through the request engine, themed as its own screen — not a special case, I1), Checklists, Directory, Knowledge Base, Events, Training. `GET /tasks/{id}` embeds the requester's name and phone but **never their email**, and strips every `form_response` field whose schema sets `visible_to_employee: false`.
 
 ### Web console (React)
-`LoginPage` · `DashboardPage` (open vs closed grouping, per-service and per-priority totals, 30-day chart) · `RequestsPage` + `RequestDetailPane` + `RequestsMapView` (filters, timeline, comments, assign/reassign, priority, status override) · `EmployeesPage` (list, add/edit/activate/deactivate/reset password, workload dialog, employee number column) · `ReportsPage` (+ CSV export, injection guard on `= + - @`) · `AuditPage` · `ServicesPage` · `OrgPage` · `LevelsPage` · `WebhooksPage`.
-
-### Config API, webhooks, external users
-- **`POST /config/services`** (admin) onboards a whole sector from one JSON body — service + workflow + both forms. It reuses the seed-time validators **verbatim**, creates or reuses the department, resolves an optional owner by login, and 409s a duplicate `service.key`. This is the thesis in one call: a new sector with zero code change. `GET /config/services` lists them; `PATCH` sets `enabled` / `owner`.
-- **Outbound signed webhooks** (`lib/webhooks.js`): `request_created · status_changed · assigned · sla_breached`, fired after commit, fire-and-forget, HMAC-SHA256 in `X-MonitorFlow-Signature`. `assigned` is derived from a transition's `notify` containing `assigned_to` — no status key hardcoded. Secrets are write-only.
-- `POST /config/employees` creates a root employee (`manager_id NULL`), which breaks the bootstrap deadlock on a clean handover where nobody holds `manage_employees` yet.
+`LoginPage` · `OnboardingWizard` (first-login gate) · `DashboardPage` (open vs closed grouping, per-service/priority/department totals, 30-day activity chart with an open/closed stacked split, SLA-breach and reopen-rate tiles, per-employee open-workload panel) · `RequestsPage` + `RequestDetailPane` + `RequestsMapView` · `EmployeesPage` · `DepartmentsPage` · `LevelsPage` · `ReportsPage` (+ CSV export, injection guard on `= + - @`) · `AuditPage` · `AddServiceWizard` · `TimeClockPage` · `SchedulePage` · `ChecklistsPage` · `DirectoryPage` · `KnowledgeBasePage` · `EventsPage` · `TrainingPage`.
 
 ### Notifications and SLA
 - Triggers: task assigned/reassigned → assignee; any status change → request owner; task completed → owner; employee rejected task → assignee's manager; comment added → the other party. Targets are **relationships** on the transition data (`created_by` / `assigned_to` / `assignee_manager`), resolved at fire time. Messages are bilingual.
-- **Escalation sweep** (`lib/escalation.js`, `ESCALATION_SWEEP_MS`, default 5 min, `0` disables): a request sitting past its status's `sla_minutes` escalates **up the manager tree** and fires the `sla_breached` webhook.
+- **Escalation sweep** (`lib/escalation.js`, `ESCALATION_SWEEP_MS`, default 5 min, `0` disables in tests): a request sitting past its status's `sla_minutes` escalates **up the manager tree**.
 
 ### Files
-`POST /files` (multipart, `requestId` XOR `taskId`, ≤5 MB → 422, MIME by magic bytes so `.exe` renamed `.jpg` is rejected, UUID names outside web root). `GET /files/{id}` is authorized per the download rules, else 404. Two-step photo contract: upload, then put the returned id into `form_response`.
+`POST /files` (multipart, ≤5 MB → 422, MIME by magic bytes so `.exe` renamed `.jpg` is rejected, UUID names outside web root). `GET /files/{id}` is authorized per the download rules, else 404. Two-step photo contract: upload, then put the returned id into `form_response`.
 
 ### Map
-`location` field type picked on an OpenStreetMap map in the User app (`flutter_map`, tap to pin). Employee My Tasks and web Requests both have list ⇄ map toggles (`react-leaflet` + clustering on web). OSM tiles, no API keys. Map views render one `pageSize=100` page under the current filters. **Continuous GPS tracking is deliberately out of scope** (CLAUDE.md I10 — outcomes are measured, never behaviour).
+`location` field type picked on an OpenStreetMap map in the User app (`flutter_map`, tap to pin). Employee task views and web Requests both have list ⇄ map toggles. OSM tiles, no API keys. **Continuous GPS tracking is deliberately out of scope** (CLAUDE.md I10 — outcomes are measured, never behaviour).
 
 ### Branding
-Build-time, per deployment (`web/src/brand.ts`, `web/.env.example`). Company name `{en, ar}` and an optional logo come from `VITE_BRAND_*` at build time, rendered by one `<Wordmark>` component (shell + login) and used for the tab title and favicon. This deployment ships as **Municipality of Nablus / بلدية نابلس** with the municipal crest. Mobile app name and icon are build-time too (`pubspec.yaml` / `AndroidManifest.xml` / `Info.plist`). **`X-MonitorFlow-Signature` is never rebranded** — it is a wire protocol subscribers verify, not a company name.
+Build-time default + a scoped runtime override post-onboarding. The generic "MonitorFlow" name/mark come from `VITE_BRAND_*` at build time, used pre-auth (login page, tab title) since those render before any company is known. Once an Owner completes onboarding, `<Wordmark>` **in the console shell only** prefers the company's own name and uploaded logo, riding the authenticated `/auth/login` / `/auth/me` payload. Mobile app name/icon stay build-time only.
 
 ### Bilingual + RTL
 Every user-facing label is `{en, ar}`, enforced by a DB `CHECK` on both keys. The web console flips between LTR and RTL from CSS logical properties; Flutter uses directional insets and alignments. Machine keys (status keys, field ids, option values, capability keys) stay plain ASCII.
@@ -144,22 +110,15 @@ Every user-facing label is `{en, ar}`, enforced by a DB `CHECK` on both keys. Th
 
 ## Seeded accounts
 
-`npm run seed` (re-run to reset). Password for every account: `Password123!`
+`npm run seed` (re-run to reset; refuses a database that already has users unless `SEED_FORCE=true`, since it TRUNCATEs every table).
 
-| Login | Name | Kind | Level / department |
-|---|---|---|---|
-| `admin@city.gov` | Adam Admin | admin | — (configures; holds no capabilities) |
-| `1000` | Maya Manager | employee | Manager · no department (org root) |
-| `1100` | Rami Roads | employee | Manager · Public Works |
-| `1101` | Ziad Field | employee | Field Officer · Public Works |
-| `1102` | Zaid Field | employee | Field Officer · Public Works |
-| `1200` | Widad Waste | employee | Manager · Sanitation |
-| `1201` | Sami Collector | employee | Field Officer · Sanitation |
-| `1300` | Peter Permits | employee | Manager · Licensing |
-| `1301` | Lina Inspector | employee | Field Officer · Licensing |
-| `resident@city.gov` | Rania Resident | user | — |
+| Login | Kind | Notes |
+|---|---|---|
+| `owner@company.com` (or `SEED_OWNER_EMAIL`) | admin | Password `Password123!` (or `SEED_OWNER_PASSWORD`). Configures; holds no capabilities. First login opens the onboarding wizard. |
 
-Two levels are seeded: **Manager** (every capability) and **Field Officer** (none). Employees sign in with the number, not the email — the email column is contact information only.
+That's the entire seed — no employees, no services, no requests. Everything else is created live: complete onboarding as the Owner, then hire staff (`POST /employees`, they log in with their generated company email) and, if a demo needs one, build a service through Add Service.
+
+The backend test suite builds its own richer fixture org (a two-subtree hierarchy + one working service) through the same live API — see "Testing" below.
 
 ---
 
@@ -170,67 +129,38 @@ Two levels are seeded: **Manager** (every capability) and **Field Officer** (non
 - Web: `cd web && npm run dev` → http://localhost:5173 (backend must be on `:3000` for the proxy).
 - Mobile: a Windows desktop build needs Developer Mode; the Android emulator uses `10.0.2.2` automatically. A release APK on a physical device needs `--dart-define=API_BASE_URL=http://<host>/api/v1`.
 
-The seed refuses to run against a database that already has users, because it TRUNCATEs every table. Override with `SEED_FORCE=true` when you really mean it.
-
-### New-company handover
-
-1. Edit `backend/src/company-config.js` — the company's departments and services. *(Or onboard sectors through `POST /config/services` after deployment.)*
-2. Change `adminAccount` and the passwords in `seed.js`.
-3. Set the branding in `web/.env` (see `web/.env.example`) and rebuild the web app.
-4. `SEED_DEMO_DATA=false npm run seed` — seeds departments, services, and the admin only.
-5. The admin creates the first root employee through `POST /config/employees`; that person builds the rest of the tree in-app.
-
-### Verifying a handover on a scratch database
-
-Rehearse against a throwaway database, never the dev one. Verified 2026-07-18: migrations 001–011 apply from scratch and the seed allocates the same employee numbers as the in-place migration.
-
-```bash
-# from backend/ — create, migrate, seed a scratch DB
-node -e "require('dotenv').config();const {Client}=require('pg');const u=new URL(process.env.DATABASE_URL);u.pathname='/postgres';const c=new Client({connectionString:u.toString()});c.connect().then(()=>c.query('CREATE DATABASE monitorflow_scratch')).then(()=>process.exit(0))"
-DB=$(node -e "require('dotenv').config();const u=new URL(process.env.DATABASE_URL);u.pathname='/monitorflow_scratch';console.log(u.toString())")
-DATABASE_URL="$DB" npm run migrate
-DATABASE_URL="$DB" SEED_DEMO_DATA=false npm run seed
-```
-
-Expected clean-handover state: 3 departments, 7 services (14 form definitions + 7 workflows), **1 user — the admin only**, 0 requests / tasks / audit rows.
-
 ---
 
 ## Testing
 
-- **Backend unit** (`npm test`, `node:test`): form validation, workflow transition resolution, form/workflow schema validation, webhook signing, employee-number allocation. Part of the **98/98** total.
-- **Flutter widget** (`flutter test`): the dynamic renderer (schema → widgets, required blocking, server-error application) and the login screen. **22/22.**
-- **Web:** build + lint only — no component or E2E tests at this scale, so `docs/WEB_E2E_CHECKLIST.md` is the gate instead: a per-page pass/fail list covering the cross-cutting rules (RTL, bilingual, loading/empty/error, 401/403/404) and each page's own actions. **Happy path walked by hand 2026-07-19** (English, local, seeded data) — every page correct. The checklist's negatives, Arabic/RTL, and failure states are still open.
-- **API / permission suite** (`test/permissions.test.js`, harness in `testlib/harness.js`): **14/14, started 2026-07-18.** Runs against a spawned server on a throwaway `monitorflow_test` database — created, migrated and seeded per run, so the dev database is never touched. No new dependency: the server is spawned as a subprocess and driven with built-in `fetch`, which also exercises the real error middleware.
-  - **Covered:** unauthenticated and malformed-token 401 · Gate 1 (a Field Officer inside the subtree is refused assign / priority / override / employee management / CSV export, with a positive control proving the endpoint works for a capable level) · Gate 2 (a fully capable head is 404 on another subtree's request for both read and write; each head sees only their own; the org root reaches every subtree; an out-of-subtree assignee is 422 while the same call with an in-subtree assignee is 200) · admins refused on every operational endpoint and the only kind allowed on config · cross-user request 404-not-403, and a fresh user's list scoped to them.
-- **Workflow-engine negatives** (`test/workflowNegatives.test.js`): **15/15, added 2026-07-18.** Every case is derived from the stored `workflow_definition` at runtime — no status key is hardcoded, so the suite works against any seeded sector, not just this one.
-  - **Covered:** override to a status not in the workflow 422 · override with no note 422 · override to the status it already holds 409 · override back to the initial status 422 · a transition that exists but not from the current status 409 · unknown transition key · missing transition key 422 · wrong party on an assignee-gated transition · stale `expected_status` 409 · **two concurrent identical fires — exactly one 200 and one 409** · duplicate assign 409 · reassignment to a different employee 200 · deactivating an employee who holds an open task 409 · a terminal request offers no transitions and refuses one fired anyway 409 · a deactivated account's already-issued JWT 401.
-  - Later additions to the same file: the cancel-vs-assign race (one wins, the other 409) and confirm-before-done 409.
-- **Submission, upload and file-access negatives** (`test/submissionNegatives.test.js`): **added 2026-07-19.** Dynamic-form negatives through the API (unknown field id, missing required, out-of-range — all 422 field-keyed, with a positive control) · an employee cannot submit · an internal-only service is hidden from the external catalogue and 403s a user submission · duplicate `service.key` 409 with no second row · `.exe` renamed `.jpg` rejected by magic bytes · upload >5 MB rejected · a genuine JPEG accepted · downloading another user's file 404, and a non-existent id the same 404 so ids cannot be probed · CSV export refused for a field employee and for a user, allowed for a capable head.
-- **Every §14 must-pass negative now has a test.** The automated gate is closed; what remains is manual.
-
-  Suites get their own database and port (derived from the name passed to `setup()`), because `node --test` runs test files in parallel and they would otherwise drop each other's data mid-run.
-- **Manual acceptance: not recorded.** §14 asks for the core flows on every seeded service, on the deployed build, run by the student who did not write that layer.
+- **Backend unit** (`backend/test/*.test.js`, `node:test`, no server/DB needed): form validation, workflow transition resolution, form/workflow schema validation, time-clock attendance math, employee-number allocation. 5 files, 60 tests.
+- **Backend API-integration + permission suite** (`backend/test/*.api.test.js` + the harness smoke test, `node:test`, real spawned server + throwaway Postgres DB per suite): 8 files, 32 tests, covering CLAUDE.md §14's must-pass negatives — own-resource 404, wrong-capability 403, cross-subtree assign refusal, concurrent-transition and cancel-vs-assign races, duplicate assign, deactivate-with-open-task 409, deactivated JWT rejected on next call (not just login), employee-cap hire refusal, file upload/download negatives, non-capable CSV export 403, onboarding catalogue validation + one-shot 409.
+  - Harness: `backend/testlib/harness.js`. Each suite gets its own database and port (derived from the name passed to `setup()`, since `node --test` runs files in parallel) and its own fixture org built through the live API (onboarding → a two-subtree employee hierarchy → one real service with a form + workflow), because v7's seed ships none of that.
+  - **`npm test` runs both sets together: 92/92.**
+- **Flutter widget** (`mobile/test/`): the dynamic renderer (`dynamic_form_test.dart` — schema → widgets, required blocking, bounds, prefill, the location field, server-error application) and the login screen (`login_screen_test.dart`). **22/22**, `flutter analyze` clean.
+- **Web:** build + lint only — no component or E2E tests at this scale, so `docs/WEB_E2E_CHECKLIST.md` is the gate instead: a per-page pass/fail list covering the cross-cutting rules (RTL, bilingual, loading/empty/error, 401/403/404) and each page's own actions. Reconciled to v7 and partially live-verified 2026-08-03 (see "Status" above) — most rows are still open.
+- **CI** (`.github/workflows/test.yml`, push/PR to `main`): backend job (Postgres+PostGIS service container, `npm test`), web job (`npm run build && npm run lint`), mobile job (`flutter analyze && flutter test`).
+- **Manual acceptance: not recorded.** §14 asks for the core flows on every seeded service, on the deployed build, run by the student who did not write that layer — blocked on both a deployment and a seeded/created service existing to run it against.
 
 ---
 
 ## Documented limitations (state these in the report; do not "fix" them)
 
-Redundant `task.status` (intentional denormalization) · immutable definitions, no versioning — changing a live service means adding a new one and disabling the old · reassignment overwrites `employee_id` (the history row is the audit) · polling latency, no WebSockets or push · 24h JWT, no refresh or revocation · email enumeration on register · temporary passwords not force-changed · no self-service password reset · no automated frontend E2E · webhooks are at-most-once with no retry or delivery log · map views cap at 100 rows per filtered view · single organisation per deployment.
+Redundant `task.status` (intentional denormalization) · immutable definitions, no versioning — changing a live service means adding a new one and disabling the old · reassignment overwrites `employee_id` (the history row is the audit) · polling latency, no WebSockets or push · 24h JWT, no refresh or revocation · email enumeration on register · temporary passwords not force-changed · no self-service password reset · no automated frontend E2E · map views cap at 100 rows per filtered view · single organisation per deployment · onboarding is one-shot with no in-app edit · the wizard's feature-module selection doesn't gate module access (every module is reachable by capability alone regardless of what was selected).
 
 ## Deliberately not built
 
-Visual Form Builder or Workflow Config UI · standalone operations-monitor page · WebSocket live refresh · push notifications · automatic assignment (the server returns a subtree-scoped candidate list; a human chooses) · live GPS tracking, location history, behavioural monitoring · signature capture · draft saving · satisfaction ratings · multi-tenancy · payments · advanced BI · named vendor integrations (MonitorFlow emits webhooks; the deployer wires them) · request deadlines · form/workflow versioning · refresh tokens.
+Visual Form Builder or Workflow Config UI · standalone operations-monitor page · WebSocket live refresh · push notifications · automatic assignment (the server returns a subtree-scoped candidate list; a human chooses) · live GPS tracking, location history, behavioural monitoring · signature capture · draft saving · satisfaction ratings · multi-tenancy · payments · advanced BI · named vendor integrations (the onboarding wizard's server-side Nominatim geocode proxy is the one deliberate exception) · self-service forgot/reset password · request deadlines · form/workflow versioning · refresh tokens.
 
 ---
 
 ## Proposed extensions (approved in principle, none built)
 
-These were drafted **before** the Operiva migration, so their original wording used the retired "monitor" role and status categories; the summaries below are restated in the current model. None has a start date. Each would need a deliberate both-students re-scope, and the release gate above should close first.
+None has a start date. Each would need a deliberate both-students re-scope, and the release gate above should close first.
 
 - **AI layer.** One shared module and one env var; every feature's output passes through a validator that already exists. Form auto-fill (draft a `form_response` from a sentence, guarded by `validateFormResponse.js`), triage suggestion (advisory only — never writes status or priority), and a seed-time config generator (LLM emits a form + workflow pair, piped through the existing seed-time validators, human reviews and commits). Adds no page and no runtime config endpoint.
 - **Crew + internal chat.** One task with a lead plus a `task_assignee` set — chosen so `request 1—1 task`, the task lock, and the workflow engine stay untouched; the lead drives the workflow, crew members read/comment/upload. Then a `visibility` column on `request_comment` (`customer` | `internal`) for an internal oversight↔crew thread that users never see. The main cost is the permission matrix changes, each of which needs a test.
-- **Ops analytics + PDF report.** Mine `request_status_history`, which already captures every transition with a timestamp and actor: time to resolution, time in status, first-response time, per-employee throughput. One read-only endpoint, cards on the existing dashboard, and a client-side PDF beside the existing CSV. *Caveat: the seed can insert rows near one instant, collapsing durations to ~0 — stagger `created_at` and `changed_at` before demoing time metrics.*
+- **Ops analytics + PDF report.** Mine `request_status_history`, which already captures every transition with a timestamp and actor: time to resolution, time in status, first-response time, per-employee throughput — the dashboard's new SLA-breach/reopen-rate/workload panels (2026-08-03) are a first step in this direction. A client-side PDF beside the existing CSV would round it out.
 
 ---
 
