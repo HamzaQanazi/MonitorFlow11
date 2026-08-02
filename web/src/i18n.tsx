@@ -26,6 +26,7 @@ const dict: Record<string, Loc> = {
   nav_timeclock: { en: 'Time Clock', ar: 'ساعة الدوام' },
   nav_schedule: { en: 'Schedule', ar: 'الجدولة' },
   nav_checklists: { en: 'Checklists', ar: 'القوائم' },
+  nav_directory: { en: 'Directory', ar: 'الدليل' },
   nav_audit: { en: 'Audit Log', ar: 'سجل التدقيق' },
   nav_add_service: { en: 'Add Service', ar: 'إضافة خدمة' },
   nav_departments: { en: 'Departments', ar: 'الدوائر' },
@@ -483,6 +484,19 @@ const dict: Record<string, Loc> = {
   cl_add_item: { en: '+ Add item', ar: '+ إضافة عنصر' },
   cl_save_template: { en: 'Save template', ar: 'حفظ القالب' },
   cl_saving: { en: 'Saving…', ar: 'جارٍ الحفظ…' },
+
+  // directory (communication feature group — company-wide, not subtree-scoped)
+  dir_title: { en: 'Directory', ar: 'الدليل' },
+  dir_search_ph: { en: 'Search name…', ar: 'ابحث بالاسم…' },
+  dir_search_aria: { en: 'Search by name', ar: 'ابحث بالاسم' },
+  dir_all_branches: { en: 'All branches', ar: 'كل الفروع' },
+  dir_load_err: { en: 'Couldn’t load the directory:', ar: 'تعذّر تحميل الدليل:' },
+  dir_loading: { en: 'Loading directory…', ar: 'جارٍ تحميل الدليل…' },
+  dir_none_h: { en: 'No colleagues yet', ar: 'لا زملاء بعد' },
+  dir_no_match_h: { en: 'No matching colleagues', ar: 'لا زملاء مطابقين' },
+  dir_you: { en: 'You', ar: 'أنت' },
+  col_phone: { en: 'Phone', ar: 'الهاتف' },
+  col_role: { en: 'Role', ar: 'الدور' },
 
   // levels & capabilities (Gate 1 configuration — admin only)
   lvl_title: { en: 'Levels & Capabilities', ar: 'المستويات والصلاحيات' },

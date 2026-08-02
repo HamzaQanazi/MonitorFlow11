@@ -90,6 +90,7 @@ tags:
   - name: files
   - name: timeclock       # employee self-service: clock in/out, breaks, manual hours, in-shift entries
   - name: schedule        # manager roster (shift templates + per-date assignment) + employee "my schedule"
+  - name: directory       # company-wide staff directory (communication feature group) — deliberately not Gate-2 scoped
 
 paths:
   # ── Auth ───────────────────────────────────────────────────────────────────
@@ -899,6 +900,48 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Validation' }
+
+  # ── Directory (communication feature group) ─────────────────────────────────
+  # Deliberate exception to the Gate-2 subtree model everywhere else in this
+  # file: a directory's job is letting any employee find any colleague, so
+  # this is company-wide, not subtree-scoped. Still requireAuth + role check
+  # (the `user` role — external submitters — gets 403).
+  /directory:
+    get:
+      tags: [directory]
+      summary: Company-wide staff directory (admin + employee accounts only).
+      parameters:
+        - { $ref: '#/components/parameters/page' }
+        - { $ref: '#/components/parameters/pageSize' }
+        - { name: departmentId, in: query, required: false, schema: { type: integer } }
+        - { name: branchId, in: query, required: false, schema: { type: integer } }
+        - { name: q, in: query, required: false, schema: { type: string }, description: name substring }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  directory:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+                        phone: { type: string, nullable: true }
+                        email: { type: string, nullable: true }
+                        isYou: { type: boolean }
+                        departmentName: { $ref: '#/components/schemas/LocalizedText' }
+                        branchName: { $ref: '#/components/schemas/LocalizedText', nullable: true }
+                        levelName: { $ref: '#/components/schemas/LocalizedText', nullable: true }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  total: { type: integer }
+        '400': { description: Invalid query params }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   # ── Notifications ────────────────────────────────────────────────────────────
   /notifications:

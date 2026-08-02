@@ -328,6 +328,17 @@ const Map<String, Map<String, String>> _dict = {
   'cl_none_sub': {'en': 'Your submitted checklists will appear here.', 'ar': 'ستظهر هنا القوائم التي أرسلتها.'},
   'cl_submissions': {'en': 'Submitted', 'ar': 'المُرسَلة'},
 
+  // company directory (communication feature group — company-wide, not subtree-scoped)
+  'dir_title': {'en': 'Directory', 'ar': 'الدليل'},
+  'dir_search_ph': {'en': 'Search name…', 'ar': 'ابحث بالاسم…'},
+  'dir_load_fail': {'en': 'Could not load the directory.', 'ar': 'تعذّر تحميل الدليل.'},
+  'dir_none_title': {'en': 'No colleagues yet', 'ar': 'لا زملاء بعد'},
+  'dir_no_match_title': {'en': 'No matching colleagues', 'ar': 'لا زملاء مطابقين'},
+  'dir_you': {'en': 'You', 'ar': 'أنت'},
+  'dir_call': {'en': 'Call', 'ar': 'اتصال'},
+  'dir_email': {'en': 'Email', 'ar': 'بريد إلكتروني'},
+  'dir_no_phone': {'en': 'Could not open the phone dialer', 'ar': 'تعذّر فتح تطبيق الاتصال'},
+
   // form response view (shared)
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},
   'fr_no': {'en': 'No', 'ar': 'لا'},
