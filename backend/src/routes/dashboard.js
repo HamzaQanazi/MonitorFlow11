@@ -4,22 +4,10 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
-const { subtreeIds } = require('../lib/scope');
+const { ownerScopeIds } = require('../lib/scope');
 
 const router = express.Router();
 router.use(requireAuth, requireCapabilityOrAdmin('view_all'));
-
-// Gate 2: an oversight employee's queries are scoped to the services their
-// subtree owns. The admin (Owner) has no subtree — they configure the whole
-// deployment (I2) — so they see every service's data (single-org per
-// deployment, so "company-wide" is just "no owner_id filter").
-async function ownerScopeIds(user) {
-  if (user.role === 'admin') {
-    const { rows } = await pool.query('SELECT id FROM users');
-    return rows.map((r) => r.id);
-  }
-  return subtreeIds(user.id);
-}
 
 router.get('/stats', async (req, res, next) => {
   try {

@@ -8,6 +8,7 @@
     "dev": "node --watch src/index.js",
     "migrate": "node src/migrate.js",
     "seed": "node src/seed.js",
+    "seed:checklists": "node src/seedChecklists.js",
     "test": "node --test"
   },
   "dependencies": {

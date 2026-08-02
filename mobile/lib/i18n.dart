@@ -314,11 +314,19 @@ const Map<String, Map<String, String>> _dict = {
 
   // time off (employee self-service — submit, list, detail)
   'to_title': {'en': 'My Time Off', 'ar': 'إجازاتي'},
-  'to_detail_title': {'en': 'Time Off', 'ar': 'إجازة'},
   'to_new': {'en': 'Request time off', 'ar': 'طلب إجازة'},
   'to_load_fail': {'en': 'Could not load your time off requests.', 'ar': 'تعذّر تحميل طلبات إجازتك.'},
   'to_none_title': {'en': 'No time off requests yet', 'ar': 'لا طلبات إجازة بعد'},
   'to_none_sub': {'en': 'Your submitted time off requests will appear here.', 'ar': 'ستظهر هنا طلبات الإجازة التي أرسلتها.'},
+
+  // checklists (employee self-service — pick a template, submit, list, detail)
+  'cl_title': {'en': 'My Checklists', 'ar': 'قوائمي'},
+  'cl_new_template': {'en': 'New', 'ar': 'جديد'},
+  'cl_load_fail': {'en': 'Could not load checklists.', 'ar': 'تعذّر تحميل القوائم.'},
+  'cl_templates_none': {'en': 'No checklists set up yet', 'ar': 'لا توجد قوائم بعد'},
+  'cl_none_title': {'en': 'No checklists submitted yet', 'ar': 'لا توجد قوائم مُرسلة بعد'},
+  'cl_none_sub': {'en': 'Your submitted checklists will appear here.', 'ar': 'ستظهر هنا القوائم التي أرسلتها.'},
+  'cl_submissions': {'en': 'Submitted', 'ar': 'المُرسَلة'},
 
   // form response view (shared)
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},

@@ -15,6 +15,7 @@ import '../shared/profile_screen.dart';
 import '../theme.dart';
 import '../widgets/state_chips.dart';
 import '../widgets/states.dart';
+import 'checklists_screen.dart';
 import 'schedule_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_map_view.dart';
@@ -137,6 +138,13 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             tooltip: i18n.tr('to_title'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const TimeOffScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.checklist_outlined),
+            tooltip: i18n.tr('cl_title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ChecklistsScreen()),
             ),
           ),
           NotificationBell(

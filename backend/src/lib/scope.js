@@ -36,4 +36,17 @@ async function ownerInScope(rootId, targetId, db = pool) {
   return rows.length > 0;
 }
 
-module.exports = { subtreeIds, ownerInScope };
+// Gate 2's "whole company" case: the admin (Owner) has no subtree — they
+// configure the deployment (I2), not a manager_id — so any owner-scoped
+// query for them means every user (single-org per deployment, so "company-
+// wide" is just "no owner_id filter"). An oversight employee gets their
+// actual subtree.
+async function ownerScopeIds(user, db = pool) {
+  if (user.role === 'admin') {
+    const { rows } = await db.query('SELECT id FROM users');
+    return rows.map((r) => r.id);
+  }
+  return subtreeIds(user.id, db);
+}
+
+module.exports = { subtreeIds, ownerInScope, ownerScopeIds };

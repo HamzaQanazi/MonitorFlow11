@@ -347,6 +347,10 @@ paths:
                 acceptsEmployeeSubmitters:
                   type: boolean
                   description: whether an employee (not just a self-registered user) may submit to this service, e.g. Time Off
+                featureKey:
+                  type: string
+                  nullable: true
+                  description: optional tag from the onboarding feature catalogue (lib/onboardingOptions.js), e.g. time_off, forms_checklists — lets clients tell same-flagged services apart
 
                 ownerId: { type: integer, description: an existing employee — the Gate-2 visibility anchor }
                 requestFields:
@@ -1118,6 +1122,36 @@ paths:
                         endTime: { type: string }
         '400': { description: from/to missing or malformed }
 
+  /checklists/stats:
+    get:
+      tags: [checklists]
+      summary: >
+        Per-checklist-template (service_type tagged feature_key =
+        'forms_checklists') submitted/logged counts, today and all-time.
+        Requires view_all (Gate 1) + subtree scope (Gate 2). No due-date/
+        cadence engine exists, so this reports real counts, not an "expected
+        count" ratio.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        serviceTypeId: { type: integer }
+                        name: { $ref: '#/components/schemas/LocalizedText' }
+                        submittedToday: { type: integer }
+                        loggedToday: { type: integer }
+                        submittedTotal: { type: integer }
+                        loggedTotal: { type: integer }
+                        lastSubmittedAt: { type: string, format: date-time, nullable: true }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -1235,6 +1269,7 @@ components:
         enabled: { type: boolean }
         acceptsExternalUsers: { type: boolean }
         acceptsEmployeeSubmitters: { type: boolean }
+        featureKey: { type: string, nullable: true }
 
     TransitionDef:
       type: object

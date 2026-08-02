@@ -1,9 +1,11 @@
-// Time Off request detail (employee self-service): status, timeline, form
-// answers, and whatever the requester's own actions are (from GET
-// /requests/{id}/transitions — rendered generically, no transition key
-// hardcoded here, I4). Trimmed from the User app's RequestDetailScreen:
-// Time Off has no confirm/dispute/"resolved?" step (submit → oversight
-// approve/reject, no task), so that copy doesn't fit here.
+// Self-service request detail (employee-submitted, no task): status,
+// timeline, form answers, and whatever the requester's own actions are (from
+// GET /requests/{id}/transitions — rendered generically, no transition key
+// hardcoded here, I4). Trimmed from the User app's RequestDetailScreen: these
+// requests have no confirm/dispute/"resolved?" step (submit → done, no
+// task), so that copy doesn't fit here. Shared by Time Off and Checklists —
+// ponytail: the class/file name still says "TimeOff" from when this only
+// served one feature; rename to something generic if a third one shows up.
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -185,7 +187,7 @@ class _TimeOffDetailScreenState extends State<TimeOffDetailScreen> {
   Widget build(BuildContext context) {
     final i18n = context.watch<I18n>();
     return Scaffold(
-      appBar: AppBar(title: Text('${i18n.tr('to_detail_title')} #${widget.requestId}')),
+      appBar: AppBar(title: Text('${i18n.tr('rd_title')} #${widget.requestId}')),
       body: _body(i18n),
     );
   }

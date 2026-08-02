@@ -12,6 +12,7 @@ const { withTx, logAudit } = require('../lib/audit');
 const { validateFieldSchema } = require('../lib/formSchema');
 const { validateWorkflowDefinition } = require('../lib/workflowSchema');
 const { isBilingual } = require('../lib/i18nLabel');
+const { FEATURE_KEYS } = require('../lib/onboardingOptions');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -38,7 +39,8 @@ router.get('/', async (req, res, next) => {
     }
     const { rows } = await pool.query(
       `SELECT st.id, st.name, st.department_id, d.name AS department_name,
-              st.default_priority, st.accepts_external_users, st.accepts_employee_submitters
+              st.default_priority, st.accepts_external_users, st.accepts_employee_submitters,
+              st.feature_key
        FROM service_type st
        JOIN department d ON d.id = st.department_id
        WHERE st.enabled ${externalOnly ? 'AND st.accepts_external_users' : ''} ${ownedClause}
@@ -54,6 +56,7 @@ router.get('/', async (req, res, next) => {
         defaultPriority: r.default_priority,
         acceptsExternalUsers: r.accepts_external_users,
         acceptsEmployeeSubmitters: r.accepts_employee_submitters,
+        featureKey: r.feature_key,
       })),
     });
   } catch (err) {
@@ -126,6 +129,9 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
     if (typeof b.acceptsEmployeeSubmitters !== 'boolean') {
       errors.push('acceptsEmployeeSubmitters must be a boolean');
     }
+    if (b.featureKey != null && !FEATURE_KEYS.has(b.featureKey)) {
+      errors.push('featureKey must be null or a known onboarding feature key');
+    }
     if (!Number.isInteger(b.ownerId)) errors.push('ownerId is required');
 
     errors.push(...validateFieldSchema(b.requestFields).map((e) => `requestFields ${e}`));
@@ -170,8 +176,8 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
       const { rows: st } = await tx.query(
         `INSERT INTO service_type
            (name, department_id, default_priority, enabled, owner_id, key,
-            accepts_external_users, accepts_employee_submitters)
-         VALUES ($1::jsonb, $2, $3, TRUE, $4, $5, $6, $7)
+            accepts_external_users, accepts_employee_submitters, feature_key)
+         VALUES ($1::jsonb, $2, $3, TRUE, $4, $5, $6, $7, $8)
          RETURNING id`,
         [
           JSON.stringify(b.name),
@@ -181,6 +187,7 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
           key,
           b.acceptsExternalUsers,
           b.acceptsEmployeeSubmitters,
+          b.featureKey ?? null,
         ]
       );
       const serviceTypeId = st[0].id;

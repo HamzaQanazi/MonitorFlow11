@@ -1,11 +1,12 @@
 // My Time Off (employee self-service): list of the employee's own submitted
-// requests plus a button to request more. GET /requests is now scoped to
-// "own rows OR subtree-owned rows" for an employee (the Time Off engine
-// change), so a plain employee sees exactly their own submissions here —
-// no Time-Off-specific filtering in this file. Reuses the generic
-// CreateRequestScreen/DynamicForm (I4) for submission; Time Off is assumed
-// to be the only service with acceptsEmployeeSubmitters right now, so this
-// screen doesn't offer a multi-service catalogue.
+// requests plus a button to request more. GET /requests is scoped to "own
+// rows OR subtree-owned rows" for an employee (the Time Off engine change),
+// so filtering to this service's own id below is what keeps a manager's
+// subtree-owned requests (and, since Checklists shipped, other self-service
+// requests) out of this list. Reuses the generic CreateRequestScreen/
+// DynamicForm (I4) for submission. Time Off is identified by featureKey ==
+// 'time_off' (lib/onboardingOptions.js's catalogue), not by being the only
+// acceptsEmployeeSubmitters service — Checklists shares that flag too.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -58,11 +59,15 @@ class _TimeOffScreenState extends State<TimeOffScreen> {
       final services = (results[1]['services'] as List<dynamic>)
           .map((s) => ServiceType.fromJson(s as Map<String, dynamic>))
           .toList();
+      final service = services
+          .where((s) => s.acceptsEmployeeSubmitters && s.featureKey == 'time_off')
+          .firstOrNull;
       setState(() {
         _requests = (results[0]['requests'] as List<dynamic>)
             .map((r) => RequestSummary.fromJson(r as Map<String, dynamic>))
+            .where((r) => service != null && r.serviceTypeId == service.id)
             .toList();
-        _service = services.where((s) => s.acceptsEmployeeSubmitters).firstOrNull;
+        _service = service;
         _error = null;
       });
     } catch (e) {

@@ -157,12 +157,17 @@ class ServiceType {
   final Loc name;
   final Loc departmentName;
   final bool acceptsEmployeeSubmitters;
+  // Optional tag from the onboarding feature catalogue (e.g. 'time_off',
+  // 'forms_checklists') — lets self-service screens tell apart services that
+  // all share acceptsEmployeeSubmitters == true.
+  final String? featureKey;
 
   const ServiceType({
     required this.id,
     required this.name,
     required this.departmentName,
     this.acceptsEmployeeSubmitters = false,
+    this.featureKey,
   });
 
   factory ServiceType.fromJson(Map<String, dynamic> json) => ServiceType(
@@ -170,5 +175,6 @@ class ServiceType {
         name: Loc.fromJson(json['name']),
         departmentName: Loc.fromJson(json['departmentName']),
         acceptsEmployeeSubmitters: json['acceptsEmployeeSubmitters'] == true,
+        featureKey: json['featureKey'] as String?,
       );
 }
