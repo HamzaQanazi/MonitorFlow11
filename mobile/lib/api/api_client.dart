@@ -70,6 +70,8 @@ class ApiClient {
   Future<Map<String, dynamic>> patch(String path, {Object? body}) =>
       _send('PATCH', path, body: body);
 
+  Future<Map<String, dynamic>> delete(String path) => _send('DELETE', path);
+
   /// Multipart upload (POST /files): file bytes + form fields. Same error
   /// mapping as JSON calls — 422 carries per-field errors.
   Future<Map<String, dynamic>> postMultipart(

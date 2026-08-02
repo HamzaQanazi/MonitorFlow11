@@ -17,6 +17,7 @@ import '../widgets/state_chips.dart';
 import '../widgets/states.dart';
 import 'checklists_screen.dart';
 import 'directory_screen.dart';
+import 'events_screen.dart';
 import 'knowledge_base_screen.dart';
 import 'schedule_screen.dart';
 import 'task_detail_screen.dart';
@@ -161,6 +162,13 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             tooltip: i18n.tr('kb_title'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const KnowledgeBaseScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.event_outlined),
+            tooltip: i18n.tr('ev_title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const EventsScreen()),
             ),
           ),
           NotificationBell(

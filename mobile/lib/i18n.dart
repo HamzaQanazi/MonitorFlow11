@@ -344,6 +344,17 @@ const Map<String, Map<String, String>> _dict = {
   'kb_load_fail': {'en': 'Could not load the knowledge base.', 'ar': 'تعذّر تحميل قاعدة المعرفة.'},
   'kb_none_title': {'en': 'No articles yet', 'ar': 'لا مقالات بعد'},
 
+  // events (communication feature group — read + self-service RSVP on mobile)
+  'ev_title': {'en': 'Events', 'ar': 'الفعاليات'},
+  'ev_load_fail': {'en': 'Could not load events.', 'ar': 'تعذّر تحميل الفعاليات.'},
+  'ev_none_title': {'en': 'No events yet', 'ar': 'لا فعاليات بعد'},
+  'ev_none_upcoming': {'en': 'No upcoming events', 'ar': 'لا فعاليات قادمة'},
+  'ev_past': {'en': 'Past events', 'ar': 'فعاليات سابقة'},
+  'ev_join': {'en': 'I’m going', 'ar': 'سأحضر'},
+  'ev_leave': {'en': 'Cancel RSVP', 'ar': 'إلغاء الحضور'},
+  'ev_rsvp_fail': {'en': 'Could not update your RSVP', 'ar': 'تعذّر تحديث حالة حضورك'},
+  'ev_going_count': {'en': 'going', 'ar': 'سيحضرون'},
+
   // form response view (shared)
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},
   'fr_no': {'en': 'No', 'ar': 'لا'},

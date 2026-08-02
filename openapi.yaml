@@ -92,6 +92,7 @@ tags:
   - name: schedule        # manager roster (shift templates + per-date assignment) + employee "my schedule"
   - name: directory       # company-wide staff directory (communication feature group) — deliberately not Gate-2 scoped
   - name: knowledge-base  # company article list (communication feature group) — read company-wide, write needs view_all/admin
+  - name: events          # company calendar + self-service RSVP (communication feature group)
 
 paths:
   # ── Auth ───────────────────────────────────────────────────────────────────
@@ -1039,6 +1040,124 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  # ── Events (communication feature group) ────────────────────────────────────
+  # Read: company-wide, any admin/employee. Write (create/edit/delete): view_all
+  # or admin. RSVP: self-service, any admin/employee toggles their own row.
+  /events:
+    get:
+      tags: [events]
+      summary: All of this company's events, soonest-first. Includes attendeeCount and the caller's own isGoing.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/Event' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [events]
+      summary: Create an event (view_all or admin).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, startsAt]
+              properties:
+                title: { $ref: '#/components/schemas/LocalizedText' }
+                description: { $ref: '#/components/schemas/LocalizedText', nullable: true }
+                startsAt: { type: string, format: date-time }
+                endsAt: { type: string, format: date-time, nullable: true }
+                location: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event: { $ref: '#/components/schemas/Event' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /events/{id}:
+    get:
+      tags: [events]
+      summary: One event, including the attendee name list.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event: { $ref: '#/components/schemas/Event' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [events]
+      summary: Edit an event (view_all or admin).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { $ref: '#/components/schemas/LocalizedText' }
+                description: { $ref: '#/components/schemas/LocalizedText', nullable: true }
+                startsAt: { type: string, format: date-time }
+                endsAt: { type: string, format: date-time, nullable: true }
+                location: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event: { $ref: '#/components/schemas/Event' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [events]
+      summary: Delete an event (view_all or admin).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /events/{id}/rsvp:
+    post:
+      tags: [events]
+      summary: Self-service — mark the caller as attending (idempotent).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [events]
+      summary: Self-service — withdraw the caller's own RSVP (idempotent).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   # ── Notifications ────────────────────────────────────────────────────────────
   /notifications:
     get:
@@ -1484,6 +1603,21 @@ components:
         createdByName: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+
+    Event:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { $ref: '#/components/schemas/LocalizedText' }
+        description: { $ref: '#/components/schemas/LocalizedText', nullable: true }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time, nullable: true }
+        location: { type: string, nullable: true }
+        createdBy: { type: integer }
+        createdByName: { type: string }
+        attendeeCount: { type: integer }
+        attendeeNames: { type: array, items: { type: string }, description: only present on GET /events/{id} }
+        isGoing: { type: boolean }
 
     Department:
       type: object
