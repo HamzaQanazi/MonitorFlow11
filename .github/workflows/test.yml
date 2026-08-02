@@ -1,0 +1,80 @@
+name: test
+
+# The §14 release gate (CLAUDE.md), automated: backend unit + API-integration
+# + permission suite, web build/typecheck/lint, Flutter widget tests +
+# analyze. React itself has no automated test job on purpose — CLAUDE.md
+# §14/§15 make the manual E2E checklist (docs/WEB_E2E_CHECKLIST.md) the gate
+# for the web app; introducing a framework here would be a separate, explicit
+# scope decision, not a side effect of wiring up CI.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # PostGIS, not plain postgres — migrations/009_postgis.sql needs the
+        # extension available before `npm run migrate` can run.
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # backend/testlib/harness.js swaps the database name per test suite —
+      # the `postgres` placeholder here only needs to be a database the CI
+      # user can connect to and CREATE DATABASE from.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      JWT_SECRET: ci-only-secret-not-used-anywhere-real
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm run lint
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
