@@ -28,6 +28,7 @@ const adminNav = [
   { to: '/', labelKey: 'nav_dashboard', end: true },
   { to: '/employees', labelKey: 'nav_employees', end: false },
   { to: '/departments', labelKey: 'nav_departments', end: false },
+  { to: '/levels', labelKey: 'nav_levels', end: false },
   { to: '/services/new', labelKey: 'nav_add_service', end: false },
   { to: '/checklists', labelKey: 'nav_checklists', end: false },
   { to: '/directory', labelKey: 'nav_directory', end: false },

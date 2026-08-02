@@ -1,7 +1,8 @@
 // Training & Onboarding (hr_skills feature group, onboarding wizard). Same
 // read/write split as Knowledge Base: read is company-wide (any admin/
-// employee, mobile included), write (create/edit/delete) needs view_all or
-// admin. Completion is self-service, mirroring Events' RSVP — presence in
+// employee, mobile included), write (create/edit/delete) needs admin,
+// view_all, or the narrower manage_training (Levels & Capabilities).
+// Completion is self-service, mirroring Events' RSVP — presence in
 // training_completion = "this employee finished it."
 const express = require('express');
 const pool = require('../db');
@@ -12,7 +13,7 @@ const { isBilingual } = require('../lib/i18nLabel');
 const router = express.Router();
 router.use(requireAuth);
 
-const canWrite = requireCapabilityOrAdmin('view_all');
+const canWrite = requireCapabilityOrAdmin('view_all', 'manage_training');
 
 async function loadModule(id, companyId) {
   if (!Number.isInteger(id)) return null;

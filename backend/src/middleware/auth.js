@@ -61,9 +61,16 @@ function requireCapability(capability) {
 // two checks inline; this is the shared version for routes that need it too.
 // The handler is still expected to branch on req.user.role for data scope
 // (admin sees company-wide, a capability holder sees their Gate-2 subtree).
-function requireCapabilityOrAdmin(capability) {
+// Accepts multiple capabilities (OR'd): requireCapabilityOrAdmin('view_all',
+// 'manage_events') admits either a full-oversight level or a level scoped to
+// just that one module — a narrow role doesn't need view_all's operational
+// power just to author one thing.
+function requireCapabilityOrAdmin(...capabilities) {
   return (req, res, next) => {
-    if (req.user.role === 'admin' || (req.user.capabilities && req.user.capabilities.has(capability))) {
+    if (
+      req.user.role === 'admin' ||
+      (req.user.capabilities && capabilities.some((c) => req.user.capabilities.has(c)))
+    ) {
       return next();
     }
     return res.status(403).json({ error: 'Forbidden' });

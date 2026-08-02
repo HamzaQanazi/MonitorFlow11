@@ -2,8 +2,9 @@
 // of company articles — no categories, no drafts, no versioning. Read is
 // company-wide like /directory (any admin/employee, not gated by a
 // capability — an employee reading the KB on mobile has no capabilities at
-// all); writes need view_all or admin, same gate the console's other
-// authoring surfaces use (Checklists' templates, Departments).
+// all); writes need admin, view_all, or the narrower manage_knowledge_base
+// (Levels & Capabilities) — a level can author articles without also
+// holding view_all's operational oversight.
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
@@ -13,7 +14,7 @@ const { isBilingual } = require('../lib/i18nLabel');
 const router = express.Router();
 router.use(requireAuth);
 
-const canWrite = requireCapabilityOrAdmin('view_all');
+const canWrite = requireCapabilityOrAdmin('view_all', 'manage_knowledge_base');
 
 async function loadArticle(id, companyId) {
   if (!Number.isInteger(id)) return null;

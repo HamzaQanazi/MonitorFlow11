@@ -33,6 +33,7 @@ const dict: Record<string, Loc> = {
   nav_audit: { en: 'Audit Log', ar: 'سجل التدقيق' },
   nav_add_service: { en: 'Add Service', ar: 'إضافة خدمة' },
   nav_departments: { en: 'Departments', ar: 'الدوائر' },
+  nav_levels: { en: 'Levels & Capabilities', ar: 'المستويات والصلاحيات' },
   sign_out: { en: 'Sign out', ar: 'تسجيل الخروج' },
   lang_toggle: { en: 'العربية', ar: 'English' }, // shows the OTHER language
 

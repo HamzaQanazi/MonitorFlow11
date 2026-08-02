@@ -3,7 +3,20 @@
 // never status keys or role names. Admin authority is by KIND
 // (requireRole('admin')), not capability — admins configure the platform, they
 // do not operate the queue (CLAUDE.md §10, must-pass #20).
-const CAPABILITIES = ['view_all', 'assign', 'set_priority', 'override', 'manage_employees', 'export'];
+// manage_events/manage_knowledge_base/manage_training (Levels & Capabilities
+// live editor) let a level author just that module without also holding
+// view_all's operational oversight — see routes/events.js et al.
+const CAPABILITIES = [
+  'view_all',
+  'assign',
+  'set_priority',
+  'override',
+  'manage_employees',
+  'export',
+  'manage_events',
+  'manage_knowledge_base',
+  'manage_training',
+];
 
 // The capability set an employee holds through their level. Non-employees, and
 // employees without a level, hold none.

@@ -904,6 +904,90 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Validation' }
 
+  # ── Employee levels (Gate-1 configuration — Levels & Capabilities) ──────────
+  # Reads: manage_employees or admin (backs the Add Employee role picker).
+  # Writes: admin-only — handing out capabilities is real Gate-1 power. A
+  # level's capabilities take effect immediately for every current holder, no
+  # sign-out needed (requireAuth re-reads them from the DB every request).
+  /employee-levels:
+    get:
+      tags: [people]
+      summary: All levels with their granted capabilities and active holder count.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  levels:
+                    type: array
+                    items: { $ref: '#/components/schemas/EmployeeLevel' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [people]
+      summary: Create a level (admin-only). Capabilities start empty.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { $ref: '#/components/schemas/LocalizedText' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  level: { $ref: '#/components/schemas/EmployeeLevel' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /employee-levels/{id}:
+    patch:
+      tags: [people]
+      summary: >
+        Rename a level and/or replace its full capability set (admin-only).
+        capabilities, if given, must be a subset of the fixed capability
+        catalogue and REPLACES the level's current grants entirely.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { $ref: '#/components/schemas/LocalizedText' }
+                capabilities: { type: array, items: { type: string } }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  level: { $ref: '#/components/schemas/EmployeeLevel' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [people]
+      summary: Delete a level (admin-only). 409 while any active employee still holds it.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Level still has active employees assigned to it }
+
   # ── Directory (communication feature group) ─────────────────────────────────
   # Deliberate exception to the Gate-2 subtree model everywhere else in this
   # file: a directory's job is letting any employee find any colleague, so
@@ -1745,6 +1829,14 @@ components:
         completionCount: { type: integer }
         completedByNames: { type: array, items: { type: string }, description: only present on GET /training/{id} }
         isComplete: { type: boolean }
+
+    EmployeeLevel:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { $ref: '#/components/schemas/LocalizedText' }
+        capabilities: { type: array, items: { type: string } }
+        holderCount: { type: integer }
 
     Department:
       type: object

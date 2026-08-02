@@ -1,8 +1,9 @@
 // Events (communication feature group, onboarding wizard). Company calendar.
 // Read: company-wide, any admin/employee (mobile employees included). Write
-// (create/edit/delete): view_all or admin, same gate as Knowledge Base/
-// Departments. RSVP: self-service — any admin/employee toggles their own
-// attendance; presence in event_rsvp = "going".
+// (create/edit/delete): admin, view_all, or the narrower manage_events —
+// a level can author events without also holding view_all's operational
+// oversight (Levels & Capabilities). RSVP: self-service — any admin/employee
+// toggles their own attendance; presence in event_rsvp = "going".
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
@@ -12,7 +13,7 @@ const { isBilingual } = require('../lib/i18nLabel');
 const router = express.Router();
 router.use(requireAuth);
 
-const canWrite = requireCapabilityOrAdmin('view_all');
+const canWrite = requireCapabilityOrAdmin('view_all', 'manage_events');
 
 async function loadEvent(id, companyId) {
   if (!Number.isInteger(id)) return null;

@@ -18,7 +18,17 @@ type FieldType = (typeof FIELD_TYPES)[number]
 const OPTION_TYPES = new Set<FieldType>(['dropdown', 'radio'])
 const BOUNDED_TYPES = new Set<FieldType>(['number', 'text', 'multiline'])
 const PRIORITIES = ['low', 'medium', 'high'] as const
-const CAPABILITIES = ['view_all', 'assign', 'set_priority', 'override', 'manage_employees', 'export'] as const
+const CAPABILITIES = [
+  'view_all',
+  'assign',
+  'set_priority',
+  'override',
+  'manage_employees',
+  'export',
+  'manage_events',
+  'manage_knowledge_base',
+  'manage_training',
+] as const
 const ACTORS = ['requester', 'assignee'] as const
 const NOTIFY_TARGETS = ['created_by', 'assigned_to', 'assignee_manager'] as const
 
