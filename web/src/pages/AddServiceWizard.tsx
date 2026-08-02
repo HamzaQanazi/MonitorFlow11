@@ -12,6 +12,14 @@ import './AddServiceWizard.css'
 // rules the seed script used to be the only caller of — nothing this UI lets
 // you submit can pass client-side and fail server-side for a different reason
 // than "you left something blank".
+//
+// UX pass: client-side per-step validation blocks "Next" instead of letting
+// you sail through 5 steps blank and hit a wall of 13 raw validator strings
+// at the end; a 422's errors are classified back to the step (and row, where
+// the message names one) they came from instead of dumped as one blob on
+// Review; every row input gets a persistent label instead of a placeholder
+// that vanishes once typed; capability/actor/notify controls show friendly
+// text instead of raw snake_case keys.
 
 const FIELD_TYPES = ['text', 'multiline', 'number', 'date', 'dropdown', 'radio', 'checkbox', 'photo', 'location'] as const
 type FieldType = (typeof FIELD_TYPES)[number]
@@ -113,6 +121,80 @@ function newTransitionRow(): TransitionRow {
   }
 }
 
+// Client-side mirrors of the server's requirements (formSchema.js /
+// workflowSchema.js / services.js) — good enough to gate "Next" so a blank
+// row never reaches the server; the server payload's shape is still the only
+// thing that's actually trusted (I8).
+function optionValid(o: OptionRow) {
+  return !!(o.value.trim() && o.labelEn.trim() && o.labelAr.trim())
+}
+function fieldRowValid(r: FieldRow) {
+  if (!r.id.trim() || !r.labelEn.trim() || !r.labelAr.trim()) return false
+  if (OPTION_TYPES.has(r.type)) return r.options.length > 0 && r.options.every(optionValid)
+  return true
+}
+function statusRowValid(r: StatusRow) {
+  return !!(r.key.trim() && r.labelEn.trim() && r.labelAr.trim())
+}
+function transitionRowValid(r: TransitionRow) {
+  return !!(r.key.trim() && r.from && r.to && r.labelEn.trim() && r.labelAr.trim())
+}
+
+// Classifies the server's flat error-string array back to the step (and,
+// where the message names one, the row index within that step) it came
+// from — every message formSchema.js/workflowSchema.js/services.js can
+// produce has a deterministic prefix (verified against the backend source),
+// so this is a plain prefix match, not string-sniffing guesswork.
+interface ClassifiedErrors {
+  byStep: [string[], string[], string[], string[], string[]]
+  requestFieldRows: Set<number>
+  completionFieldRows: Set<number>
+  statusRows: Set<number>
+  transitionRows: Set<number>
+}
+function classifyErrors(errors: string[]): ClassifiedErrors {
+  const result: ClassifiedErrors = {
+    byStep: [[], [], [], [], []],
+    requestFieldRows: new Set(),
+    completionFieldRows: new Set(),
+    statusRows: new Set(),
+    transitionRows: new Set(),
+  }
+  for (const msg of errors) {
+    let m: RegExpMatchArray | null
+    if ((m = msg.match(/^requestFields field\[(\d+)\]/))) {
+      result.byStep[1].push(msg.replace(/^requestFields /, ''))
+      result.requestFieldRows.add(Number(m[1]))
+    } else if ((m = msg.match(/^completionFields field\[(\d+)\]/))) {
+      result.byStep[2].push(msg.replace(/^completionFields /, ''))
+      result.completionFieldRows.add(Number(m[1]))
+    } else if ((m = msg.match(/^statuses\[(\d+)\]/))) {
+      result.byStep[3].push(msg)
+      result.statusRows.add(Number(m[1]))
+    } else if ((m = msg.match(/^transitions\[(\d+)\]/))) {
+      result.byStep[3].push(msg)
+      result.transitionRows.add(Number(m[1]))
+    } else if (
+      msg.startsWith('workflow must have') ||
+      msg.startsWith('statuses must be') ||
+      msg.startsWith('transitions must be') ||
+      msg.startsWith('transitions "')
+    ) {
+      result.byStep[3].push(msg)
+    } else {
+      // name / departmentId / defaultPriority / accepts* / ownerId /
+      // featureKey — everything Step 1 (Basics) owns, plus a safe default
+      // bucket for anything not explicitly recognized above.
+      result.byStep[0].push(msg)
+    }
+  }
+  return result
+}
+function firstErrorStep(c: ClassifiedErrors): number {
+  const i = c.byStep.findIndex((s) => s.length > 0)
+  return i === -1 ? 0 : i
+}
+
 export default function AddServiceWizard() {
   const { t, L } = useI18n()
 
@@ -122,6 +204,13 @@ export default function AddServiceWizard() {
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [stepErrors, setStepErrors] = useState<[string[], string[], string[], string[], string[]]>([[], [], [], [], []])
+  const [errorRows, setErrorRows] = useState({
+    requestFields: new Set<number>(),
+    completionFields: new Set<number>(),
+    statuses: new Set<number>(),
+    transitions: new Set<number>(),
+  })
   const [created, setCreated] = useState<{ serviceTypeId: number; key: string } | null>(null)
 
   // Step 1
@@ -151,9 +240,33 @@ export default function AddServiceWizard() {
       .catch(() => setLoadError(true))
   }, [])
 
+  function stepValid(s: number): boolean {
+    switch (s) {
+      case 0:
+        return !!(nameEn.trim() && nameAr.trim() && departmentId && ownerId)
+      case 1:
+        return requestFields.length > 0 && requestFields.every(fieldRowValid)
+      case 2:
+        return completionFields.length > 0 && completionFields.every(fieldRowValid)
+      case 3:
+        return (
+          statuses.length > 0 &&
+          statuses.every(statusRowValid) &&
+          statuses.filter((st) => st.isInitial).length === 1 &&
+          statuses.some((st) => st.isTerminal) &&
+          transitions.length > 0 &&
+          transitions.every(transitionRowValid)
+        )
+      default:
+        return true
+    }
+  }
+
   async function finish() {
     setBusy(true)
     setSaveError('')
+    setStepErrors([[], [], [], [], []])
+    setErrorRows({ requestFields: new Set(), completionFields: new Set(), statuses: new Set(), transitions: new Set() })
     try {
       const res = await apiFetch<{ serviceTypeId: number; key: string }>('/services', {
         method: 'POST',
@@ -174,7 +287,19 @@ export default function AddServiceWizard() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) {
         const body = err.body as { errors?: unknown } | undefined
-        setSaveError(Array.isArray(body?.errors) ? body!.errors.join(' · ') : t('svc_err_save'))
+        if (Array.isArray(body?.errors)) {
+          const classified = classifyErrors(body!.errors as string[])
+          setStepErrors(classified.byStep)
+          setErrorRows({
+            requestFields: classified.requestFieldRows,
+            completionFields: classified.completionFieldRows,
+            statuses: classified.statusRows,
+            transitions: classified.transitionRows,
+          })
+          setStep(firstErrorStep(classified))
+        } else {
+          setSaveError(t('svc_err_save'))
+        }
       } else {
         setSaveError(t('svc_err_save'))
       }
@@ -184,6 +309,7 @@ export default function AddServiceWizard() {
   }
 
   function next() {
+    if (!stepValid(step)) return
     if (step < STEP_COUNT - 1) setStep(step + 1)
     else void finish()
   }
@@ -217,6 +343,7 @@ export default function AddServiceWizard() {
   }
 
   const stepTitles = ['svc_s1_title', 'svc_s2_title', 'svc_s3_title', 'svc_s4_title', 'svc_s5_title']
+  const currentStepErrors = stepErrors[step]
 
   return (
     <div className="req">
@@ -228,6 +355,14 @@ export default function AddServiceWizard() {
       </header>
 
       <div className="svc-body">
+        {currentStepErrors.length > 0 && (
+          <ul className="svc-step-errors">
+            {currentStepErrors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        )}
+
         {step === 0 && (
           <>
             <label className="field">
@@ -295,11 +430,23 @@ export default function AddServiceWizard() {
         )}
 
         {step === 1 && (
-          <FieldSchemaEditor title={t('svc_request_fields_h')} rows={requestFields} setRows={setRequestFields} t={t} />
+          <FieldSchemaEditor
+            title={t('svc_request_fields_h')}
+            rows={requestFields}
+            setRows={setRequestFields}
+            errorRows={errorRows.requestFields}
+            t={t}
+          />
         )}
 
         {step === 2 && (
-          <FieldSchemaEditor title={t('svc_completion_fields_h')} rows={completionFields} setRows={setCompletionFields} t={t} />
+          <FieldSchemaEditor
+            title={t('svc_completion_fields_h')}
+            rows={completionFields}
+            setRows={setCompletionFields}
+            errorRows={errorRows.completionFields}
+            t={t}
+          />
         )}
 
         {step === 3 && (
@@ -311,10 +458,12 @@ export default function AddServiceWizard() {
                   {t('svc_add_status')}
                 </button>
               </div>
+              <p className="ob-hint">{t('svc_statuses_hint')}</p>
               {statuses.map((s, i) => (
                 <StatusEditor
                   key={s.rid}
                   row={s}
+                  hasError={errorRows.statuses.has(i)}
                   onChange={(next) => setStatuses((prev) => prev.map((r, j) => (j === i ? next : r)))}
                   onRemove={() => setStatuses((prev) => prev.filter((_, j) => j !== i))}
                   t={t}
@@ -333,11 +482,13 @@ export default function AddServiceWizard() {
                   {t('svc_add_transition')}
                 </button>
               </div>
+              <p className="ob-hint">{t('svc_transitions_hint')}</p>
               {transitions.map((tr, i) => (
                 <TransitionEditor
                   key={tr.rid}
                   row={tr}
                   statuses={statuses}
+                  hasError={errorRows.transitions.has(i)}
                   onChange={(next) => setTransitions((prev) => prev.map((r, j) => (j === i ? next : r)))}
                   onRemove={() => setTransitions((prev) => prev.filter((_, j) => j !== i))}
                   t={t}
@@ -364,7 +515,8 @@ export default function AddServiceWizard() {
         <button type="button" className="detail-close-text" onClick={back} disabled={step === 0 || busy}>
           {t('previous')}
         </button>
-        <button type="button" className="req-retry" onClick={next} disabled={busy}>
+        {!stepValid(step) && !busy && <p className="svc-next-hint">{t('svc_fill_required')}</p>}
+        <button type="button" className="req-retry" onClick={next} disabled={busy || !stepValid(step)}>
           {busy ? t('ob_saving') : step === STEP_COUNT - 1 ? t('svc_create') : t('next')}
         </button>
       </div>
@@ -411,15 +563,28 @@ function toTransitionSchema(row: TransitionRow) {
   }
 }
 
+// A labeled row cell — the persistent-label equivalent of Step 1's
+// <label className="field">, sized for the dense grid rows in steps 2-4.
+function MiniField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="svc-mini-field">
+      <span>{label}</span>
+      {children}
+    </label>
+  )
+}
+
 function FieldSchemaEditor({
   title,
   rows,
   setRows,
+  errorRows,
   t,
 }: {
   title: string
   rows: FieldRow[]
   setRows: (fn: (prev: FieldRow[]) => FieldRow[]) => void
+  errorRows: Set<number>
   t: (k: string) => string
 }) {
   function update(i: number, patch: Partial<FieldRow>) {
@@ -434,18 +599,26 @@ function FieldSchemaEditor({
         </button>
       </div>
       {rows.map((row, i) => (
-        <div key={row.rid} className="svc-row">
+        <div key={row.rid} className={`svc-row${errorRows.has(i) ? ' has-error' : ''}`}>
           <div className="svc-row-grid">
-            <input placeholder={t('svc_field_id')} value={row.id} onChange={(e) => update(i, { id: e.target.value })} />
-            <input placeholder={t('svc_field_label_en')} value={row.labelEn} onChange={(e) => update(i, { labelEn: e.target.value })} />
-            <input placeholder={t('svc_field_label_ar')} dir="rtl" value={row.labelAr} onChange={(e) => update(i, { labelAr: e.target.value })} />
-            <select className="req-select" value={row.type} onChange={(e) => update(i, { type: e.target.value as FieldType })}>
-              {FIELD_TYPES.map((ft) => (
-                <option key={ft} value={ft}>
-                  {t(`field_type_${ft}`)}
-                </option>
-              ))}
-            </select>
+            <MiniField label={t('svc_field_id')}>
+              <input value={row.id} onChange={(e) => update(i, { id: e.target.value })} />
+            </MiniField>
+            <MiniField label={t('svc_field_label_en')}>
+              <input value={row.labelEn} onChange={(e) => update(i, { labelEn: e.target.value })} />
+            </MiniField>
+            <MiniField label={t('svc_field_label_ar')}>
+              <input dir="rtl" value={row.labelAr} onChange={(e) => update(i, { labelAr: e.target.value })} />
+            </MiniField>
+            <MiniField label={t('svc_field_type')}>
+              <select className="req-select" value={row.type} onChange={(e) => update(i, { type: e.target.value as FieldType })}>
+                {FIELD_TYPES.map((ft) => (
+                  <option key={ft} value={ft}>
+                    {t(`field_type_${ft}`)}
+                  </option>
+                ))}
+              </select>
+            </MiniField>
             <label className="svc-check">
               <input type="checkbox" checked={row.required} onChange={(e) => update(i, { required: e.target.checked })} />
               <span>{t('svc_required')}</span>
@@ -458,36 +631,43 @@ function FieldSchemaEditor({
           </div>
           {BOUNDED_TYPES.has(row.type) && (
             <div className="svc-row-grid">
-              <input placeholder={t('svc_min')} type="number" value={row.min} onChange={(e) => update(i, { min: e.target.value })} />
-              <input placeholder={t('svc_max')} type="number" value={row.max} onChange={(e) => update(i, { max: e.target.value })} />
+              <MiniField label={t('svc_min')}>
+                <input type="number" value={row.min} onChange={(e) => update(i, { min: e.target.value })} />
+              </MiniField>
+              <MiniField label={t('svc_max')}>
+                <input type="number" value={row.max} onChange={(e) => update(i, { max: e.target.value })} />
+              </MiniField>
             </div>
           )}
           {OPTION_TYPES.has(row.type) && (
             <div className="svc-options">
               {row.options.map((opt, oi) => (
                 <div key={oi} className="svc-row-grid">
-                  <input
-                    placeholder={t('svc_option_value')}
-                    value={opt.value}
-                    onChange={(e) =>
-                      update(i, { options: row.options.map((o, j) => (j === oi ? { ...o, value: e.target.value } : o)) })
-                    }
-                  />
-                  <input
-                    placeholder={t('svc_field_label_en')}
-                    value={opt.labelEn}
-                    onChange={(e) =>
-                      update(i, { options: row.options.map((o, j) => (j === oi ? { ...o, labelEn: e.target.value } : o)) })
-                    }
-                  />
-                  <input
-                    placeholder={t('svc_field_label_ar')}
-                    dir="rtl"
-                    value={opt.labelAr}
-                    onChange={(e) =>
-                      update(i, { options: row.options.map((o, j) => (j === oi ? { ...o, labelAr: e.target.value } : o)) })
-                    }
-                  />
+                  <MiniField label={t('svc_option_value')}>
+                    <input
+                      value={opt.value}
+                      onChange={(e) =>
+                        update(i, { options: row.options.map((o, j) => (j === oi ? { ...o, value: e.target.value } : o)) })
+                      }
+                    />
+                  </MiniField>
+                  <MiniField label={t('svc_field_label_en')}>
+                    <input
+                      value={opt.labelEn}
+                      onChange={(e) =>
+                        update(i, { options: row.options.map((o, j) => (j === oi ? { ...o, labelEn: e.target.value } : o)) })
+                      }
+                    />
+                  </MiniField>
+                  <MiniField label={t('svc_field_label_ar')}>
+                    <input
+                      dir="rtl"
+                      value={opt.labelAr}
+                      onChange={(e) =>
+                        update(i, { options: row.options.map((o, j) => (j === oi ? { ...o, labelAr: e.target.value } : o)) })
+                      }
+                    />
+                  </MiniField>
                   <button
                     type="button"
                     className="action-btn is-danger"
@@ -514,21 +694,29 @@ function FieldSchemaEditor({
 
 function StatusEditor({
   row,
+  hasError,
   onChange,
   onRemove,
   t,
 }: {
   row: StatusRow
+  hasError: boolean
   onChange: (next: StatusRow) => void
   onRemove: () => void
   t: (k: string) => string
 }) {
   return (
-    <div className="svc-row">
+    <div className={`svc-row${hasError ? ' has-error' : ''}`}>
       <div className="svc-row-grid">
-        <input placeholder={t('svc_status_key')} value={row.key} onChange={(e) => onChange({ ...row, key: e.target.value })} />
-        <input placeholder={t('svc_field_label_en')} value={row.labelEn} onChange={(e) => onChange({ ...row, labelEn: e.target.value })} />
-        <input placeholder={t('svc_field_label_ar')} dir="rtl" value={row.labelAr} onChange={(e) => onChange({ ...row, labelAr: e.target.value })} />
+        <MiniField label={t('svc_status_key')}>
+          <input value={row.key} onChange={(e) => onChange({ ...row, key: e.target.value })} />
+        </MiniField>
+        <MiniField label={t('svc_field_label_en')}>
+          <input value={row.labelEn} onChange={(e) => onChange({ ...row, labelEn: e.target.value })} />
+        </MiniField>
+        <MiniField label={t('svc_field_label_ar')}>
+          <input dir="rtl" value={row.labelAr} onChange={(e) => onChange({ ...row, labelAr: e.target.value })} />
+        </MiniField>
         <label className="svc-check">
           <input type="checkbox" checked={row.isInitial} onChange={(e) => onChange({ ...row, isInitial: e.target.checked })} />
           <span>{t('svc_is_initial')}</span>
@@ -537,12 +725,9 @@ function StatusEditor({
           <input type="checkbox" checked={row.isTerminal} onChange={(e) => onChange({ ...row, isTerminal: e.target.checked })} />
           <span>{t('svc_is_terminal')}</span>
         </label>
-        <input
-          placeholder={t('svc_sla_minutes')}
-          type="number"
-          value={row.slaMinutes}
-          onChange={(e) => onChange({ ...row, slaMinutes: e.target.value })}
-        />
+        <MiniField label={t('svc_sla_minutes')}>
+          <input type="number" value={row.slaMinutes} onChange={(e) => onChange({ ...row, slaMinutes: e.target.value })} />
+        </MiniField>
         <button type="button" className="action-btn is-danger" onClick={onRemove}>
           {t('svc_remove')}
         </button>
@@ -554,38 +739,50 @@ function StatusEditor({
 function TransitionEditor({
   row,
   statuses,
+  hasError,
   onChange,
   onRemove,
   t,
 }: {
   row: TransitionRow
   statuses: StatusRow[]
+  hasError: boolean
   onChange: (next: TransitionRow) => void
   onRemove: () => void
   t: (k: string) => string
 }) {
   return (
-    <div className="svc-row">
+    <div className={`svc-row${hasError ? ' has-error' : ''}`}>
       <div className="svc-row-grid">
-        <input placeholder={t('svc_transition_key')} value={row.key} onChange={(e) => onChange({ ...row, key: e.target.value })} />
-        <select className="req-select" value={row.from} onChange={(e) => onChange({ ...row, from: e.target.value })}>
-          <option value="">{t('svc_from')}</option>
-          {statuses.map((s) => (
-            <option key={s.rid} value={s.key}>
-              {s.key}
-            </option>
-          ))}
-        </select>
-        <select className="req-select" value={row.to} onChange={(e) => onChange({ ...row, to: e.target.value })}>
-          <option value="">{t('svc_to')}</option>
-          {statuses.map((s) => (
-            <option key={s.rid} value={s.key}>
-              {s.key}
-            </option>
-          ))}
-        </select>
-        <input placeholder={t('svc_field_label_en')} value={row.labelEn} onChange={(e) => onChange({ ...row, labelEn: e.target.value })} />
-        <input placeholder={t('svc_field_label_ar')} dir="rtl" value={row.labelAr} onChange={(e) => onChange({ ...row, labelAr: e.target.value })} />
+        <MiniField label={t('svc_transition_key')}>
+          <input value={row.key} onChange={(e) => onChange({ ...row, key: e.target.value })} />
+        </MiniField>
+        <MiniField label={t('svc_from')}>
+          <select className="req-select" value={row.from} onChange={(e) => onChange({ ...row, from: e.target.value })}>
+            <option value="">{t('ob_select')}</option>
+            {statuses.map((s) => (
+              <option key={s.rid} value={s.key}>
+                {s.key}
+              </option>
+            ))}
+          </select>
+        </MiniField>
+        <MiniField label={t('svc_to')}>
+          <select className="req-select" value={row.to} onChange={(e) => onChange({ ...row, to: e.target.value })}>
+            <option value="">{t('ob_select')}</option>
+            {statuses.map((s) => (
+              <option key={s.rid} value={s.key}>
+                {s.key}
+              </option>
+            ))}
+          </select>
+        </MiniField>
+        <MiniField label={t('svc_field_label_en')}>
+          <input value={row.labelEn} onChange={(e) => onChange({ ...row, labelEn: e.target.value })} />
+        </MiniField>
+        <MiniField label={t('svc_field_label_ar')}>
+          <input dir="rtl" value={row.labelAr} onChange={(e) => onChange({ ...row, labelAr: e.target.value })} />
+        </MiniField>
         <button type="button" className="action-btn is-danger" onClick={onRemove}>
           {t('svc_remove')}
         </button>
@@ -608,7 +805,7 @@ function TransitionEditor({
         >
           {CAPABILITIES.map((c) => (
             <option key={c} value={c}>
-              {c}
+              {t(`cap_${c}`)}
             </option>
           ))}
         </select>
@@ -624,11 +821,12 @@ function TransitionEditor({
         <select className="req-select" disabled={row.gate !== 'actor'} value={row.actor} onChange={(e) => onChange({ ...row, actor: e.target.value })}>
           {ACTORS.map((a) => (
             <option key={a} value={a}>
-              {a}
+              {t(`actor_${a}`)}
             </option>
           ))}
         </select>
       </div>
+      <p className="ob-hint">{t('svc_gate_hint')}</p>
       <div className="svc-row-grid">
         <label className="svc-check">
           <input
@@ -643,6 +841,7 @@ function TransitionEditor({
           <span>{t('svc_requires_note')}</span>
         </label>
       </div>
+      <p className="ob-hint">{t('svc_transition_flags_hint')}</p>
       <div className="svc-row-grid">
         {NOTIFY_TARGETS.map((target) => (
           <label key={target} className="svc-check">
@@ -656,10 +855,11 @@ function TransitionEditor({
                 })
               }
             />
-            <span>{target}</span>
+            <span>{t(`notify_${target}`)}</span>
           </label>
         ))}
       </div>
+      <p className="ob-hint">{t('svc_notify_hint')}</p>
     </div>
   )
 }

@@ -52,7 +52,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
-  align-items: center;
+  align-items: end;
 }
 
 .svc-row-grid input,
@@ -64,6 +64,42 @@
   background: var(--bg);
   color: var(--ink);
   font: inherit;
+}
+
+/* Persistent label above a row input — matches Step 1's <label class="field">
+   convention instead of relying on a placeholder that vanishes once typed. */
+.svc-mini-field {
+  display: grid;
+  gap: 2px;
+}
+
+.svc-mini-field > span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.svc-row.has-error {
+  border-color: var(--error);
+}
+
+.svc-step-errors {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--error);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--error);
+}
+
+.svc-next-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .svc-options {
