@@ -16,11 +16,17 @@ interface Department {
   name: Loc
   headUserId: number | null
   headName: string | null
+  branchId: number | null
+  branchName: Loc | null
   memberCount: number
 }
 interface EmployeeOption {
   id: number
   name: string
+}
+interface BranchOption {
+  id: number
+  name: Loc
 }
 type FieldErrors = Record<string, string>
 
@@ -36,6 +42,7 @@ export default function DepartmentsPage() {
   const { t, L } = useI18n()
   const [departments, setDepartments] = useState<Department[] | null>(null)
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
+  const [branches, setBranches] = useState<BranchOption[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const [dialog, setDialog] = useState<
@@ -47,12 +54,14 @@ export default function DepartmentsPage() {
   >(null)
 
   const load = useCallback(async () => {
-    const [d, e] = await Promise.all([
+    const [d, e, b] = await Promise.all([
       apiFetch<{ departments: Department[] }>('/departments'),
       apiFetch<{ employees: EmployeeOption[] }>('/employees?pageSize=100'),
+      apiFetch<{ branches: BranchOption[] }>('/branches'),
     ])
     setDepartments(d.departments)
     setEmployees(e.employees)
+    setBranches(b.branches)
     setError(null)
   }, [])
 
@@ -114,6 +123,7 @@ export default function DepartmentsPage() {
             <thead>
               <tr>
                 <th scope="col">{t('col_name')}</th>
+                <th scope="col">{t('col_branch')}</th>
                 <th scope="col">{t('col_head')}</th>
                 <th scope="col">{t('col_members')}</th>
                 <th scope="col" className="emp-actions-col">
@@ -125,6 +135,7 @@ export default function DepartmentsPage() {
               {departments.map((d) => (
                 <tr key={d.id}>
                   <td className="req-service">{L(d.name)}</td>
+                  <td>{d.branchName ? L(d.branchName) : t('dept_no_branch')}</td>
                   <td>{d.headName ?? t('dept_no_head')}</td>
                   <td>{d.memberCount}</td>
                   <td className="emp-actions">
@@ -150,10 +161,10 @@ export default function DepartmentsPage() {
       )}
 
       {dialog?.kind === 'create' && (
-        <DepartmentForm employees={employees} onClose={() => setDialog(null)} onDone={onDone} />
+        <DepartmentForm employees={employees} branches={branches} onClose={() => setDialog(null)} onDone={onDone} />
       )}
       {dialog?.kind === 'rename' && (
-        <RenameDialog department={dialog.department} onClose={() => setDialog(null)} onDone={onDone} />
+        <RenameDialog department={dialog.department} branches={branches} onClose={() => setDialog(null)} onDone={onDone} />
       )}
       {dialog?.kind === 'reassign' && (
         <ReassignHeadDialog department={dialog.department} employees={employees} onClose={() => setDialog(null)} onDone={onDone} />
@@ -170,16 +181,19 @@ export default function DepartmentsPage() {
 // (server enforces the same rule — this just avoids a round trip for it).
 function DepartmentForm({
   employees,
+  branches,
   onClose,
   onDone,
 }: {
   employees: EmployeeOption[]
+  branches: BranchOption[]
   onClose: () => void
   onDone: () => void
 }) {
-  const { t } = useI18n()
+  const { t, L } = useI18n()
   const [nameEn, setNameEn] = useState('')
   const [nameAr, setNameAr] = useState('')
+  const [branchId, setBranchId] = useState('')
   const [headId, setHeadId] = useState('')
   const [memberIds, setMemberIds] = useState<Set<number>>(new Set())
   const [errors, setErrors] = useState<FieldErrors>({})
@@ -200,7 +214,7 @@ function DepartmentForm({
     })
   }
 
-  const canSubmit = nameEn.trim() && nameAr.trim() && headId && memberIds.size > 0
+  const canSubmit = nameEn.trim() && nameAr.trim() && branchId && headId && memberIds.size > 0
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -211,6 +225,7 @@ function DepartmentForm({
         method: 'POST',
         body: {
           name: { en: nameEn, ar: nameAr },
+          branchId: Number(branchId),
           headEmployeeId: Number(headId),
           memberEmployeeIds: [...memberIds],
         },
@@ -236,6 +251,18 @@ function DepartmentForm({
         <label className="field">
           {t('dept_name_ar')}
           <input value={nameAr} onChange={(e) => setNameAr(e.target.value)} required dir="rtl" />
+        </label>
+        <label className="field">
+          {t('dept_branch_label')}
+          <select value={branchId} onChange={(e) => setBranchId(e.target.value)} required>
+            <option value="">{t('dept_branch_ph')}</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {L(b.name)}
+              </option>
+            ))}
+          </select>
+          {errors.branchId && <em className="field-err">{errors.branchId}</em>}
         </label>
         <label className="field">
           {t('dept_head_label')}
@@ -282,16 +309,19 @@ function DepartmentForm({
 
 function RenameDialog({
   department,
+  branches,
   onClose,
   onDone,
 }: {
   department: Department
+  branches: BranchOption[]
   onClose: () => void
   onDone: () => void
 }) {
-  const { t } = useI18n()
+  const { t, L } = useI18n()
   const [nameEn, setNameEn] = useState(department.name.en)
   const [nameAr, setNameAr] = useState(department.name.ar)
+  const [branchId, setBranchId] = useState(department.branchId ? String(department.branchId) : '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -308,7 +338,7 @@ function RenameDialog({
     try {
       await apiFetch(`/departments/${department.id}`, {
         method: 'PATCH',
-        body: { name: { en: nameEn, ar: nameAr } },
+        body: { name: { en: nameEn, ar: nameAr }, branchId: branchId ? Number(branchId) : undefined },
       })
       onDone()
     } catch (err) {
@@ -329,6 +359,17 @@ function RenameDialog({
         <label className="field">
           {t('dept_name_ar')}
           <input value={nameAr} onChange={(e) => setNameAr(e.target.value)} required dir="rtl" />
+        </label>
+        <label className="field">
+          {t('dept_branch_label')}
+          <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+            <option value="">{t('dept_branch_ph')}</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {L(b.name)}
+              </option>
+            ))}
+          </select>
         </label>
         <div className="dialog-actions">
           <button type="button" className="detail-close-text" onClick={onClose}>

@@ -12,6 +12,7 @@ const fileRoutes = require('./routes/files');
 const notificationRoutes = require('./routes/notifications');
 const userRoutes = require('./routes/users');
 const departmentRoutes = require('./routes/departments');
+const branchRoutes = require('./routes/branches');
 const reportRoutes = require('./routes/reports');
 const onboardingRoutes = require('./routes/onboarding');
 const timeClockRoutes = require('./routes/timeclock');
@@ -50,6 +51,7 @@ app.use('/api/v1/files', fileRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/departments', departmentRoutes);
+app.use('/api/v1/branches', branchRoutes);
 app.use('/api/v1/reports', reportRoutes);
 // Onboarding wizard: GET /onboarding/options + PATCH /company/onboarding.
 app.use('/api/v1', onboardingRoutes);

@@ -760,6 +760,30 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /branches:
+    get:
+      tags: [people]
+      summary: >
+        List this company's branches (admin or view_all). Read-only —
+        branches are created only by the onboarding wizard; this exists so
+        the Departments page can populate a branch picker.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { $ref: '#/components/schemas/LocalizedText' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /departments:
     get:
       tags: [people]
@@ -794,7 +818,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, headEmployeeId, memberEmployeeIds]
+              required: [name, headEmployeeId, memberEmployeeIds, branchId]
               properties:
                 name: { $ref: '#/components/schemas/LocalizedText' }
                 headEmployeeId: { type: integer }
@@ -803,6 +827,7 @@ paths:
                   items: { type: integer }
                   minItems: 1
                   description: must not include headEmployeeId
+                branchId: { type: integer, description: must be one of this company's own branches }
       responses:
         '201':
           description: Created
@@ -818,7 +843,10 @@ paths:
   /departments/{id}:
     patch:
       tags: [people]
-      summary: Rename a department (admin-only). Bilingual name only.
+      summary: >
+        Rename a department (admin-only), and optionally (re)assign its
+        branch — also how the seed's branch-less "General" department gets
+        one after onboarding creates branches.
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
@@ -829,6 +857,7 @@ paths:
               required: [name]
               properties:
                 name: { $ref: '#/components/schemas/LocalizedText' }
+                branchId: { type: integer, description: optional; must be one of this company's own branches }
       responses:
         '204': { description: Updated }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -1313,6 +1342,8 @@ components:
         name: { $ref: '#/components/schemas/LocalizedText' }
         headUserId: { type: integer, nullable: true }
         headName: { type: string, nullable: true }
+        branchId: { type: integer, nullable: true }
+        branchName: { $ref: '#/components/schemas/LocalizedText' }
         memberCount: { type: integer }
 
     Point:
@@ -1357,6 +1388,8 @@ components:
         workerType: { type: string, nullable: true, description: machine key, e.g. 'full_time'/'part_time'/'contractor' }
         departmentId: { type: integer, nullable: true }
         departmentName: { $ref: '#/components/schemas/LocalizedText' }
+        branchId: { type: integer, nullable: true, description: derived from the employee's department, not settable directly }
+        branchName: { $ref: '#/components/schemas/LocalizedText' }
         levelId: { type: integer, nullable: true }
         levelName: { $ref: '#/components/schemas/LocalizedText' }
 

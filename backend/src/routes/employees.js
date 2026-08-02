@@ -39,6 +39,8 @@ function publicEmployee(r) {
     workerType: r.worker_type,
     departmentId: r.department_id,
     departmentName: r.department_name,
+    branchId: r.branch_id,
+    branchName: r.branch_name,
     levelId: r.level_id,
     levelName: r.level_name,
   };
@@ -62,10 +64,11 @@ async function loadEmployee(id, actor) {
     `${sub}
      SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
             u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type,
-            u.department_id, d.name AS department_name, u.level_id, l.name AS level_name,
-            u.manager_id
+            u.department_id, d.name AS department_name, d.branch_id, b.name AS branch_name,
+            u.level_id, l.name AS level_name, u.manager_id
      FROM users u
      LEFT JOIN department d ON d.id = u.department_id
+     LEFT JOIN branch b ON b.id = d.branch_id
      LEFT JOIN employee_level l ON l.id = u.level_id
      WHERE u.id = $1 AND u.role = 'employee'
        AND u.id <> $2 AND u.id IN (SELECT id FROM sub)`,
@@ -107,7 +110,8 @@ router.get('/', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
               u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type,
-              u.department_id, d.name AS department_name, u.level_id, l.name AS level_name,
+              u.department_id, d.name AS department_name, d.branch_id, b.name AS branch_name,
+              u.level_id, l.name AS level_name,
               (SELECT COUNT(*)::int
                FROM task t
                JOIN request r ON r.id = t.request_id
@@ -142,6 +146,7 @@ router.get('/', async (req, res, next) => {
               COUNT(*) OVER()::int AS total
        FROM users u
        JOIN department d ON d.id = u.department_id
+       LEFT JOIN branch b ON b.id = d.branch_id
        LEFT JOIN employee_level l ON l.id = u.level_id
        WHERE ${where.join(' AND ')}
        ORDER BY u.name
@@ -164,6 +169,8 @@ router.get('/', async (req, res, next) => {
         workerType: r.worker_type,
         departmentId: r.department_id,
         departmentName: r.department_name,
+        branchId: r.branch_id,
+        branchName: r.branch_name,
         levelId: r.level_id,
         levelName: r.level_name,
         openTaskCount: r.open_task_count,

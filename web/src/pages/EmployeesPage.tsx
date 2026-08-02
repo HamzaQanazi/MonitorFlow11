@@ -30,6 +30,8 @@ interface Employee {
   workerType: string | null
   departmentId: number
   departmentName: Loc
+  branchId: number | null
+  branchName: Loc | null
   levelId: number | null
   levelName: Loc | null
   // Avg minutes to resolve the requests this employee holds; null = none yet.
@@ -265,7 +267,10 @@ export default function EmployeesPage() {
                     </td>
                     <td className="emp-login">{e.loginIdentifier}</td>
                     <td className="emp-email">{e.email}</td>
-                    <td>{L(e.departmentName)}</td>
+                    <td>
+                      {L(e.departmentName)}
+                      {e.branchName && <span className="emp-branch"> · {L(e.branchName)}</span>}
+                    </td>
                     <td>{formatDuration(e.avgResolutionMinutes, t)}</td>
                     <td>
                       <span className={`emp-badge${e.isActive ? ' is-active' : ' is-inactive'}`}>
@@ -746,7 +751,8 @@ function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onCl
         <h4>{employee.name}</h4>
         <p className="emp-summary-meta">
           <span className="emp-login">{employee.loginIdentifier}</span> · {employee.email} ·{' '}
-          {L(employee.departmentName)} ·{' '}
+          {L(employee.departmentName)}
+          {employee.branchName && <> · {L(employee.branchName)}</>} ·{' '}
           <span className={`emp-badge${employee.isActive ? ' is-active' : ' is-inactive'}`}>
             {employee.isActive ? t('emp_active') : t('emp_inactive')}
           </span>

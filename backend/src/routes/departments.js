@@ -26,6 +26,17 @@ async function invalidEmployeeIds(ids) {
   return missing.length ? `unknown or inactive employee id(s): ${missing.join(', ')}` : null;
 }
 
+// A department's branch must be one of this company's own branches (branch
+// is company-scoped; department isn't, so this is the one cross-check needed).
+async function invalidBranchId(branchId, companyId) {
+  if (!Number.isInteger(branchId)) return true;
+  const { rows } = await pool.query('SELECT 1 FROM branch WHERE id = $1 AND company_id = $2', [
+    branchId,
+    companyId,
+  ]);
+  return rows.length === 0;
+}
+
 // GET /departments — admin sees all (with head + member count, for the
 // Departments page); an oversight employee sees only their own department,
 // which keeps every department picker correct without client-side filtering.
@@ -36,10 +47,11 @@ router.get('/', async (req, res, next) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const { rows } = await pool.query(
-      `SELECT d.id, d.name, d.head_user_id, h.name AS head_name,
+      `SELECT d.id, d.name, d.head_user_id, h.name AS head_name, d.branch_id, b.name AS branch_name,
               (SELECT COUNT(*)::int FROM users m WHERE m.department_id = d.id) AS member_count
        FROM department d
        LEFT JOIN users h ON h.id = d.head_user_id
+       LEFT JOIN branch b ON b.id = d.branch_id
        WHERE $1::boolean OR d.id = $2
        ORDER BY d.name`,
       [isAdmin, req.user.department_id]
@@ -50,6 +62,8 @@ router.get('/', async (req, res, next) => {
         name: r.name,
         headUserId: r.head_user_id,
         headName: r.head_name,
+        branchId: r.branch_id,
+        branchName: r.branch_name,
         memberCount: r.member_count,
       })),
     });
@@ -81,18 +95,22 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
       errors.memberEmployeeIds = 'Members must be different from the head';
     }
 
+    const branchId = b.branchId;
+    if (!Number.isInteger(branchId)) errors.branchId = 'A branch is required';
+
     if (Object.keys(errors).length) return res.status(422).json({ errors });
 
     const badHead = await invalidEmployeeIds([headEmployeeId]);
     if (badHead) errors.headEmployeeId = 'Invalid or inactive employee';
     const badMembers = await invalidEmployeeIds(memberEmployeeIds);
     if (badMembers) errors.memberEmployeeIds = 'Invalid or inactive employee(s)';
+    if (await invalidBranchId(branchId, req.user.company_id)) errors.branchId = 'Invalid branch';
     if (Object.keys(errors).length) return res.status(422).json({ errors });
 
     const created = await withTx(async (tx) => {
       const { rows } = await tx.query(
-        'INSERT INTO department (name, head_user_id) VALUES ($1::jsonb, $2) RETURNING id',
-        [JSON.stringify(b.name), headEmployeeId]
+        'INSERT INTO department (name, head_user_id, branch_id) VALUES ($1::jsonb, $2, $3) RETURNING id',
+        [JSON.stringify(b.name), headEmployeeId, branchId]
       );
       const departmentId = rows[0].id;
       await tx.query('UPDATE users SET department_id = $1 WHERE id = $2', [departmentId, headEmployeeId]);
@@ -104,6 +122,7 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
         name: b.name,
         headEmployeeId,
         memberEmployeeIds,
+        branchId,
       });
       return departmentId;
     });
@@ -114,7 +133,9 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
   }
 });
 
-// PATCH /departments/:id (admin-only) — rename only.
+// PATCH /departments/:id (admin-only) — rename, and optionally (re)assign the
+// branch (branchId is optional here, unlike create — this is also how the
+// bootstrap "General" seed department, which has no branch, gets one).
 router.patch('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -124,10 +145,16 @@ router.patch('/:id', requireRole('admin'), async (req, res, next) => {
 
     const b = req.body || {};
     if (!isBilingual(b.name)) return res.status(422).json({ errors: { name: 'Bilingual name (en + ar) is required' } });
+    if (b.branchId !== undefined && (await invalidBranchId(b.branchId, req.user.company_id))) {
+      return res.status(422).json({ errors: { branchId: 'Invalid branch' } });
+    }
 
     await withTx(async (tx) => {
-      await tx.query('UPDATE department SET name = $1::jsonb WHERE id = $2', [JSON.stringify(b.name), id]);
-      await logAudit(tx, req.user.id, 'department.updated', 'department', id, { name: b.name });
+      await tx.query(
+        'UPDATE department SET name = $1::jsonb, branch_id = COALESCE($2, branch_id) WHERE id = $3',
+        [JSON.stringify(b.name), b.branchId ?? null, id]
+      );
+      await logAudit(tx, req.user.id, 'department.updated', 'department', id, { name: b.name, branchId: b.branchId });
     });
     res.status(204).end();
   } catch (err) {
