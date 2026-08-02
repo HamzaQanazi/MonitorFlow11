@@ -98,7 +98,6 @@ const FEATURE_GROUPS = [
     key: 'communication',
     label: { en: 'Communication', ar: 'التواصل' },
     features: [
-      { key: 'chat_updates', label: { en: 'Chat & Updates', ar: 'المحادثة والتحديثات' } },
       { key: 'directory', label: { en: 'Directory', ar: 'الدليل' } },
       { key: 'events', label: { en: 'Events', ar: 'الفعاليات' } },
       { key: 'knowledge_base', label: { en: 'Knowledge Base', ar: 'قاعدة المعرفة' } },
@@ -110,11 +109,15 @@ const FEATURE_GROUPS = [
     features: [
       { key: 'time_off', label: { en: 'Time Off Management', ar: 'إدارة الإجازات' } },
       { key: 'training_onboarding', label: { en: 'Training & Onboarding', ar: 'التدريب والتأهيل' } },
-      { key: 'hiring', label: { en: 'Hiring', ar: 'التوظيف' } },
-      { key: 'recognitions', label: { en: 'Recognitions & Rewards', ar: 'التقدير والمكافآت' } },
     ],
   },
 ];
+// Dropped from the catalogue (deliberate scope decision, not yet built):
+// chat_updates (conflicts with the frozen no-WebSockets/no-push constraint,
+// §3), hiring (ATS-scale — biggest remaining scope), recognitions (no real
+// product/thesis value). A company that already had one of these keys stored
+// in its `features` array (none did in this dev seed) keeps it — this only
+// stops the wizard from offering them to new selections.
 
 // Plan catalogue — step 7. Record-only (no billing, no enforcement yet): each
 // plan's employeeCap and featureGroups are descriptive text on the wizard card,
