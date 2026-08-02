@@ -17,10 +17,11 @@ and the **onboarding wizard** (backend + React) are in.
 **The operational engine underneath is unchanged and still live** — the dynamic
 form engine, the dynamic workflow engine, the two-gate permission model, requests/
 tasks/audit. Invariants I2–I10 (§2) still hold for that layer. The workforce
-features (time clock, schedule, etc.) the wizard lets an Owner *select* are, so
-far, **selections stored on the company** — the feature modules themselves are the
-next increment, not yet built. Where this file still describes the old
-config-driven surface, treat §1/§9/§13 as the current truth and flag any conflict.
+feature modules the wizard lets an Owner *select* (`features` on `company`) have
+since **shipped**: Time Clock, Schedule, Checklists, Directory, Knowledge Base,
+Events, Training — backend routes + migrations, web pages, and mobile screens for
+each (§11). Where this file still describes the old config-driven surface, treat
+§1/§9/§13 as the current truth and flag any conflict.
 
 Supersedes the old ER v3 / API v2 spec. The API contract lives in `openapi.yaml`
 (§12); note it has **drifted** from the code during the pivot and is being
@@ -55,8 +56,9 @@ engines:
   only (§8).
 
 The onboarding **feature selections** (`time_clock`, `schedule`, …) are stored on
-the company as data; the feature modules themselves are the next build increment.
-The catalogue the wizard offers — employee ranges, industries + sub-industries,
+the company as data; the feature modules themselves have shipped (§11) — the
+selection currently doesn't gate access to a module's routes/pages (documented
+gap, §15). The catalogue the wizard offers — employee ranges, industries + sub-industries,
 features — lives in one backend file (`lib/onboardingOptions.js`), the single
 source of truth the wizard fetches (thin client, I4).
 
@@ -250,9 +252,12 @@ not operate the queue. Every operational authority is an **employee** decision
 resolved by the two gates (I3):
 
 - **Gate 1 — capability.** The fixed catalogue (`lib/capabilities.js`):
-  `view_all · assign · set_priority · override · manage_employees · export`. A
-  `employee_level` grants a subset via `level_capability`. An "oversight" employee
-  is one whose level grants `view_all`.
+  `view_all · assign · set_priority · override · manage_employees · export ·
+  manage_events · manage_knowledge_base · manage_training`. The last three let a
+  level author just one workforce feature module (§11) without also holding
+  `view_all`'s general oversight. A `employee_level` grants a subset via
+  `level_capability`. An "oversight" employee is one whose level grants
+  `view_all`.
 - **Gate 2 — subtree scope.** `users.manager_id` self-reference; a recursive CTE
   (`lib/scope.js` `subtreeIds` / `ownerInScope`) yields self + all descendants.
   Request visibility for an employee = requests whose **service `owner_id` is in
@@ -548,14 +553,27 @@ it once fired is removed — §9.)
 cancel, confirm/dispute resolution, attachments, map pin).
 
 **Employee mobile:** Home + My Tasks · Task Details · workflow transitions ·
-Complete Task (dynamic completion form).
+Complete Task (dynamic completion form) · **Workforce feature modules** (shipped
+post-pivot, not yet gated by the company's onboarding feature selection — §15):
+Time Clock (clock in/out, breaks, manual hours, in-shift notes/photos/tips) ·
+Schedule (my roster) · Checklists · Directory · Knowledge Base · Events (RSVP) ·
+Training (complete). Time Off is **not** a separate module — it's a normal
+service type through the dynamic form/workflow engine (I1), themed as its own
+screen over `/requests` + `/services`.
 
 **Monitor web:** Login · **First-login onboarding wizard** (v7 — the seven-step
 "Customize your app in 1 minute", gated on an un-onboarded Owner) · Dashboard
 Overview (stats grouped **open vs closed**, per-service + per-priority totals,
 30-day chart) · Requests Management + Assignment (list/filters + detail pane,
 timeline, comments, assign/reassign, priority, status override, map view) ·
-Employees Management · Reports + CSV export · Audit.
+Employees Management · Departments Management · Employee Levels · Reports + CSV
+export · Audit · **Workforce feature modules** (shipped post-pivot): Time Clock
+(shift/timesheet oversight + CSV export) · Schedule (shift templates + roster) ·
+Checklists (forms-and-checklists submission stats, aggregated from existing
+request/workflow data, not a new engine surface) · Directory · Knowledge Base ·
+Events · Training. Each module route is capability-gated (§5) — `view_all` for
+the oversight views, plus `manage_events`/`manage_knowledge_base`/
+`manage_training` for authoring that module without granting general oversight.
 
 **Shared component:** Notifications + Profile, reused by both mobile apps.
 
@@ -678,7 +696,10 @@ versioning · reassignment overwrites `employee_id` (history note is the audit) 
 polling latency · 24h JWT, no refresh/revocation · email enumeration on register ·
 single organization per deployment · temporary passwords not force-changed · no
 automated frontend E2E · onboarding is one-shot with no in-app edit (change company
-details by direct row update).
+details by direct row update) · the onboarding wizard's feature-module selection
+(§1/§9) doesn't gate module routes/pages — Time Clock/Schedule/Checklists/
+Directory/Knowledge Base/Events/Training are reachable by anyone with the
+relevant capability regardless of which features the Owner picked in the wizard.
 
 ---
 
