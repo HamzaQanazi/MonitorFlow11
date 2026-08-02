@@ -355,6 +355,14 @@ const Map<String, Map<String, String>> _dict = {
   'ev_rsvp_fail': {'en': 'Could not update your RSVP', 'ar': 'تعذّر تحديث حالة حضورك'},
   'ev_going_count': {'en': 'going', 'ar': 'سيحضرون'},
 
+  // training & onboarding (hr_skills feature group — read + self-service completion)
+  'tr_title': {'en': 'Training & Onboarding', 'ar': 'التدريب والتأهيل'},
+  'tr_load_fail': {'en': 'Could not load training modules.', 'ar': 'تعذّر تحميل وحدات التدريب.'},
+  'tr_none_title': {'en': 'No modules yet', 'ar': 'لا وحدات بعد'},
+  'tr_complete': {'en': 'Mark complete', 'ar': 'تمييز كمكتملة'},
+  'tr_uncomplete': {'en': 'Undo complete', 'ar': 'إلغاء الإكمال'},
+  'tr_complete_fail': {'en': 'Could not update your progress', 'ar': 'تعذّر تحديث تقدّمك'},
+
   // form response view (shared)
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},
   'fr_no': {'en': 'No', 'ar': 'لا'},

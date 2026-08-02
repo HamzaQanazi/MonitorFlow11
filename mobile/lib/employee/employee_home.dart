@@ -19,6 +19,7 @@ import 'checklists_screen.dart';
 import 'directory_screen.dart';
 import 'events_screen.dart';
 import 'knowledge_base_screen.dart';
+import 'training_screen.dart';
 import 'schedule_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_map_view.dart';
@@ -169,6 +170,13 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             tooltip: i18n.tr('ev_title'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const EventsScreen()),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.school_outlined),
+            tooltip: i18n.tr('tr_title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TrainingScreen()),
             ),
           ),
           NotificationBell(

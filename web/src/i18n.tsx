@@ -29,6 +29,7 @@ const dict: Record<string, Loc> = {
   nav_directory: { en: 'Directory', ar: 'الدليل' },
   nav_knowledge_base: { en: 'Knowledge Base', ar: 'قاعدة المعرفة' },
   nav_events: { en: 'Events', ar: 'الفعاليات' },
+  nav_training: { en: 'Training & Onboarding', ar: 'التدريب والتأهيل' },
   nav_audit: { en: 'Audit Log', ar: 'سجل التدقيق' },
   nav_add_service: { en: 'Add Service', ar: 'إضافة خدمة' },
   nav_departments: { en: 'Departments', ar: 'الدوائر' },
@@ -548,6 +549,23 @@ const dict: Record<string, Loc> = {
   ev_location: { en: 'Location (optional)', ar: 'المكان (اختياري)' },
   ev_create: { en: 'Create', ar: 'إنشاء' },
   ev_err_save: { en: 'Could not save the event.', ar: 'تعذّر حفظ الفعالية.' },
+
+  // training & onboarding (hr_skills feature group — modules + self-service completion)
+  tr_title: { en: 'Training & Onboarding', ar: 'التدريب والتأهيل' },
+  tr_add: { en: 'New module', ar: 'وحدة جديدة' },
+  tr_module_word: { en: 'module', ar: 'وحدة' },
+  tr_modules_word: { en: 'modules', ar: 'وحدات' },
+  tr_load_err: { en: 'Couldn’t load training modules:', ar: 'تعذّر تحميل وحدات التدريب:' },
+  tr_loading: { en: 'Loading modules…', ar: 'جارٍ تحميل الوحدات…' },
+  tr_none_h: { en: 'No modules yet', ar: 'لا وحدات بعد' },
+  tr_none_p: { en: 'Add your first training module to start onboarding staff.', ar: 'أضف أول وحدة تدريبية لبدء تأهيل الموظفين.' },
+  tr_col_completed: { en: 'Completed', ar: 'أكملها' },
+  tr_complete: { en: 'Mark complete', ar: 'تمييز كمكتملة' },
+  tr_uncomplete: { en: 'Undo complete', ar: 'إلغاء الإكمال' },
+  tr_create_h: { en: 'New training module', ar: 'وحدة تدريبية جديدة' },
+  tr_edit_h: { en: 'Edit module', ar: 'تعديل الوحدة' },
+  tr_create: { en: 'Create', ar: 'إنشاء' },
+  tr_err_save: { en: 'Could not save the module.', ar: 'تعذّر حفظ الوحدة.' },
 
   // levels & capabilities (Gate 1 configuration — admin only)
   lvl_title: { en: 'Levels & Capabilities', ar: 'المستويات والصلاحيات' },

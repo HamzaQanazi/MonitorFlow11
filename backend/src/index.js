@@ -21,6 +21,7 @@ const checklistsRoutes = require('./routes/checklists');
 const directoryRoutes = require('./routes/directory');
 const knowledgeBaseRoutes = require('./routes/knowledgeBase');
 const eventRoutes = require('./routes/events');
+const trainingRoutes = require('./routes/training');
 
 const app = express();
 
@@ -64,6 +65,7 @@ app.use('/api/v1/checklists', checklistsRoutes);
 app.use('/api/v1/directory', directoryRoutes);
 app.use('/api/v1/knowledge-base', knowledgeBaseRoutes);
 app.use('/api/v1/events', eventRoutes);
+app.use('/api/v1/training', trainingRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 

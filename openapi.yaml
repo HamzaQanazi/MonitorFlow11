@@ -93,6 +93,7 @@ tags:
   - name: directory       # company-wide staff directory (communication feature group) — deliberately not Gate-2 scoped
   - name: knowledge-base  # company article list (communication feature group) — read company-wide, write needs view_all/admin
   - name: events          # company calendar + self-service RSVP (communication feature group)
+  - name: training        # training modules + self-service completion tracking (hr_skills feature group)
 
 paths:
   # ── Auth ───────────────────────────────────────────────────────────────────
@@ -1158,6 +1159,118 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  # ── Training & Onboarding (hr_skills feature group) ─────────────────────────
+  # Same read/write split as Knowledge Base; completion is self-service like
+  # Events' RSVP — presence in training_completion = "finished it."
+  /training:
+    get:
+      tags: [training]
+      summary: All of this company's training modules. Includes completionCount and the caller's own isComplete.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  modules:
+                    type: array
+                    items: { $ref: '#/components/schemas/TrainingModule' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [training]
+      summary: Create a training module (view_all or admin).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, body]
+              properties:
+                title: { $ref: '#/components/schemas/LocalizedText' }
+                body: { $ref: '#/components/schemas/LocalizedText' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  module: { $ref: '#/components/schemas/TrainingModule' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /training/{id}:
+    get:
+      tags: [training]
+      summary: One module, including the list of employees who've completed it.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  module: { $ref: '#/components/schemas/TrainingModule' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [training]
+      summary: Edit a training module's title/body (view_all or admin).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { $ref: '#/components/schemas/LocalizedText' }
+                body: { $ref: '#/components/schemas/LocalizedText' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  module: { $ref: '#/components/schemas/TrainingModule' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+    delete:
+      tags: [training]
+      summary: Delete a training module (view_all or admin).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /training/{id}/complete:
+    post:
+      tags: [training]
+      summary: Self-service — mark the caller as having completed this module (idempotent).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [training]
+      summary: Self-service — un-mark the caller's own completion (idempotent).
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '204': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   # ── Notifications ────────────────────────────────────────────────────────────
   /notifications:
     get:
@@ -1618,6 +1731,20 @@ components:
         attendeeCount: { type: integer }
         attendeeNames: { type: array, items: { type: string }, description: only present on GET /events/{id} }
         isGoing: { type: boolean }
+
+    TrainingModule:
+      type: object
+      properties:
+        id: { type: integer }
+        title: { $ref: '#/components/schemas/LocalizedText' }
+        body: { $ref: '#/components/schemas/LocalizedText' }
+        createdBy: { type: integer }
+        createdByName: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completionCount: { type: integer }
+        completedByNames: { type: array, items: { type: string }, description: only present on GET /training/{id} }
+        isComplete: { type: boolean }
 
     Department:
       type: object
