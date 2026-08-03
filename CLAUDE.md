@@ -615,13 +615,18 @@ not let this file contradict it. **v7 reconciliation:** the pivot removed the
 `/config/*` surface and added `/onboarding/options` + `/company/onboarding`.
 Employee management is fully reconciled to the live routes — all under
 `/employees` (people tag, `manage_employees` capability); the old `/config/{org,
-levels,capabilities,employees}` paths are gone (org/capabilities have no live
-endpoint post-pivot — Gate-1 level *authoring* is seed-time only for now, but
-`GET /employee-levels` reads the catalogue, backing the Add Employee "role"
-picker). `/departments` now has full CRUD (Owner-only create/rename/delete/
-reassign-head, §6), documented in the contract. Still undocumented:
-`GET /employee-levels` (same read-only reference-data shape as departments)
-and `/users/me*`. When in doubt,
+levels,capabilities,employees}` paths are gone. **Correction (2026-08-04, found
+live during the web E2E checklist pass — this file previously said the
+opposite):** Gate-1 level *authoring* is not seed-time only — `/employee-levels`
+has full CRUD (admin-only `POST`/`PATCH`/`DELETE`; `PATCH` accepts a
+`capabilities` array that fully replaces a level's `level_capability` grants in
+one call), and it backs a live, working editor on the web console's Levels &
+Capabilities page — every checkbox there toggles a real grant immediately, no
+re-authoring step needed. `GET /employee-levels` reads the catalogue for both
+that page and the Add Employee "role" picker. `/departments` now has full CRUD
+(Owner-only create/rename/delete/reassign-head, §6), documented in the
+contract. Still undocumented in `openapi.yaml`: `/employee-levels`'s write
+endpoints and `/users/me*`. When in doubt,
 the mounted routes in `backend/src/index.js` are ground truth. Key conventions it
 encodes: base
 path `/api/v1`; Bearer JWT on every route except register/login; standard list
