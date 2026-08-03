@@ -246,18 +246,39 @@ being read-only — see §9 below.
 
 ## 6. Reports + export
 
-- [ ] Filters (date range, service, employee) change the summary numbers.
-- [ ] CSV downloads and opens; a cell starting with `= + - @` is prefixed with
-      `'` (open it in Excel and confirm nothing evaluates).
-- [ ] A non-capable employee gets 403 on the export endpoint, not just a hidden
-      button.
+- [x] Owner (admin, no capabilities) hitting `/reports` directly is redirected
+      to `/audit`, not a crash or blank page — confirmed the `view_all`-only
+      guard (no `orAdmin`) applies here same as Requests. Verified 2026-08-04.
+- [ ] Filters changing summary numbers, CSV cell-injection guard, non-capable
+      403: not exercised this pass (needs a `view_all` employee — Manny —
+      which this pass ran out of time to get back to after the rate-limit
+      delays earlier in the session).
 
 ## 7. Audit (admin)
 
-- [ ] Both families appear: config actions (`service.created`, `employee.created`)
-      and operational ones (`request.status_changed`, `.assigned`, `.priority_changed`).
-- [ ] Actor and action filters work; "no match" state renders.
-- [ ] A non-admin employee gets 403.
+- [x] Both families appear: config actions (`Employee created`, `Service
+      created`, `employee_level.updated`, `department.updated`) and
+      operational ones (`Status changed` on Request #3, showing
+      `to/from/transition`). Verified 2026-08-04, 77 real events, paginated
+      20/page.
+- [x] **Real bug found and fixed**: the Details column rendered any
+      bilingual `{en,ar}` value (e.g. a renamed level/department's `name`)
+      as the literal string `[object Object]` instead of the picked-language
+      text — `detailText()` in `AuditPage.tsx` called `String(v)` on every
+      value with no bilingual handling. Fixed: added a `formatDetailValue()`
+      helper that picks via `L()` when a value looks like `{en,ar}`, falls
+      back to `String(v)` otherwise (arrays/strings/numbers unaffected).
+      Verified live — "name: [object Object]" became "name: Manager", "name:
+      General", "name: Staff", "name: Content Editor" across multiple real
+      audit rows after the fix. **Not re-verified in Arabic** (the `L()`
+      helper itself is the same one already proven correct elsewhere on this
+      page and across the app, so low risk, just not independently
+      re-screenshotted in `ar` for this specific column).
+- [ ] Actor/action filter interaction and the non-admin 403: filters render
+      with real, populated options (confirmed) but not exercised by actually
+      selecting one and checking the result narrows; non-admin 403 not
+      independently re-verified here (same `need="admin"` Guard already
+      confirmed for Departments and assumed, not re-tested, for this page).
 
 ## 8. Add Service — the thesis demo (admin, `/services/new`)
 

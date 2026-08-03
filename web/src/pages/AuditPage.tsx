@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
-import { useI18n } from '../i18n'
+import { useI18n, type Loc } from '../i18n'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 
@@ -64,16 +64,26 @@ function entityTypeLabel(entityType: string, t: (k: string) => string) {
   return label === key ? entityType : label
 }
 
-function detailText(detail: AuditEvent['detail']) {
+function detailText(detail: AuditEvent['detail'], L: (loc: Loc) => string) {
   if (!detail || Object.keys(detail).length === 0) return '—'
   return Object.entries(detail)
-    .map(([k, v]) => `${k}: ${String(v)}`)
+    .map(([k, v]) => `${k}: ${formatDetailValue(v, L)}`)
     .join(' · ')
+}
+
+// Bilingual {en,ar} values (e.g. a renamed department/level's `name`) need L()
+// or they stringify to "[object Object]"; everything else (arrays, strings,
+// numbers) already stringifies fine.
+function formatDetailValue(v: unknown, L: (loc: Loc) => string): string {
+  if (v && typeof v === 'object' && !Array.isArray(v) && 'en' in v && 'ar' in v) {
+    return L(v as Loc)
+  }
+  return String(v)
 }
 
 export default function AuditPage() {
   const { user } = useAuth()
-  const { t } = useI18n()
+  const { t, L } = useI18n()
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
   const action = params.get('action') ?? ''
@@ -241,7 +251,7 @@ export default function AuditPage() {
                     <td className="req-service">{e.actor.name}</td>
                     <td>{actionLabel(e.action, t)}</td>
                     <td>{e.entityName ?? `${entityTypeLabel(e.entityType, t)} #${e.entityId}`}</td>
-                    <td className="emp-email">{detailText(e.detail)}</td>
+                    <td className="emp-email">{detailText(e.detail, L)}</td>
                   </tr>
                 ))}
               </tbody>
