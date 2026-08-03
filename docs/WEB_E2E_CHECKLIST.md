@@ -155,23 +155,61 @@ current tooling can't create without a DB write).
 
 ## 3. Requests management + detail pane
 
-- [ ] Filters (state, service, priority, employee, search, date range) each
-      narrow the list; **Clear filters** restores it.
-- [ ] Pagination: `pageSize` respected, next/previous correct at both ends.
-- [ ] Detail pane: timeline shows every history row with actor and note; answers
-      render with their schema labels; attachments download as attachments.
-- [ ] **Assign** — the candidate list contains *only* subtree employees. Assign,
-      then reassign; both write a timeline row.
-- [ ] Assigning the same employee twice → 409 surfaced as an inline error.
-- [ ] **Priority** change writes a timeline row.
-- [ ] **Status override** requires a note; without one → 422 shown inline.
-- [ ] **Cancel / reopen** each show a confirmation dialog first.
-- [ ] Once the request is terminal, task actions are gone (not just disabled).
-- [ ] Comments post and appear; the other party gets a notification.
-- [ ] A Manager-level employee cannot open a request from another subtree by
-      URL → 404.
-- [ ] Map view: pinned requests appear; requests with no location are reported in
-      the "some missing" banner, not silently dropped.
+**Major finding (2026-08-04, flagging — not fixing, a product/seed-data
+decision):** the seeded "Manager" level (`backend/src/seed.js`) grants
+`view_all`, `manage_employees`, `override` — **not** `assign` or
+`set_priority`. Confirmed live: as Manny Manager (a Manager-level employee),
+both the **Assign** button and the **Priority** dropdown on this page fail
+with "Forbidden" (verified in the browser UI and independently via
+`PATCH /requests/{id}/assign` → 403, `PATCH /requests/{id}/priority` → 403
+over curl with his real token). The Owner can't reach this page at all
+(`/requests` has no `orAdmin` bypass). Since Gate-1 level *authoring* has no
+live endpoint (CLAUDE.md §12 — seed-time only), **there is currently no
+account, in a fresh default-seeded deployment, that can assign a request or
+change its priority through the web console.** `override` does work (used
+below), so status overrides remain possible. This is either a seed-data gap
+(Manager should probably include `assign`/`set_priority` by default) or a
+missing level-authoring feature — a product call, not something to silently
+patch here.
+
+- [x] Filters render with real, populated options (service/priority/employee/
+      requester dropdowns) scoped correctly (the employee filter lists only
+      subtree members). **Not exhaustively verified**: actually narrowing the
+      list per filter combination, pagination, and "Clear filters" — time-
+      boxed out of this pass.
+- [ ] Pagination: not exercised (only 3 requests exist in this dev DB, never
+      enough to paginate).
+- [x] Detail pane: timeline, requester name/email, request-details section
+      (schema-labeled answers: "Fire extinguishers checked: Yes", etc.),
+      comments, attachments sections all render correctly for a real request.
+      Verified 2026-08-04.
+- [~] **Assign** — the candidate list correctly contains *only* subtree
+      employees (Sub Ordinate + Time Clocker, not Test Employee who's
+      deactivated, not anyone from Rita's separate subtree) — that part
+      passes. The assign action itself is blocked by the capability gap
+      above, so "assign, then reassign, both write a timeline row" and the
+      "assign the same employee twice → 409" row are **not verified** — no
+      account available could get past the first assign to test either.
+- [ ] Assigning twice → 409: not verified (blocked by the above).
+- [ ] Priority change → timeline row: not verified (blocked by the above —
+      the UI shows "Couldn't change the priority — try again.").
+- [x] **Status override**: verified working end-to-end via `override`
+      (Manny Manager) — `PATCH /requests/3/status` with a note → 200,
+      request moved from `submitted` to the terminal `logged` status.
+      Override to a nonexistent status key → a clear error ("Target is not a
+      status in this workflow"); override back to the request's own initial
+      status is separately refused ("An override cannot return a request to
+      its initial status") — **not verified this pass**: the specific
+      no-note-provided 422 case (didn't isolate it from the other two
+      negatives already exercised).
+- [ ] Cancel / reopen confirmation dialogs: not exercised this pass.
+- [ ] Terminal-request task-actions-gone: not exercised this pass (would
+      need to re-check the now-terminal request #3, left for a future pass).
+- [ ] Comments + notification: not exercised this pass.
+- [x] A Manager-level employee cannot open a request from another subtree by
+      URL → inline "Not found" (Rita Rootwood on `/requests/1`, a request
+      owned by Manny's subtree). Verified 2026-08-04.
+- [ ] Map view: not exercised this pass.
 
 ## 4. Employees management
 
