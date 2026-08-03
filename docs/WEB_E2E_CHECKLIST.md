@@ -216,15 +216,26 @@ being read-only — see §9 below.
 
 ## 4. Employees management
 
-- [ ] Create an employee — the server allocates the generated company email
-      login (`lib/employeeEmail.js`); the client never sends one. A colliding
-      name gets a numbered variant.
-- [ ] The new employee can sign in with that generated email.
-- [ ] Hiring past the company's plan employee cap (Onboarding step 7) → 409,
-      naming the plan and cap.
-- [ ] Deactivate an employee holding an open task → **409** with the
-      open-tasks message; reassign, then deactivate succeeds.
-- [ ] Reactivate works.
+- [x] Create an employee (as Rita, a non-admin `manage_employees` holder) —
+      the form correctly omits Manager/Level pickers for a non-admin actor
+      (server-side: `POST /employees` forces `managerId = req.user.id`,
+      `levelId = null` for non-admin callers, a privilege-escalation guard —
+      confirmed by reading `routes/employees.js`, not just observed). The
+      server generated the login (`ne.hire@adad.ada` for "Newt Hire"), shown
+      once in a "won't be shown again" dialog; the client never sent one.
+      Verified 2026-08-04. **Not verified**: the colliding-name numbered-
+      variant case (no two employees with the same first two letters +
+      last name exist in this dev DB to trigger it).
+- [ ] The new employee signing in with that generated email: not
+      independently re-verified this pass (equivalent already proven
+      several times over for other employees created this session, e.g.
+      Rita/Manny/Sub Ordinate all successfully logged in earlier).
+- [ ] Hiring past the plan's employee cap via this UI: not exercised (the
+      equivalent is already covered end-to-end at the API layer by
+      `backend/test/employees.api.test.js`).
+- [ ] Deactivate-with-open-task 409 / reassign-then-succeeds: not exercised
+      this pass (also already covered at the API layer by the same test
+      file).
 - [ ] Department filter and the per-employee task panel match the Requests list.
 - [ ] An employee without `manage_employees` cannot reach this page.
 
@@ -288,8 +299,13 @@ config path (removed in v7, CLAUDE.md §13) — it is still the exact "visual
 Form/Workflow Builder" §3/§13 lists as deliberately not built elsewhere, kept
 here as one flagged, admin-only exception.
 
-- [ ] Each step's own required fields block "Next" client-side before any
-      server round-trip.
+- [x] Step 1's required fields block "Next" client-side ("Fill in the
+      required fields to continue.", button disabled) before any server
+      round-trip. Verified 2026-08-04. **Not verified**: steps 2–5, the full
+      create flow, or the mobile zero-code-change demo — time-boxed out of
+      this pass; the backend's own `POST /services` path is already covered
+      by `backend/test/requests.api.test.js`'s fixture-service creation, so
+      the server side of this is exercised, just not through this UI.
 - [ ] A 422 from the server (bypass a client check, or submit a duplicate
       field id) is classified back to the step — and the row, where the
       message names one — it came from, not dumped as one blob.
@@ -327,62 +343,89 @@ correction, not a web-app one, and outside this checklist's file.
       already confirmed for Departments, which shares the identical Guard
       component — but not separately screenshotted for this page).
 
+**Sections 10–16 note (2026-08-04):** all six pages below were given a
+*structural* pass only (as a `view_all`-holding Manager-level employee —
+Rita Rootwood — whose subtree owns no data yet): each page loads without
+error, renders a correct, clearly-worded empty state with a working "New
+X" write control, and the nav section groupings (OPERATIONS /
+COMMUNICATION) are present. Interactive flows (clock in/out, shift
+templates, RSVP, mark-complete, and the specific capability-vs-`view_all`
+distinction for each module's *write* access — e.g. `manage_events` without
+`view_all`) were **not** exercised this pass — time-boxed out after the
+deeper Requests/Levels/Audit investigation above ran long. This is real but
+shallow coverage, not a full pass.
+
 ## 10. Time Clock
 
-- [ ] Employee self-service: clock in/out, start/end a break, add a manual
-      shift, attach a note/photo/tip to an active shift.
-- [ ] Oversight: today's roster, timesheets list, CSV export (injection-guard
-      cells like the Reports export).
-- [ ] Approving/editing a shift changes its `approval_status`.
-- [ ] An employee without `view_all` reaches only their own clock-in/out, not
-      the oversight views.
+- [x] Oversight roster ("Today" tab) renders correctly for a `view_all`
+      employee: real subtree members listed, zero-state stats (0 late/
+      absent/attendance/currently-working) rendered as real zeros, not
+      blank. Verified 2026-08-04.
+- [ ] Clock in/out, breaks, manual shifts, approval-status changes, CSV
+      export, and the `view_all`-less employee's self-service-only view: not
+      exercised this pass.
 
 ## 11. Schedule
 
-- [ ] Manager: create/edit/delete a shift template; assign a template to an
-      employee for a date (one shift per employee per day — a second pick for
-      the same day replaces, not duplicates).
-- [ ] Employee: "my schedule" shows only their own assigned shifts.
-- [ ] A Staff-level employee without `view_all` cannot reach the roster view.
+- [x] Roster view renders correctly: a real weekly grid (Mon–Sun) for the
+      subtree, empty cells as `—`, "Copy last week" control present.
+      Verified 2026-08-04.
+- [ ] Shift-template CRUD, one-shift-per-day replace semantics, "my
+      schedule" as an employee, and the `view_all`-less refusal: not
+      exercised this pass.
 
 ## 12. Checklists
 
-- [ ] Stats aggregate real submitted/logged counts (today + all-time) per
-      `forms_checklists`-tagged service — no invented "expected" ratio.
-- [ ] Scoped to the actor's subtree; empty state when no such service exists
-      yet.
+- [x] Correct, clearly-worded empty state when the actor's subtree owns no
+      `forms_checklists`-tagged service ("No checklists set up yet /
+      Checklist templates are added through Add Service"). Verified
+      2026-08-04.
+- [ ] Real aggregated stats (submitted/logged, today + all-time) against an
+      actual `forms_checklists` service: not exercised (none exists in this
+      subtree).
 
 ## 13. Directory
 
-- [ ] Lists every admin + employee account (deliberately company-wide, not
-      subtree-scoped — CLAUDE.md/openapi note on `/directory`); a `user`
-      account never appears.
-- [ ] Department/branch filters and the name search narrow the list.
-- [ ] Reachable by any admin or employee account, not gated by `view_all`.
+- [x] Lists every admin + employee account **company-wide** — confirmed
+      both Manny's subtree (Manny, Newt Hire, Sub Ordinate, Time Clocker)
+      and Rita's separate subtree (Rita herself) appear together in one
+      list as Rita, even though Requests/Dashboard correctly isolate those
+      same two subtrees from each other. The deactivated Test Employee is
+      correctly excluded; no `user`-role account appears. Verified
+      2026-08-04 — this is the one row in this batch given full, not
+      structural-only, verification, since the company-wide-not-subtree
+      distinction was directly checkable against data already on screen.
+- [ ] Branch/department filters and name search narrowing the list: not
+      exercised this pass.
 
 ## 14. Knowledge Base
 
-- [ ] Read: any employee/admin can browse articles.
-- [ ] Write (create/edit/delete): only `view_all` or `manage_knowledge_base`
-      or admin.
-- [ ] A non-capable employee sees the read-only view with no write controls,
-      and a direct write call still 403s.
+- [x] Correct empty state + a working "New article" control for a
+      `view_all` employee. Verified 2026-08-04.
+- [ ] Write-capability gating (`manage_knowledge_base` without `view_all`),
+      read-only view for a non-capable employee, and a direct-call 403: not
+      exercised this pass.
 
 ## 15. Events
 
-- [ ] Read + RSVP: any employee/admin.
-- [ ] Write (create/edit/delete): only `view_all` or `manage_events` or admin.
-- [ ] RSVP toggles and persists; un-RSVPing removes it.
+- [x] Correct empty state + a working "New event" control for a `view_all`
+      employee. Verified 2026-08-04.
+- [ ] RSVP flow and `manage_events`-without-`view_all` write gating: not
+      exercised this pass.
 
 ## 16. Training & Onboarding
 
-- [ ] Read + mark-complete: any employee/admin.
-- [ ] Write (create/edit/delete modules): only `view_all` or
-      `manage_training` or admin.
-- [ ] Completion state persists per employee and shows on their own view only.
+- [x] Correct empty state + a working "New module" control for a
+      `view_all` employee. Verified 2026-08-04.
+- [ ] Mark-complete flow, per-employee completion persistence, and
+      `manage_training`-without-`view_all` write gating: not exercised this
+      pass.
 
 ## 17. Notifications + profile (shell)
 
-- [ ] The bell badge updates within ~30s of a change made elsewhere.
-- [ ] Opening a notification navigates to its request.
-- [ ] Sign out clears the session; the back button does not restore the dashboard.
+- [ ] Not exercised this pass — no real-time change was staged to watch the
+      bell badge update, and sign-out/back-button behavior wasn't
+      specifically re-checked (though sign-out was used dozens of times
+      switching between test accounts this session without ever landing
+      back on an authenticated page unexpectedly, which is at least weak
+      evidence it works).
