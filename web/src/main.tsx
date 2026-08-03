@@ -31,25 +31,52 @@ import AddServiceWizard from './pages/AddServiceWizard'
 // `orAdmin` admits the admin (Owner) into a capability-gated page too — used
 // only where the backend was updated to match (requireCapabilityOrAdmin):
 // Dashboard and Employees. Everywhere else stays capability-only.
+// `need` takes an array where the backend also accepts more than one
+// capability (requireCapabilityOrAdmin('view_all', 'manage_X')) — the module
+// pages (knowledge base, events, training) so a level holding only that
+// module's capability, not view_all, can still reach its own page.
+type Capability =
+  | 'view_all' | 'manage_employees' | 'manage_knowledge_base' | 'manage_events' | 'manage_training'
+
+// The first console route each capability grants, most-general first — used
+// to send a denied user somewhere they CAN reach instead of bouncing them
+// back to a page they just failed (which would loop for anyone without
+// view_all, e.g. a level holding only manage_training).
+const HOME_BY_CAPABILITY: [Capability, string][] = [
+  ['view_all', '/'],
+  ['manage_employees', '/employees'],
+  ['manage_knowledge_base', '/knowledge-base'],
+  ['manage_events', '/events'],
+  ['manage_training', '/training'],
+]
+
+function homeFor(user: { role: string; capabilities: string[] }): string {
+  if (user.role === 'admin') return '/audit'
+  const hit = HOME_BY_CAPABILITY.find(([cap]) => user.capabilities.includes(cap))
+  return hit ? hit[1] : '/'
+}
+
 // eslint-disable-next-line react-refresh/only-export-components -- entrypoint file, fast refresh doesn't apply
 function Guard({
   need,
   orAdmin,
   children,
 }: {
-  need: 'view_all' | 'manage_employees' | 'admin'
+  need: Capability | 'admin' | Capability[]
   orAdmin?: boolean
   children: ReactNode
 }) {
   const { user } = useAuth()
   if (!user) return null
+  const needed = Array.isArray(need) ? need : [need]
   const allowed =
-    need === 'admin'
+    needed[0] === 'admin'
       ? user.role === 'admin'
-      : user.capabilities.includes(need) || (orAdmin === true && user.role === 'admin')
+      : needed.some((n) => user.capabilities.includes(n)) || (orAdmin === true && user.role === 'admin')
   if (!allowed) {
-    // Send each kind to its own home rather than showing a 403 page.
-    return <Navigate to={user.role === 'admin' ? '/audit' : '/'} replace />
+    // Send each kind to a page it can actually reach, not a hardcoded one —
+    // otherwise a non-view_all capability holder denied at '/' would loop.
+    return <Navigate to={homeFor(user)} replace />
   }
   return children
 }
@@ -92,9 +119,9 @@ createRoot(document.getElementById('root')!).render(
             <Route path="schedule" element={<Guard need="view_all"><SchedulePage /></Guard>} />
             <Route path="checklists" element={<Guard need="view_all" orAdmin><ChecklistsPage /></Guard>} />
             <Route path="directory" element={<Guard need="view_all" orAdmin><DirectoryPage /></Guard>} />
-            <Route path="knowledge-base" element={<Guard need="view_all" orAdmin><KnowledgeBasePage /></Guard>} />
-            <Route path="events" element={<Guard need="view_all" orAdmin><EventsPage /></Guard>} />
-            <Route path="training" element={<Guard need="view_all" orAdmin><TrainingPage /></Guard>} />
+            <Route path="knowledge-base" element={<Guard need={['view_all', 'manage_knowledge_base']} orAdmin><KnowledgeBasePage /></Guard>} />
+            <Route path="events" element={<Guard need={['view_all', 'manage_events']} orAdmin><EventsPage /></Guard>} />
+            <Route path="training" element={<Guard need={['view_all', 'manage_training']} orAdmin><TrainingPage /></Guard>} />
             <Route path="levels" element={<Guard need="admin"><LevelsPage /></Guard>} />
             <Route path="audit" element={<Guard need="admin"><AuditPage /></Guard>} />
             <Route path="services/new" element={<Guard need="admin"><AddServiceWizard /></Guard>} />

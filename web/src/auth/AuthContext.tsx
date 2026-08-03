@@ -27,10 +27,25 @@ export interface AuthUser {
   companyLogo: string | null
 }
 
-// Who may use the web console: the admin, or an oversight employee (view_all).
-// Field employees and requesters are turned away (they use the mobile apps).
+// Every capability that grants at least one console route (see main.tsx's
+// Guard usage) — kept in sync with it by hand since this list is small and
+// changes rarely. A level holding only e.g. manage_knowledge_base (no
+// view_all) still needs to log in to reach its one page (capabilities.js:
+// manage_events/manage_knowledge_base/manage_training exist specifically so a
+// level can author one module without also holding view_all's oversight).
+const CONSOLE_CAPABILITIES = [
+  'view_all',
+  'manage_employees',
+  'manage_knowledge_base',
+  'manage_events',
+  'manage_training',
+]
+
+// Who may use the web console: the admin, or an oversight/module-author
+// employee. Field employees and requesters are turned away (they use the
+// mobile apps).
 export function canUseConsole(u: Pick<AuthUser, 'role' | 'capabilities'>): boolean {
-  return u.role === 'admin' || u.capabilities.includes('view_all')
+  return u.role === 'admin' || u.capabilities.some((c) => CONSOLE_CAPABILITIES.includes(c))
 }
 
 type AuthStatus = 'restoring' | 'signedOut' | 'signedIn'
