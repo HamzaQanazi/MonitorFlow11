@@ -155,22 +155,25 @@ current tooling can't create without a DB write).
 
 ## 3. Requests management + detail pane
 
-**Major finding (2026-08-04, flagging — not fixing, a product/seed-data
-decision):** the seeded "Manager" level (`backend/src/seed.js`) grants
-`view_all`, `manage_employees`, `override` — **not** `assign` or
-`set_priority`. Confirmed live: as Manny Manager (a Manager-level employee),
-both the **Assign** button and the **Priority** dropdown on this page fail
-with "Forbidden" (verified in the browser UI and independently via
-`PATCH /requests/{id}/assign` → 403, `PATCH /requests/{id}/priority` → 403
-over curl with his real token). The Owner can't reach this page at all
-(`/requests` has no `orAdmin` bypass). Since Gate-1 level *authoring* has no
-live endpoint (CLAUDE.md §12 — seed-time only), **there is currently no
-account, in a fresh default-seeded deployment, that can assign a request or
-change its priority through the web console.** `override` does work (used
-below), so status overrides remain possible. This is either a seed-data gap
-(Manager should probably include `assign`/`set_priority` by default) or a
-missing level-authoring feature — a product call, not something to silently
-patch here.
+**Finding, later resolved by a bigger finding in §9 (2026-08-04):** the
+seeded "Manager" level (`backend/src/seed.js`) grants `view_all`,
+`manage_employees`, `override` — **not** `assign` or `set_priority` — so out
+of the box, as Manny Manager, both **Assign** and the **Priority** dropdown
+on this page fail with "Forbidden" (verified in the UI and via curl,
+`PATCH /requests/{id}/assign` / `/priority` → 403). This looked like a
+deployment-blocking gap (no way to grant those capabilities) until testing
+§9 found the **Levels & Capabilities page is a live, working capability
+editor**, not the read-only page CLAUDE.md §12 and this checklist's own §9
+claim it is. Checking "assign" and "set_priority" for Manager there, live,
+immediately let Manny's token past the capability check (confirmed:
+`PATCH /requests/{id}/assign` went from `{"error":"Forbidden"}` to
+`{"error":"This request cannot be assigned in its current state"}` — a
+workflow-state error, not a permission one — on the same account, same
+token pattern, before and after the checkbox change). **So this is not a
+product-blocking gap** — it's a seed default that under-provisions the
+Manager level, easily fixed live by the Owner. The real, still-open finding
+is the CLAUDE.md §12 / checklist §9 documentation being wrong about the page
+being read-only — see §9 below.
 
 - [x] Filters render with real, populated options (service/priority/employee/
       requester dropdowns) scoped correctly (the employee filter lists only
@@ -227,12 +230,19 @@ patch here.
 
 ## 5. Departments
 
-- [ ] Create a department requires a head + at least one other employee.
-- [ ] Deactivating a head auto-promotes their own manager to head, and
-      re-points the department's other members to report to them.
-- [ ] Deactivating a head with no active manager of their own → 409 until the
-      Owner reassigns the head first.
-- [ ] Only the Owner (admin) can reach this page.
+- [x] Rename works (fixed real, pre-existing bad data while verifying this:
+      the seeded "General" department's Arabic name was literally the
+      placeholder text "???" — renamed to "عام" live via this page,
+      2026-08-04, since it was directly blocking an honest RTL/bilingual
+      check elsewhere).
+- [x] Only the Owner (admin) can reach this page — confirmed both directions:
+      Owner sees it and can act; a Manager-level employee hitting
+      `/departments` directly is redirected to `/` (Dashboard), no crash, no
+      partial render. Verified 2026-08-04.
+- [ ] Create-requires-a-head-plus-one-other-employee, head-deactivation
+      auto-promotion, and the no-active-manager 409: not exercised this pass
+      (would mean deactivating a real head, which is disruptive to the rest
+      of this session's fixture data — left for a pass with disposable data).
 
 ## 6. Reports + export
 
@@ -275,9 +285,26 @@ here as one flagged, admin-only exception.
 
 ## 9. Levels & Capabilities (admin)
 
-- [ ] Capabilities per level are shown (no authoring UI — level grants are
-      seed-time only per CLAUDE.md §12; this page is read-only).
-- [ ] A non-admin employee cannot reach this page.
+**Documentation correction (2026-08-04):** this page is **not** read-only.
+CLAUDE.md §12 says "Gate-1 level authoring is seed-time only for now," and
+this checklist's own row (below, as originally written) repeated that. Live
+testing found the opposite: every capability checkbox per level is
+interactive, toggling it live-updates `level_capability` immediately ("no
+sign-out needed," per the page's own copy — confirmed true, verified an
+employee's token gained a capability without re-authenticating), and an "Add
+level" button exists. Someone should update CLAUDE.md §12 to describe the
+real live endpoint(s) behind this page — not done here since it's a spec
+correction, not a web-app one, and outside this checklist's file.
+
+- [x] Capabilities per level are shown, **and are live-editable** (corrects
+      the row below, which assumed read-only). Verified 2026-08-04 by
+      granting `assign` and `set_priority` to the Manager level and
+      confirming a Manager-level employee's own token immediately started
+      passing the capability check on both endpoints.
+- [ ] A non-admin employee cannot reach this page. Not independently
+      re-verified this pass (implied by the same `need="admin"` guard
+      already confirmed for Departments, which shares the identical Guard
+      component — but not separately screenshotted for this page).
 
 ## 10. Time Clock
 
