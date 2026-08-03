@@ -23,12 +23,57 @@ Automated checks, current as of 2026-08-03:
 | Web build + lint (`cd web && npm run build && npm run lint`) | green |
 | CI | `.github/workflows/test.yml` runs all three on push/PR |
 
+**Dev-DB residue from the 2026-08-04 checklist pass** (real data in the
+shared dev database, not a throwaway test DB — clean up before a demo):
+two new employees (Rita Rootwood — a second independent Manager-level root,
+`ri.rootwood@adad.ada` — and Newt Hire, created under Rita), one external
+test user (`resa.resident@example.com`), one extra request (#4, a Time Off
+submission), the Manager level now additionally holds `assign` and
+`set_priority` (granted live while testing Levels & Capabilities — see
+finding below), and several employees had their passwords reset to
+temporary values while testing login flows (Manny Manager, Sub Ordinate,
+Time Clocker, Test Employee, Rita Rootwood — check the Audit Log's
+"Employee password reset" entries for exact recipients, none of the
+temp values themselves were recorded anywhere persistent). Also fixed real
+bad data, not residue to clean up: the "General" department's Arabic name
+was literally "???", renamed to "عام".
+
 **Not done, and worth doing before submission:**
 
-1. **The web app's manual E2E checklist is only partially run.** `docs/WEB_E2E_CHECKLIST.md` was reconciled to v7 (2026-08-03: removed the config/webhooks sections, fixed the account matrix, added sections for every page that had none — Onboarding Wizard, Departments, Time Clock, Schedule, Checklists, Directory, Knowledge Base, Events, Training). A partial live pass ran the same day: Dashboard (all panels, English + Arabic) — pass; Directory (admin happy path) — pass; one permission negative (a Staff-level employee is refused **at the login page itself**, not bounced from a gated page) — pass. Every other page, every other negative, and RTL beyond Dashboard are still unrun. *Why this matters, concretely: on 2026-07-18 a change shipped that made the web console impossible to log into for every employee (`type="email"` rejecting a numeric login). The page looked fine; it was found by eye during unrelated work — automated checks would not have caught it.*
+1. **The web app's manual E2E checklist is now mostly run, not fully.**
+   `docs/WEB_E2E_CHECKLIST.md` was reconciled to v7 (2026-08-03) and then
+   given a deep pass (2026-08-04): Login, Dashboard, Requests + detail pane,
+   Departments, Levels & Capabilities, and Audit all got real interactive
+   verification (not just page-loads) — English throughout, Arabic/RTL
+   spot-checked on Dashboard and Departments. The seven workforce modules
+   (Time Clock, Schedule, Checklists, Directory, Knowledge Base, Events,
+   Training) got a structural pass — each loads correctly with real empty
+   states and working write controls, but interactive flows (clock in/out,
+   RSVP, mark-complete, per-module capability-without-`view_all` write
+   gating) are still unverified. Employees and Reports got partial passes.
+   Add Service, Onboarding Wizard, and Notifications+profile are essentially
+   untested. Two real bugs were found and fixed along the way (see below);
+   one real permission-model finding was surfaced and is **not** fixed (a
+   product decision). *Why any of this matters, concretely: on 2026-07-18 a
+   change shipped that made the web console impossible to log into for every
+   employee (`type="email"` rejecting a numeric login). The page looked
+   fine; it was found by eye during unrelated work — automated checks would
+   not have caught it.*
 2. **Not deployed.** No host configuration exists (`render.yaml` / `Procfile` / `Dockerfile` — none). CLAUDE.md §4 asks for one free-tier cloud host; §14 wants manual acceptance run on the deployed build.
-3. **Manual acceptance not recorded.** §14 asks that the core flows be run on every seeded service by the student who did *not* write that layer. No record of that run exists — and there's no seeded service to run it against until one is created via the Add Service wizard (see below).
+3. **Manual acceptance not recorded.** §14 asks that the core flows be run on every seeded service by the student who did *not* write that layer. No record of that run exists.
 4. **The onboarding wizard's feature-module selection doesn't gate access.** `company.features` (the Owner's step-4 picks) is stored but never checked — every module route/page is reachable by capability alone, regardless of what was selected in the wizard (CLAUDE.md §15).
+5. **CLAUDE.md §12 is wrong about Levels & Capabilities.** It says Gate-1
+   level authoring is "seed-time only for now." Live testing (2026-08-04)
+   found the opposite: the page is a fully working, live capability editor —
+   every checkbox toggles `level_capability` immediately, no re-auth needed.
+   Someone should update §12 to describe the real endpoint(s) behind it.
+   Related, and not a bug: the seeded "Manager" level ships without `assign`
+   or `set_priority` (only `view_all`/`manage_employees`/`override`), which
+   looked like a deployment-blocking gap until this page turned out to be
+   the (undocumented) fix — the Owner can grant those in one click.
+6. **A real bug found and fixed 2026-08-04**: `AuditPage.tsx` rendered any
+   bilingual `{en,ar}` detail value (e.g. a renamed level's `name`) as the
+   literal string `[object Object]`. Fixed — see git log.
 
 ---
 
