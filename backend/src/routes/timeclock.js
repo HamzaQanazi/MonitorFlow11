@@ -4,7 +4,7 @@
 // ownership-by-404 shape as tasks.js).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability, requireFeature } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
 const { csvCell } = require('../lib/csv');
@@ -12,6 +12,7 @@ const { validateManualShift, computeAttendance, computeTimesheetDay, round2 } = 
 
 const router = express.Router();
 router.use(requireAuth);
+router.use(requireFeature('time_clock'));
 router.use(requireRole('employee'));
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

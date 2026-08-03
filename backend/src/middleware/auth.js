@@ -17,9 +17,12 @@ async function requireAuth(req, res, next) {
   // is_active is re-checked on every request (CLAUDE.md Section 3): a
   // deactivated account's still-valid JWT must stop working immediately.
   const { rows } = await pool.query(
-    `SELECT id, name, email, role, phone, department_id, is_active,
-            login_identifier, manager_id, level_id, company_id
-     FROM users WHERE id = $1`,
+    `SELECT u.id, u.name, u.email, u.role, u.phone, u.department_id, u.is_active,
+            u.login_identifier, u.manager_id, u.level_id, u.company_id,
+            c.features AS company_features
+     FROM users u
+     LEFT JOIN company c ON c.id = u.company_id
+     WHERE u.id = $1`,
     [payload.sub]
   );
   if (!rows.length || !rows[0].is_active) {
@@ -27,6 +30,10 @@ async function requireAuth(req, res, next) {
   }
 
   req.user = rows[0];
+  // The onboarding wizard's step-4 feature selection — independent of Gate 1/2,
+  // checked by requireFeature() below. Empty for accounts with no company.
+  req.user.companyFeatures = req.user.company_features || [];
+  delete req.user.company_features;
   // Gate 1: the capability set this account holds through its level (empty for
   // users, field employees, and admins). Attached once per request so guards
   // and the workflow engine read it without re-querying.
@@ -77,4 +84,19 @@ function requireCapabilityOrAdmin(...capabilities) {
   };
 }
 
-module.exports = { requireAuth, requireRole, requireCapability, requireCapabilityOrAdmin };
+// Feature gate: independent of Gate 1/2 (capability/subtree) — this is
+// "does the company's deployment even have this module," from the
+// onboarding wizard's step-4 feature picks (lib/onboardingOptions.js). No
+// admin bypass: if the Owner didn't select it, the module doesn't exist for
+// this deployment, including for the Owner (onboarding is one-shot — turning
+// a feature on later is a direct row update for now, CLAUDE.md §15).
+function requireFeature(featureKey) {
+  return (req, res, next) => {
+    if (!req.user.companyFeatures.includes(featureKey)) {
+      return res.status(403).json({ error: 'This feature is not enabled for your company' });
+    }
+    next();
+  };
+}
+
+module.exports = { requireAuth, requireRole, requireCapability, requireCapabilityOrAdmin, requireFeature };

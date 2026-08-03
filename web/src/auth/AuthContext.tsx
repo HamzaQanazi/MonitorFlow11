@@ -25,6 +25,10 @@ export interface AuthUser {
   // The uploaded company logo as a data URI (auth.js inlines the file so the
   // wordmark never needs its own authenticated fetch). NULL if none uploaded.
   companyLogo: string | null
+  // The onboarding wizard's step-4 feature picks — independent of
+  // `capabilities`. The server enforces this too (requireFeature,
+  // middleware/auth.js); this only drives which nav items/routes render.
+  companyFeatures: string[]
 }
 
 // Every capability that grants at least one console route (see main.tsx's

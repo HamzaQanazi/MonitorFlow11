@@ -17,34 +17,36 @@ type NavGroup = 'overview' | 'people' | 'operations' | 'communication' | 'setup'
 // instead of an empty sidebar. A lead with every capability sees them all;
 // a narrower level sees a subset. `labelKey` resolves through t() so the nav
 // flips language with the console.
-const oversightNav: { to: string; labelKey: string; end: boolean; need: string[]; group: NavGroup }[] = [
+const oversightNav: { to: string; labelKey: string; end: boolean; need: string[]; feature?: string; group: NavGroup }[] = [
   { to: '/', labelKey: 'nav_dashboard', end: true, need: ['view_all'], group: 'overview' },
   { to: '/requests', labelKey: 'nav_requests', end: false, need: ['view_all'], group: 'overview' },
   { to: '/reports', labelKey: 'nav_reports', end: false, need: ['view_all'], group: 'overview' },
   { to: '/employees', labelKey: 'nav_employees', end: false, need: ['manage_employees'], group: 'people' },
-  { to: '/timeclock', labelKey: 'nav_timeclock', end: false, need: ['view_all'], group: 'operations' },
-  { to: '/schedule', labelKey: 'nav_schedule', end: false, need: ['view_all'], group: 'operations' },
-  { to: '/checklists', labelKey: 'nav_checklists', end: false, need: ['view_all'], group: 'operations' },
-  { to: '/directory', labelKey: 'nav_directory', end: false, need: ['view_all'], group: 'communication' },
-  { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, need: ['view_all', 'manage_knowledge_base'], group: 'communication' },
-  { to: '/events', labelKey: 'nav_events', end: false, need: ['view_all', 'manage_events'], group: 'communication' },
-  { to: '/training', labelKey: 'nav_training', end: false, need: ['view_all', 'manage_training'], group: 'communication' },
+  { to: '/timeclock', labelKey: 'nav_timeclock', end: false, need: ['view_all'], feature: 'time_clock', group: 'operations' },
+  { to: '/schedule', labelKey: 'nav_schedule', end: false, need: ['view_all'], feature: 'schedule', group: 'operations' },
+  { to: '/checklists', labelKey: 'nav_checklists', end: false, need: ['view_all'], feature: 'forms_checklists', group: 'operations' },
+  { to: '/directory', labelKey: 'nav_directory', end: false, need: ['view_all'], feature: 'directory', group: 'communication' },
+  { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, need: ['view_all', 'manage_knowledge_base'], feature: 'knowledge_base', group: 'communication' },
+  { to: '/events', labelKey: 'nav_events', end: false, need: ['view_all', 'manage_events'], feature: 'events', group: 'communication' },
+  { to: '/training', labelKey: 'nav_training', end: false, need: ['view_all', 'manage_training'], feature: 'training_onboarding', group: 'communication' },
 ]
 // Owner (admin role) surface. Dashboard + Employees admit the admin via the
 // backend's requireCapabilityOrAdmin (I2: admins hold no capabilities, so this
 // is a role-based allow, not a Gate-1 capability like oversightNav's items).
-const adminNav: { to: string; labelKey: string; end: boolean; group: NavGroup }[] = [
+// The 7 module items still carry `feature` — the onboarding wizard's picks
+// gate the Owner too (no admin bypass on requireFeature, middleware/auth.js).
+const adminNav: { to: string; labelKey: string; end: boolean; feature?: string; group: NavGroup }[] = [
   { to: '/', labelKey: 'nav_dashboard', end: true, group: 'overview' },
   { to: '/employees', labelKey: 'nav_employees', end: false, group: 'people' },
   { to: '/departments', labelKey: 'nav_departments', end: false, group: 'people' },
   { to: '/levels', labelKey: 'nav_levels', end: false, group: 'people' },
-  { to: '/timeclock', labelKey: 'nav_timeclock', end: false, group: 'operations' },
-  { to: '/schedule', labelKey: 'nav_schedule', end: false, group: 'operations' },
-  { to: '/checklists', labelKey: 'nav_checklists', end: false, group: 'operations' },
-  { to: '/directory', labelKey: 'nav_directory', end: false, group: 'communication' },
-  { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, group: 'communication' },
-  { to: '/events', labelKey: 'nav_events', end: false, group: 'communication' },
-  { to: '/training', labelKey: 'nav_training', end: false, group: 'communication' },
+  { to: '/timeclock', labelKey: 'nav_timeclock', end: false, feature: 'time_clock', group: 'operations' },
+  { to: '/schedule', labelKey: 'nav_schedule', end: false, feature: 'schedule', group: 'operations' },
+  { to: '/checklists', labelKey: 'nav_checklists', end: false, feature: 'forms_checklists', group: 'operations' },
+  { to: '/directory', labelKey: 'nav_directory', end: false, feature: 'directory', group: 'communication' },
+  { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, feature: 'knowledge_base', group: 'communication' },
+  { to: '/events', labelKey: 'nav_events', end: false, feature: 'events', group: 'communication' },
+  { to: '/training', labelKey: 'nav_training', end: false, feature: 'training_onboarding', group: 'communication' },
   { to: '/services/new', labelKey: 'nav_add_service', end: false, group: 'setup' },
   { to: '/audit', labelKey: 'nav_audit', end: false, group: 'setup' },
 ]
@@ -62,9 +64,10 @@ export default function DashboardShell() {
   const { user, logout } = useAuth()
   const { t, lang, setLang } = useI18n()
   const isAdmin = user?.role === 'admin'
+  const hasFeature = (feature?: string) => !feature || (user?.companyFeatures.includes(feature) ?? false)
   const navItems = isAdmin
-    ? adminNav
-    : oversightNav.filter((item) => item.need.some((n) => user?.capabilities.includes(n)))
+    ? adminNav.filter((item) => hasFeature(item.feature))
+    : oversightNav.filter((item) => item.need.some((n) => user?.capabilities.includes(n)) && hasFeature(item.feature))
 
   return (
     <div className="shell">

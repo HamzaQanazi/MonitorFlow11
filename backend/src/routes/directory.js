@@ -6,10 +6,11 @@
 // submitters — gets 403; a directory of internal staff isn't their concern).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireFeature } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
+router.use(requireFeature('directory'));
 
 // GET /directory?departmentId=&branchId=&q=&page=&pageSize=
 router.get('/', async (req, res, next) => {

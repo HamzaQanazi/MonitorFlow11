@@ -282,6 +282,17 @@ lock. This closes check-then-act races (concurrent transitions, cancel-vs-assign
 **Testing rule:** the permission model is the test plan — every allowed/denied
 combination gets at least one automated API test (§14).
 
+**Feature gate (added 2026-08-04, orthogonal to Gates 1/2):** the seven
+workforce module route files (Time Clock, Schedule, Checklists, Directory,
+Knowledge Base, Events, Training) also require `requireFeature(key)`
+(`middleware/auth.js`) — does the deployment's `company.features` (the
+onboarding wizard's step-4 picks, §9) include this module at all. This isn't
+about *who* may act (that's still Gate 1/2) — it's about whether the module
+exists for this deployment, so there's no admin bypass: an unselected feature
+is off for the Owner too. `companyFeatures` rides the same `/auth/me`/
+`/auth/login` payload as `capabilities` so clients filter nav/routes the same
+way (I4); the server is the actual enforcement.
+
 ---
 
 ## 6. Database schema (current — authoritative source is `backend/migrations/*.sql`)
@@ -701,10 +712,19 @@ versioning · reassignment overwrites `employee_id` (history note is the audit) 
 polling latency · 24h JWT, no refresh/revocation · email enumeration on register ·
 single organization per deployment · temporary passwords not force-changed · no
 automated frontend E2E · onboarding is one-shot with no in-app edit (change company
-details by direct row update) · the onboarding wizard's feature-module selection
-(§1/§9) doesn't gate module routes/pages — Time Clock/Schedule/Checklists/
-Directory/Knowledge Base/Events/Training are reachable by anyone with the
-relevant capability regardless of which features the Owner picked in the wizard.
+details by direct row update, including turning a feature on after the fact —
+there is no re-run/edit UI for the wizard's step-4 picks, §9).
+
+**Corrected 2026-08-04** (this used to be listed here as a limitation — it
+isn't anymore): the onboarding wizard's feature-module selection now *does*
+gate module routes/pages. `requireFeature()` (`middleware/auth.js`) checks
+`company.features` independently of Gate 1/2, applied to all seven module
+route files (Time Clock, Schedule, Checklists, Directory, Knowledge Base,
+Events, Training) — no admin bypass, since an unselected feature doesn't
+exist for the deployment at all, Owner included. The client
+(`companyFeatures` on the `/auth/me`/`/auth/login` payload) filters the nav
+and routes the same way, purely for UX — the server is what actually
+enforces it.
 
 ---
 

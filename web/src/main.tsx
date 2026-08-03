@@ -38,42 +38,57 @@ import AddServiceWizard from './pages/AddServiceWizard'
 type Capability =
   | 'view_all' | 'manage_employees' | 'manage_knowledge_base' | 'manage_events' | 'manage_training'
 
-// The first console route each capability grants, most-general first — used
-// to send a denied user somewhere they CAN reach instead of bouncing them
-// back to a page they just failed (which would loop for anyone without
-// view_all, e.g. a level holding only manage_training).
-const HOME_BY_CAPABILITY: [Capability, string][] = [
-  ['view_all', '/'],
-  ['manage_employees', '/employees'],
-  ['manage_knowledge_base', '/knowledge-base'],
-  ['manage_events', '/events'],
-  ['manage_training', '/training'],
+// The first console route each capability grants, most-general first, paired
+// with the feature key that route also needs (null = not feature-gated) —
+// used to send a denied user somewhere they CAN reach instead of bouncing
+// them back to a page they just failed (which would loop for anyone without
+// view_all, e.g. a level holding only manage_training). A candidate whose
+// feature isn't enabled for this company is skipped too, or the loop would
+// just move from "denied by capability" to "denied by feature" instead.
+const HOME_BY_CAPABILITY: [Capability, string, string | null][] = [
+  ['view_all', '/', null],
+  ['manage_employees', '/employees', null],
+  ['manage_knowledge_base', '/knowledge-base', 'knowledge_base'],
+  ['manage_events', '/events', 'events'],
+  ['manage_training', '/training', 'training_onboarding'],
 ]
 
-function homeFor(user: { role: string; capabilities: string[] }): string {
+function homeFor(user: { role: string; capabilities: string[]; companyFeatures: string[] }): string {
   if (user.role === 'admin') return '/audit'
-  const hit = HOME_BY_CAPABILITY.find(([cap]) => user.capabilities.includes(cap))
+  const hit = HOME_BY_CAPABILITY.find(
+    ([cap, , feature]) => user.capabilities.includes(cap) && (feature === null || user.companyFeatures.includes(feature))
+  )
   return hit ? hit[1] : '/'
 }
+
+// Module routes (knowledge base, events, training, time clock, schedule,
+// checklists, directory) also need the onboarding wizard's step-4 feature
+// pick — independent of Gate 1 (need). The server enforces this too
+// (requireFeature, middleware/auth.js); this only keeps the UI from
+// rendering pages that would only show a 403.
+type Feature = 'time_clock' | 'schedule' | 'forms_checklists' | 'directory' | 'knowledge_base' | 'events' | 'training_onboarding'
 
 // eslint-disable-next-line react-refresh/only-export-components -- entrypoint file, fast refresh doesn't apply
 function Guard({
   need,
   orAdmin,
+  feature,
   children,
 }: {
   need: Capability | 'admin' | Capability[]
   orAdmin?: boolean
+  feature?: Feature
   children: ReactNode
 }) {
   const { user } = useAuth()
   if (!user) return null
   const needed = Array.isArray(need) ? need : [need]
-  const allowed =
+  const capabilityOk =
     needed[0] === 'admin'
       ? user.role === 'admin'
       : needed.some((n) => user.capabilities.includes(n)) || (orAdmin === true && user.role === 'admin')
-  if (!allowed) {
+  const featureOk = !feature || user.companyFeatures.includes(feature)
+  if (!capabilityOk || !featureOk) {
     // Send each kind to a page it can actually reach, not a hardcoded one —
     // otherwise a non-view_all capability holder denied at '/' would loop.
     return <Navigate to={homeFor(user)} replace />
@@ -115,13 +130,13 @@ createRoot(document.getElementById('root')!).render(
             <Route path="employees" element={<Guard need="manage_employees" orAdmin><EmployeesPage /></Guard>} />
             <Route path="departments" element={<Guard need="admin"><DepartmentsPage /></Guard>} />
             <Route path="reports" element={<Guard need="view_all"><ReportsPage /></Guard>} />
-            <Route path="timeclock" element={<Guard need="view_all"><TimeClockPage /></Guard>} />
-            <Route path="schedule" element={<Guard need="view_all"><SchedulePage /></Guard>} />
-            <Route path="checklists" element={<Guard need="view_all" orAdmin><ChecklistsPage /></Guard>} />
-            <Route path="directory" element={<Guard need="view_all" orAdmin><DirectoryPage /></Guard>} />
-            <Route path="knowledge-base" element={<Guard need={['view_all', 'manage_knowledge_base']} orAdmin><KnowledgeBasePage /></Guard>} />
-            <Route path="events" element={<Guard need={['view_all', 'manage_events']} orAdmin><EventsPage /></Guard>} />
-            <Route path="training" element={<Guard need={['view_all', 'manage_training']} orAdmin><TrainingPage /></Guard>} />
+            <Route path="timeclock" element={<Guard need="view_all" feature="time_clock"><TimeClockPage /></Guard>} />
+            <Route path="schedule" element={<Guard need="view_all" feature="schedule"><SchedulePage /></Guard>} />
+            <Route path="checklists" element={<Guard need="view_all" orAdmin feature="forms_checklists"><ChecklistsPage /></Guard>} />
+            <Route path="directory" element={<Guard need="view_all" orAdmin feature="directory"><DirectoryPage /></Guard>} />
+            <Route path="knowledge-base" element={<Guard need={['view_all', 'manage_knowledge_base']} orAdmin feature="knowledge_base"><KnowledgeBasePage /></Guard>} />
+            <Route path="events" element={<Guard need={['view_all', 'manage_events']} orAdmin feature="events"><EventsPage /></Guard>} />
+            <Route path="training" element={<Guard need={['view_all', 'manage_training']} orAdmin feature="training_onboarding"><TrainingPage /></Guard>} />
             <Route path="levels" element={<Guard need="admin"><LevelsPage /></Guard>} />
             <Route path="audit" element={<Guard need="admin"><AuditPage /></Guard>} />
             <Route path="services/new" element={<Guard need="admin"><AddServiceWizard /></Guard>} />

@@ -10,11 +10,11 @@
 // invented "expected count" ratio.
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
+const { requireAuth, requireCapabilityOrAdmin, requireFeature } = require('../middleware/auth');
 const { ownerScopeIds } = require('../lib/scope');
 
 const router = express.Router();
-router.use(requireAuth, requireCapabilityOrAdmin('view_all'));
+router.use(requireAuth, requireFeature('forms_checklists'), requireCapabilityOrAdmin('view_all'));
 
 router.get('/stats', async (req, res, next) => {
   try {

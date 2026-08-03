@@ -7,12 +7,13 @@
 // holding view_all's operational oversight.
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
+const { requireAuth, requireCapabilityOrAdmin, requireFeature } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
 const { isBilingual } = require('../lib/i18nLabel');
 
 const router = express.Router();
 router.use(requireAuth);
+router.use(requireFeature('knowledge_base'));
 
 const canWrite = requireCapabilityOrAdmin('view_all', 'manage_knowledge_base');
 

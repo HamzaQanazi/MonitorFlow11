@@ -33,7 +33,7 @@ function rateLimitLogin(req, res, next) {
   next();
 }
 
-function publicUser(row, capabilities, company = { onboardingCompleted: null, companyName: null }) {
+function publicUser(row, capabilities, company = { onboardingCompleted: null, companyName: null, companyFeatures: [] }) {
   const { id, name, email, role, phone, department_id, login_identifier } = row;
   return {
     id, name, email, role, phone,
@@ -50,6 +50,10 @@ function publicUser(row, capabilities, company = { onboardingCompleted: null, co
     // these are set (both NULL until the onboarding PATCH writes them).
     companyName: company.companyName,
     companyLogo: company.companyLogo,
+    // The onboarding wizard's step-4 feature picks — the client filters nav/
+    // routes on this the same way it already does on capabilities (I4); the
+    // server is still the one enforcing it (requireFeature, middleware/auth.js).
+    companyFeatures: company.companyFeatures,
   };
 }
 
@@ -60,10 +64,10 @@ function publicUser(row, capabilities, company = { onboardingCompleted: null, co
 // own authenticated request — GET /files/{id} is auth-gated per-file and would
 // otherwise 404 for every console user except whoever uploaded it.
 async function getCompanyInfo(companyId) {
-  const empty = { onboardingCompleted: null, companyName: null, companyLogo: null };
+  const empty = { onboardingCompleted: null, companyName: null, companyLogo: null, companyFeatures: [] };
   if (!companyId) return empty;
   const { rows } = await pool.query(
-    'SELECT onboarding_completed, name, logo_file_id FROM company WHERE id = $1',
+    'SELECT onboarding_completed, name, logo_file_id, features FROM company WHERE id = $1',
     [companyId]
   );
   if (!rows.length) return empty;
@@ -82,7 +86,12 @@ async function getCompanyInfo(companyId) {
       }
     }
   }
-  return { onboardingCompleted: rows[0].onboarding_completed, companyName: rows[0].name, companyLogo };
+  return {
+    onboardingCompleted: rows[0].onboarding_completed,
+    companyName: rows[0].name,
+    companyLogo,
+    companyFeatures: rows[0].features || [],
+  };
 }
 
 function signToken(user) {

@@ -119,24 +119,30 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     final auth = context.watch<AuthState>();
     final firstName = (auth.user?.name ?? '').split(' ').first;
 
+    final features = auth.user?.companyFeatures ?? const [];
+
     return Scaffold(
       appBar: AppBar(
         title: Text('${i18n.tr('eh_title')} — $firstName'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.access_time_filled_outlined),
-            tooltip: i18n.tr('tc_title'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const TimeClockScreen()),
+          if (features.contains('time_clock'))
+            IconButton(
+              icon: const Icon(Icons.access_time_filled_outlined),
+              tooltip: i18n.tr('tc_title'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const TimeClockScreen()),
+              ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.calendar_month_outlined),
-            tooltip: i18n.tr('sc_title'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ScheduleScreen()),
+          if (features.contains('schedule'))
+            IconButton(
+              icon: const Icon(Icons.calendar_month_outlined),
+              tooltip: i18n.tr('sc_title'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ScheduleScreen()),
+              ),
             ),
-          ),
+          // Time Off is a normal service type through the request engine
+          // (I1), not one of the 7 gated modules — always offered.
           IconButton(
             icon: const Icon(Icons.beach_access_outlined),
             tooltip: i18n.tr('to_title'),
@@ -144,41 +150,46 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
               MaterialPageRoute(builder: (_) => const TimeOffScreen()),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.checklist_outlined),
-            tooltip: i18n.tr('cl_title'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ChecklistsScreen()),
+          if (features.contains('forms_checklists'))
+            IconButton(
+              icon: const Icon(Icons.checklist_outlined),
+              tooltip: i18n.tr('cl_title'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ChecklistsScreen()),
+              ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.people_outline),
-            tooltip: i18n.tr('dir_title'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const DirectoryScreen()),
+          if (features.contains('directory'))
+            IconButton(
+              icon: const Icon(Icons.people_outline),
+              tooltip: i18n.tr('dir_title'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DirectoryScreen()),
+              ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.menu_book_outlined),
-            tooltip: i18n.tr('kb_title'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const KnowledgeBaseScreen()),
+          if (features.contains('knowledge_base'))
+            IconButton(
+              icon: const Icon(Icons.menu_book_outlined),
+              tooltip: i18n.tr('kb_title'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const KnowledgeBaseScreen()),
+              ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.event_outlined),
-            tooltip: i18n.tr('ev_title'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const EventsScreen()),
+          if (features.contains('events'))
+            IconButton(
+              icon: const Icon(Icons.event_outlined),
+              tooltip: i18n.tr('ev_title'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const EventsScreen()),
+              ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.school_outlined),
-            tooltip: i18n.tr('tr_title'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const TrainingScreen()),
+          if (features.contains('training_onboarding'))
+            IconButton(
+              icon: const Icon(Icons.school_outlined),
+              tooltip: i18n.tr('tr_title'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const TrainingScreen()),
+              ),
             ),
-          ),
           NotificationBell(
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(

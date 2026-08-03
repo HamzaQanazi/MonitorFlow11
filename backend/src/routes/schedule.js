@@ -6,13 +6,14 @@
 // per date instead of the old employee_default_shift).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireRole, requireCapability } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapability, requireFeature } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
 const { subtreeIds } = require('../lib/scope');
 const { isBilingual } = require('../lib/i18nLabel');
 
 const router = express.Router();
 router.use(requireAuth);
+router.use(requireFeature('schedule'));
 router.use(requireRole('employee'));
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

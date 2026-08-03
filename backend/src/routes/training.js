@@ -6,12 +6,13 @@
 // training_completion = "this employee finished it."
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
+const { requireAuth, requireCapabilityOrAdmin, requireFeature } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
 const { isBilingual } = require('../lib/i18nLabel');
 
 const router = express.Router();
 router.use(requireAuth);
+router.use(requireFeature('training_onboarding'));
 
 const canWrite = requireCapabilityOrAdmin('view_all', 'manage_training');
 

@@ -14,11 +14,11 @@ Single-company workforce and field-operations platform: two Flutter mobile apps 
 
 **Operational engine feature-complete; v7 workforce pivot shipped.** Three account kinds, capability + subtree permissions, `is_terminal` instead of status categories — all unchanged. v7 added first-login onboarding, removed the config API/webhooks, and shipped seven workforce feature modules beyond the original request/task engine.
 
-Automated checks, current as of 2026-08-03:
+Automated checks, current as of 2026-08-04:
 
 | Suite | Result |
 |---|---|
-| Backend, unit + API/permission (`cd backend && npm test`) | **92/92** |
+| Backend, unit + API/permission (`cd backend && npm test`) | **96/96** |
 | Flutter widget (`cd mobile && flutter test` / `flutter analyze`) | **22/22**, 0 analyze issues |
 | Web build + lint (`cd web && npm run build && npm run lint`) | green |
 | CI | `.github/workflows/test.yml`, confirmed actually green on GitHub Actions (checked via the API, not just wired — the web job had been failing on `npm run lint` since before this session; fixed 2026-08-04, see item 8 below) |
@@ -61,6 +61,17 @@ never move further without a new service. Manny Manager's
 (`ma.manager@adad.ada`) password was also set directly to `Password123!`
 (known now, not a leftover temp value) to drive this pass's Requests testing.
 
+**Residue from shipping the feature gate, same day:** the dev company's
+`features` column was discovered empty (`[]`) — likely just never set during
+whatever onboarding run produced this dev company, predating this feature
+entirely. Since there's no edit UI (§9), it was set directly to the full
+catalogue (`time_clock, schedule, forms_checklists, directory,
+knowledge_base, events, training_onboarding, task_management, time_off`) so
+this session's (and future) module testing isn't blocked. If you want a
+narrower selection to test the gate's actual filtering behavior, edit that
+column back down — the gate itself doesn't care which company it's testing
+against.
+
 **Not done, and worth doing before submission:**
 
 1. **The web app's manual E2E checklist is now mostly run, not fully.**
@@ -98,7 +109,17 @@ never move further without a new service. Manny Manager's
    needs an actual mobile device/emulator — no automation tool for driving
    the Flutter apps' UI was available this session, so that half was stood
    in for with a direct API call each time, not the real mobile screens.
-4. **The onboarding wizard's feature-module selection doesn't gate access.** `company.features` (the Owner's step-4 picks) is stored but never checked — every module route/page is reachable by capability alone, regardless of what was selected in the wizard (CLAUDE.md §15).
+4. **Done, 2026-08-04**: the onboarding wizard's feature-module selection now
+   gates access. `requireFeature()` (`middleware/auth.js`) checks
+   `company.features` on all 7 module route files, no admin bypass; the web
+   nav/routes filter on the same `companyFeatures` field now riding the
+   `/auth/me`/`/auth/login` payload. Backend: 2 new tests
+   (`featureGate.api.test.js`), 96/96 total. Live-verified both directions in
+   the browser: with the dev company's `features` at its real (empty) value,
+   every module vanished from the nav for a `view_all` holder and a direct
+   URL hit redirected cleanly with no loop; after setting `features` to the
+   full catalogue (see residue note below), the nav and pages came back.
+   CLAUDE.md §5/§15 updated to describe the new gate instead of the old gap.
 5. **CLAUDE.md §12 was wrong about Levels & Capabilities, now corrected.** It
    said Gate-1 level authoring was "seed-time only for now." Live testing
    (2026-08-04) found the opposite: the page is a fully working, live
@@ -251,9 +272,9 @@ The backend test suite builds its own richer fixture org (a two-subtree hierarch
 ## Testing
 
 - **Backend unit** (`backend/test/*.test.js`, `node:test`, no server/DB needed): form validation, workflow transition resolution, form/workflow schema validation, time-clock attendance math, employee-number allocation. 5 files, 60 tests.
-- **Backend API-integration + permission suite** (`backend/test/*.api.test.js` + the harness smoke test, `node:test`, real spawned server + throwaway Postgres DB per suite): 8 files, 32 tests, covering CLAUDE.md §14's must-pass negatives — own-resource 404, wrong-capability 403, cross-subtree assign refusal, concurrent-transition and cancel-vs-assign races, duplicate assign, deactivate-with-open-task 409, deactivated JWT rejected on next call (not just login), employee-cap hire refusal, file upload/download negatives, non-capable CSV export 403, onboarding catalogue validation + one-shot 409.
+- **Backend API-integration + permission suite** (`backend/test/*.api.test.js` + the harness smoke test, `node:test`, real spawned server + throwaway Postgres DB per suite): 10 files, 36 tests, covering CLAUDE.md §14's must-pass negatives — own-resource 404, wrong-capability 403, cross-subtree assign refusal, concurrent-transition and cancel-vs-assign races, duplicate assign, deactivate-with-open-task 409, deactivated JWT rejected on next call (not just login), employee-cap hire refusal, file upload/download negatives, non-capable CSV export 403, non-admin config-write 403, onboarding catalogue validation + one-shot 409, and the feature gate (§5) refusing every account — including the admin — when the company didn't select that module.
   - Harness: `backend/testlib/harness.js`. Each suite gets its own database and port (derived from the name passed to `setup()`, since `node --test` runs files in parallel) and its own fixture org built through the live API (onboarding → a two-subtree employee hierarchy → one real service with a form + workflow), because v7's seed ships none of that.
-  - **`npm test` runs both sets together: 92/92.**
+  - **`npm test` runs both sets together: 96/96.**
 - **Flutter widget** (`mobile/test/`): the dynamic renderer (`dynamic_form_test.dart` — schema → widgets, required blocking, bounds, prefill, the location field, server-error application) and the login screen (`login_screen_test.dart`). **22/22**, `flutter analyze` clean.
 - **Web:** build + lint only — no component or E2E tests at this scale, so `docs/WEB_E2E_CHECKLIST.md` is the gate instead: a per-page pass/fail list covering the cross-cutting rules (RTL, bilingual, loading/empty/error, 401/403/404) and each page's own actions. Reconciled to v7 and partially live-verified 2026-08-03 (see "Status" above) — most rows are still open.
 - **CI** (`.github/workflows/test.yml`, push/PR to `main`): backend job (Postgres+PostGIS service container, `npm test`), web job (`npm run build && npm run lint`), mobile job (`flutter analyze && flutter test`).
