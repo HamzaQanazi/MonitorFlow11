@@ -77,6 +77,9 @@ export default function ChecklistsPage() {
   }
 
   useEffect(() => {
+    // False positive: every setState here happens after the fetch resolves,
+    // but the rule can't see through load().
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch((err: Error) => setError(err.message))
   }, [])
 

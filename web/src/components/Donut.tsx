@@ -14,7 +14,7 @@ export interface Slice {
 // past 8 categories. Colorblind-mindful ordering (blue/amber/green/red first).
 const PALETTE = ['#2563eb', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#14b8a6', '#ec4899', '#64748b']
 
-export function sliceColor(i: number): string {
+function sliceColor(i: number): string {
   return PALETTE[i % PALETTE.length]
 }
 

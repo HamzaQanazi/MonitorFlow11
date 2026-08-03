@@ -79,6 +79,10 @@ export default function EventsPage() {
     }
   }
 
+  // Splits the list into two display buckets, refreshed on each 30s poll —
+  // a StrictMode/concurrent double-render calling this microseconds apart
+  // never puts an event on the wrong side of a real boundary that matters.
+  // eslint-disable-next-line react-hooks/purity -- see comment above
   const now = Date.now()
   const upcoming = (events ?? []).filter((e) => new Date(e.startsAt).getTime() >= now)
   const past = (events ?? []).filter((e) => new Date(e.startsAt).getTime() < now)
