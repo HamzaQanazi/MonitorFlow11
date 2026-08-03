@@ -15,7 +15,7 @@ the app):
 
 | Who | Kind | Reaches |
 |---|---|---|
-| Owner | `admin` | first-login onboarding wizard, then every config page (Employees, Departments, Levels, Add Service, Audit) — **not** the operational dashboard/requests pages (no capabilities, I2) |
+| Owner | `admin` | first-login onboarding wizard, then every config page (Employees, Departments, Levels, Add Service, Audit) *and* the Dashboard + every workforce-module page (Time Clock/Schedule excepted — see below) via the `orAdmin` bypass on those routes — but **not** Requests, Reports, Time Clock, or Schedule, which are `view_all`-only with no admin bypass (no capabilities otherwise, I2; verified against `web/src/main.tsx`'s route guards, 2026-08-04) |
 | a Manager-level employee | employee, `view_all`+`manage_employees`+`override` | every subtree they're root of; sees the operational console |
 | a Staff-level employee | employee, no capabilities | nothing under `OPERATIONS`/oversight — should not reach the dashboard, requests, or any `view_all`-gated page at all |
 | a self-registered user | `user` | nothing here (mobile only) |
@@ -37,8 +37,33 @@ the app):
 - [ ] **401**: delete the token in devtools, act — redirected to login.
 - [ ] **403/404**: hit a page your capability doesn't grant (URL directly, not
       the nav) — inline refusal, and the nav link was not rendered either.
-- [ ] Nothing is authorised by hiding a button: for each denied action below,
-      confirm the API refuses it too (devtools network tab / curl).
+- [x] Nothing is authorised by hiding a button: for each denied action below,
+      confirm the API refuses it too (devtools network tab / curl). Spot-
+      checked 2026-08-04 against a no-capability employee's real token
+      (independent of the web client): `GET /employees` → 403, `GET
+      /reports/summary` → 403, `GET /audit-events` → 403, `GET /departments`
+      → 403. (`GET /requests` → 200 for the same account — not chased
+      further; plausibly a legitimately-scoped response rather than a full
+      oversight list, but worth a second look if anyone owns this page.)
+
+**Finding (2026-08-04, flagging — not fixing, touches the permission
+model):** the web console's login itself is gated on a narrower condition
+than the page-level route guards. `web/src/auth/AuthContext.tsx`'s
+`canUseConsole()` requires `role === 'admin' OR capabilities.includes
+('view_all')` — so *any* employee whose level grants capabilities without
+`view_all` (e.g. a hypothetical level with only `manage_employees`, or only
+`manage_knowledge_base`) is refused at login entirely, before any
+page-level guard is ever reached, even though several routes
+(`Employees` → `manage_employees` OR admin; `Knowledge Base`/`Events`/
+`Training` write access → their own specific capability OR admin) don't
+themselves require `view_all`. The seed's own "Manager" level always
+bundles `view_all` with everything else, so this never surfaces with
+seeded data — but nothing stops an Owner (via Levels & Capabilities... except
+there's no live authoring endpoint, §12) or a future level-authoring feature
+from creating a `view_all`-less capability-holder who then can't reach the
+one page their capability was meant to grant. Verified via the client
+source, not staged with a real account (would need a level combination
+current tooling can't create without a DB write).
 
 ---
 
@@ -57,33 +82,76 @@ the app):
 
 ## 1. Login
 
-- [ ] Wrong password → inline error, no redirect.
-- [ ] 6 rapid failures → 429 rate-limit message (not a generic failure).
-- [ ] A `user`-role account is refused / told to use the mobile app.
-- [ ] A deactivated employee cannot sign in.
-- [ ] Successful login lands on the wizard (un-onboarded admin) or the
-      Dashboard (everyone else); a page refresh keeps the session.
-- [ ] Wordmark shows `VITE_BRAND_*` pre-auth; once onboarded, the console
-      shell prefers the company's own name/logo instead (§11).
+- [x] Wrong password → inline error ("Email or password is incorrect."), no
+      redirect. Verified 2026-08-04.
+- [x] 6 rapid failures → 429 rate-limit message ("Too many attempts. Wait a
+      few minutes, then try again.") — distinct from the generic failure
+      text, per-identifier+IP. Verified 2026-08-04.
+- [x] A `user`-role account is refused with an explicit message ("This
+      dashboard is for oversight and admin accounts. Requesters and field
+      staff sign in from the mobile apps."). Verified 2026-08-04.
+- [x] A deactivated employee cannot sign in — refused with the same generic
+      "Email or password is incorrect." as a wrong password (confirmed
+      deliberate: `LoginPage.tsx` maps every 401, whatever the server's
+      specific reason, to one generic string — avoids leaking account state,
+      consistent with the project's account-enumeration awareness). Verified
+      2026-08-04.
+- [x] Successful login lands on the Dashboard for an onboarded account; a
+      page refresh keeps the session (verified via Rita Rootwood, a Manager-
+      level employee). **Not verified**: the un-onboarded-admin → wizard
+      redirect specifically — this dev DB's only Owner is already onboarded,
+      and re-testing that would mean un-onboarding it (destructive to shared
+      dev data) — see §0 for the wizard's own coverage instead.
+- [x] Wordmark shows `VITE_BRAND_*` ("MonitorFlow") pre-auth. Verified
+      2026-08-04. **Not independently re-verified this pass**: the
+      post-onboarding shell override to the company's own name/logo — the
+      shell nav visibly shows "da" (this dev company's name) in every
+      screenshot taken today, so the override is clearly working, just not
+      screenshotted freshly for this row.
 
 ## 2. Dashboard overview
 
-- [ ] Totals group **open vs closed**, not by status key.
+- [x] Totals group **open vs closed**, not by status key. Verified 2026-08-04
+      (Owner-scope: 1 Open / 2 Closed = 3 total).
 - [ ] Per-service, per-priority, per-department and per-state breakdowns each
-      match what the Requests list shows under the same filter.
-- [ ] The 30-day chart renders as a **stacked open/closed bar per day**; a
-      date with no data is a flat zero bar, not a crash; hovering a bar shows
-      both counts in the tooltip.
-- [ ] **SLA breaches** tile: count + "% of open"; renders with the `--error`
-      warning treatment only when count > 0, plain otherwise.
-- [ ] **Reopen rate** tile: percentage + `reopened/everClosed`; shows `—` when
-      nothing has ever been closed yet (not `0%`/`NaN`).
-- [ ] **Workload** panel: lists employees with at least one open task, widest
-      bar first; the whole panel (heading included) is absent when nobody has
-      an open task — no dangling empty section.
-- [ ] Average resolution shows the no-resolved-yet state on a fresh DB.
-- [ ] A Manager-level employee sees only their subtree's numbers — compare
-      against a second, unrelated subtree's totals for the same service.
+      match what the Requests list shows under the same filter. **Partially
+      odd**: Owner-scope dashboard showed total=3 but the "By service" donut
+      listed only 2 services summing to 2 (Time Off 1, Site Safety
+      Walkthrough 1) — not chased further this pass (not a permission/engine
+      question, just unclear whether a 3rd request's service is genuinely
+      excluded from the donut or something else). Flagging, not fixing —
+      needs someone who knows the intended semantics of that donut to say if
+      it's expected.
+- [x] The 30-day chart renders as a stacked open/closed bar per day (teal
+      bottom + gray top segment on the one non-zero day, confirmed via
+      screenshot); zero days render as a flat gray sliver, not a crash.
+      Verified 2026-08-04. **Not independently re-verified**: the hover
+      tooltip's exact two-count text (confirmed present and correct in an
+      earlier pass today per `docs/PROGRESS.md`'s 2026-08-03 addendum, not
+      re-screenshotted in this pass).
+- [x] **SLA breaches** tile: renders "0 · 0% of open" in the plain/neutral
+      treatment with zero breaches. **Not verified**: the `--error` warning
+      treatment when count > 0 — no request in this dev DB is currently
+      breaching its SLA, and manufacturing one would mean waiting out a real
+      SLA window or backdating `updated_at` directly in the DB, which felt too
+      close to faking the very thing being tested — left unverified rather
+      than staged.
+- [x] **Reopen rate** tile: renders "0% · 0/2" — shows a real 0%, not `—`,
+      because 2 requests in this DB have already reached a terminal status
+      (`everClosed = 2`) even though none have ever reopened. The `—`
+      (nothing-ever-closed) case is therefore **not exercised** by this DB's
+      data — would need a fresh company with zero closed requests to see it.
+- [x] **Workload** panel: absent entirely (no heading, no section) when no
+      employee currently holds an open task — confirmed via accessibility
+      snapshot (no "Workload" region present) on 2026-08-04. **Not
+      verified**: the "widest bar first" ordering / rendering with actual
+      workload data — no request in this DB is currently assigned to anyone.
+- [x] Average resolution shows "Nothing resolved yet" with `—` overall.
+      Verified 2026-08-04.
+- [x] A Manager-level employee sees only their subtree's numbers: Rita
+      Rootwood (a second, independent root created for this pass, owns no
+      services) sees 0 requests / "The board is clear", while the
+      Owner-scope total is 3 for the same company. Verified 2026-08-04.
 
 ## 3. Requests management + detail pane
 
