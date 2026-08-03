@@ -38,6 +38,16 @@ temp values themselves were recorded anywhere persistent). Also fixed real
 bad data, not residue to clean up: the "General" department's Arabic name
 was literally "???", renamed to "عام".
 
+**Additional residue from live-verifying the console-access permission fix
+(2026-08-04, same day):** Rita Rootwood's (`ri.rootwood@adad.ada`) password
+was set directly in the DB to `Password123!` (a known value now, not a
+leftover temp one) to regression-test the sidebar nav while the Owner login
+was rate-limited from repeated test logins. One deactivated leftover employee,
+`kb.tester@adad.ada` (id 10, `Kb Tester`) — created to hold a single
+`manage_knowledge_base`-only test level, used to confirm the fix below, then
+deactivated and reassigned off that level; the level itself was deleted
+cleanly (no residual level).
+
 **Not done, and worth doing before submission:**
 
 1. **The web app's manual E2E checklist is now mostly run, not fully.**
@@ -52,9 +62,8 @@ was literally "???", renamed to "عام".
    RSVP, mark-complete, per-module capability-without-`view_all` write
    gating) are still unverified. Employees and Reports got partial passes.
    Add Service, Onboarding Wizard, and Notifications+profile are essentially
-   untested. Two real bugs were found and fixed along the way (see below);
-   one real permission-model finding was surfaced and is **not** fixed (a
-   product decision). *Why any of this matters, concretely: on 2026-07-18 a
+   untested. Three real bugs were found and fixed along the way (see items
+   6–7 below). *Why any of this matters, concretely: on 2026-07-18 a
    change shipped that made the web console impossible to log into for every
    employee (`type="email"` rejecting a numeric login). The page looked
    fine; it was found by eye during unrelated work — automated checks would
@@ -62,11 +71,11 @@ was literally "???", renamed to "عام".
 2. **Not deployed.** No host configuration exists (`render.yaml` / `Procfile` / `Dockerfile` — none). CLAUDE.md §4 asks for one free-tier cloud host; §14 wants manual acceptance run on the deployed build.
 3. **Manual acceptance not recorded.** §14 asks that the core flows be run on every seeded service by the student who did *not* write that layer. No record of that run exists.
 4. **The onboarding wizard's feature-module selection doesn't gate access.** `company.features` (the Owner's step-4 picks) is stored but never checked — every module route/page is reachable by capability alone, regardless of what was selected in the wizard (CLAUDE.md §15).
-5. **CLAUDE.md §12 is wrong about Levels & Capabilities.** It says Gate-1
-   level authoring is "seed-time only for now." Live testing (2026-08-04)
-   found the opposite: the page is a fully working, live capability editor —
-   every checkbox toggles `level_capability` immediately, no re-auth needed.
-   Someone should update §12 to describe the real endpoint(s) behind it.
+5. **CLAUDE.md §12 was wrong about Levels & Capabilities, now corrected.** It
+   said Gate-1 level authoring was "seed-time only for now." Live testing
+   (2026-08-04) found the opposite: the page is a fully working, live
+   capability editor — every checkbox toggles `level_capability` immediately,
+   no re-auth needed. §12 now describes the real `/employee-levels` CRUD.
    Related, and not a bug: the seeded "Manager" level ships without `assign`
    or `set_priority` (only `view_all`/`manage_employees`/`override`), which
    looked like a deployment-blocking gap until this page turned out to be
@@ -74,6 +83,17 @@ was literally "???", renamed to "عام".
 6. **A real bug found and fixed 2026-08-04**: `AuditPage.tsx` rendered any
    bilingual `{en,ar}` detail value (e.g. a renamed level's `name`) as the
    literal string `[object Object]`. Fixed — see git log.
+7. **A real permission-model gap found and fixed 2026-08-04**:
+   `canUseConsole()` (`AuthContext.tsx`) and the sidebar's nav filter
+   (`DashboardShell.tsx`'s `oversightNav`) both hardcoded `view_all` as the
+   one console-access gate, so a level holding only e.g.
+   `manage_knowledge_base` — exactly the shape those module capabilities
+   exist for (`capabilities.js`'s own comment) — couldn't log in at all, and
+   even after loosening the login gate, saw a completely empty sidebar.
+   Fixed both, plus the denial-redirect that would otherwise loop such a
+   user. Live-verified both directions (a module-only employee lands on
+   their one page with one nav link; a full `view_all` employee still sees
+   all 11 nav items) in English and Arabic — not just typechecked.
 
 ---
 
