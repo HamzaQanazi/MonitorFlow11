@@ -10,21 +10,25 @@ import './DashboardShell.css'
 // presentation grouping, not a permission concept (Gate 1/2 are unchanged).
 type NavGroup = 'overview' | 'people' | 'operations' | 'communication' | 'setup'
 
-// Oversight nav, each item gated by the capability its page needs (Gate 1).
-// A lead with every capability sees them all; a narrower level sees a subset.
-// `labelKey` resolves through t() so the nav flips language with the console.
-const oversightNav: { to: string; labelKey: string; end: boolean; need: string; group: NavGroup }[] = [
-  { to: '/', labelKey: 'nav_dashboard', end: true, need: 'view_all', group: 'overview' },
-  { to: '/requests', labelKey: 'nav_requests', end: false, need: 'view_all', group: 'overview' },
-  { to: '/reports', labelKey: 'nav_reports', end: false, need: 'view_all', group: 'overview' },
-  { to: '/employees', labelKey: 'nav_employees', end: false, need: 'manage_employees', group: 'people' },
-  { to: '/timeclock', labelKey: 'nav_timeclock', end: false, need: 'view_all', group: 'operations' },
-  { to: '/schedule', labelKey: 'nav_schedule', end: false, need: 'view_all', group: 'operations' },
-  { to: '/checklists', labelKey: 'nav_checklists', end: false, need: 'view_all', group: 'operations' },
-  { to: '/directory', labelKey: 'nav_directory', end: false, need: 'view_all', group: 'communication' },
-  { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, need: 'view_all', group: 'communication' },
-  { to: '/events', labelKey: 'nav_events', end: false, need: 'view_all', group: 'communication' },
-  { to: '/training', labelKey: 'nav_training', end: false, need: 'view_all', group: 'communication' },
+// Oversight nav, each item gated by the capability(ies) its page needs
+// (Gate 1) — an array where the page itself accepts more than one (matching
+// main.tsx's Guard: view_all OR that module's manage_X capability), so a
+// level holding only e.g. manage_knowledge_base still sees its one link
+// instead of an empty sidebar. A lead with every capability sees them all;
+// a narrower level sees a subset. `labelKey` resolves through t() so the nav
+// flips language with the console.
+const oversightNav: { to: string; labelKey: string; end: boolean; need: string[]; group: NavGroup }[] = [
+  { to: '/', labelKey: 'nav_dashboard', end: true, need: ['view_all'], group: 'overview' },
+  { to: '/requests', labelKey: 'nav_requests', end: false, need: ['view_all'], group: 'overview' },
+  { to: '/reports', labelKey: 'nav_reports', end: false, need: ['view_all'], group: 'overview' },
+  { to: '/employees', labelKey: 'nav_employees', end: false, need: ['manage_employees'], group: 'people' },
+  { to: '/timeclock', labelKey: 'nav_timeclock', end: false, need: ['view_all'], group: 'operations' },
+  { to: '/schedule', labelKey: 'nav_schedule', end: false, need: ['view_all'], group: 'operations' },
+  { to: '/checklists', labelKey: 'nav_checklists', end: false, need: ['view_all'], group: 'operations' },
+  { to: '/directory', labelKey: 'nav_directory', end: false, need: ['view_all'], group: 'communication' },
+  { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, need: ['view_all', 'manage_knowledge_base'], group: 'communication' },
+  { to: '/events', labelKey: 'nav_events', end: false, need: ['view_all', 'manage_events'], group: 'communication' },
+  { to: '/training', labelKey: 'nav_training', end: false, need: ['view_all', 'manage_training'], group: 'communication' },
 ]
 // Owner (admin role) surface. Dashboard + Employees admit the admin via the
 // backend's requireCapabilityOrAdmin (I2: admins hold no capabilities, so this
@@ -60,7 +64,7 @@ export default function DashboardShell() {
   const isAdmin = user?.role === 'admin'
   const navItems = isAdmin
     ? adminNav
-    : oversightNav.filter((item) => user?.capabilities.includes(item.need))
+    : oversightNav.filter((item) => item.need.some((n) => user?.capabilities.includes(n)))
 
   return (
     <div className="shell">
