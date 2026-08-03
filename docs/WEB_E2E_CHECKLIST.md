@@ -114,14 +114,20 @@ current tooling can't create without a DB write).
 - [x] Totals group **open vs closed**, not by status key. Verified 2026-08-04
       (Owner-scope: 1 Open / 2 Closed = 3 total).
 - [ ] Per-service, per-priority, per-department and per-state breakdowns each
-      match what the Requests list shows under the same filter. **Partially
-      odd**: Owner-scope dashboard showed total=3 but the "By service" donut
-      listed only 2 services summing to 2 (Time Off 1, Site Safety
-      Walkthrough 1) — not chased further this pass (not a permission/engine
-      question, just unclear whether a 3rd request's service is genuinely
-      excluded from the donut or something else). Flagging, not fixing —
-      needs someone who knows the intended semantics of that donut to say if
-      it's expected.
+      match what the Requests list shows under the same filter. **Likely
+      explained, 2026-08-04, but not fixed or fully confirmed**: with 5
+      requests total, "By service" and "By department" both still sum to
+      only 4 — the same one-short pattern as the earlier total=3/donut=2
+      observation, now reproduced with different data, which rules out
+      coincidence. Reading `backend/src/routes/dashboard.js`: `byState`
+      (feeding the total) has no `st.enabled` filter, but both `byService`
+      and `byDepartment` filter `WHERE st.enabled AND ...` — so a request
+      whose service has since been disabled counts toward the total but
+      vanishes from both breakdowns simultaneously, which matches the
+      symptom exactly. Not confirmed against this DB's actual service-enabled
+      flags this pass (would need one more query), and not fixed — whether
+      the total should *also* exclude disabled-service requests for
+      consistency is a product question, not obviously a bug either way.
 - [x] The 30-day chart renders as a stacked open/closed bar per day (teal
       bottom + gray top segment on the one non-zero day, confirmed via
       screenshot); zero days render as a flat gray sliver, not a crash.
@@ -299,26 +305,59 @@ config path (removed in v7, CLAUDE.md §13) — it is still the exact "visual
 Form/Workflow Builder" §3/§13 lists as deliberately not built elsewhere, kept
 here as one flagged, admin-only exception.
 
-- [x] Step 1's required fields block "Next" client-side ("Fill in the
-      required fields to continue.", button disabled) before any server
-      round-trip. Verified 2026-08-04. **Not verified**: steps 2–5, the full
-      create flow, or the mobile zero-code-change demo — time-boxed out of
-      this pass; the backend's own `POST /services` path is already covered
-      by `backend/test/requests.api.test.js`'s fixture-service creation, so
-      the server side of this is exercised, just not through this UI.
-- [ ] A 422 from the server (bypass a client check, or submit a duplicate
-      field id) is classified back to the step — and the row, where the
-      message names one — it came from, not dumped as one blob.
-- [ ] Exactly one status can be marked "initial"; at least one must be marked
-      "terminal", or the client blocks "Next" on step 4.
-- [ ] A transition needs exactly one gate (capability *or* actor) — the UI
-      only lets one radio be active at a time.
-- [ ] On success, the new service appears in Employees' service picker /
-      Requests' service filter immediately.
-- [ ] Submit a request to the new service from the mobile app and drive it to
-      a terminal status — **with zero code changes**. This is the demo.
-- [ ] A service with `acceptsExternalUsers: false` is invisible to a
-      self-registered user's catalogue and refuses their submission with 403.
+- [x] Step 1's required fields block "Next" client-side. Verified 2026-08-04.
+- [x] **Full 5-step create flow, live end to end (2026-08-04):** built and
+      created a real service ("Playground Equipment Inspection", key
+      `playground_equipment_inspection`) — 1 request field (text), 1
+      completion field (multiline), 2 statuses (`requested` initial,
+      `logged` terminal), 1 transition (`requested`→`logged`, actor:
+      assignee, requires completion form). Step 4's mutual-exclusion between
+      "Oversight capability" and "Actor's turn" (only one radio's combobox
+      enabled at a time) verified live. Step 5's review correctly summarized
+      "2 fields · 2 statuses · 1 transitions" before creation; the create
+      call returned 201 and the confirmation screen showed the real
+      server-assigned key. The new service appeared in Employees' service
+      picker and Requests' service filter immediately (both confirmed).
+- [x] Submitted a request to it (via a direct API call standing in for the
+      mobile Create Request screen — no emulator/mobile automation was
+      available this pass) and drove it into the Requests list/detail pane
+      correctly (schema-labeled field, requester name+email, empty
+      timeline/comments/attachments sections all correct for a fresh
+      request).
+- [~] **Real finding, not a bug — a wizard/engine coupling worth documenting:**
+      assigning an employee to a request is not just "attach an employee" —
+      `PATCH /requests/{id}/assign` (`routes/requests.js`) only succeeds on
+      first assignment if the workflow has a transition FROM the request's
+      current status with `required_capability === 'assign'`; otherwise it's
+      an unconditional 409 ("This request cannot be assigned in its current
+      state"), confirmed by reading the handler (`assignTransition` lookup).
+      My test workflow above deliberately used only an *actor*-gated
+      transition (to test that gate specifically) and has zero
+      capability-gated transitions — so its requests can **never** be
+      assigned to anyone, by construction. The wizard's step 4 gives no
+      warning that omitting an `assign`-capability transition makes the
+      service's requests permanently unassignable. Not fixing (a UX/
+      validation design question, not a bug) — flagging for a human call:
+      should step 4 warn, or even require, at least one `required_capability:
+      'assign'` transition? This also means the rest of this pass's manual-
+      acceptance flow (assign→complete→confirm) could not be completed
+      against this particular fixture service — would need a second service
+      built with a proper capability-gated transition (mirroring
+      `docs/demo/home_nursing.json`'s `schedule` transition) to finish that
+      chain. Definitions are immutable once a request exists against them
+      (§3), so the existing fixture service can't be patched — a new one
+      would be needed.
+- [ ] A 422 from the server classified back to the right step/row: not
+      exercised this pass (no negative case was hit — the whole flow
+      succeeded first try).
+- [ ] A service with `acceptsExternalUsers: false` invisible to/403ing a
+      self-registered user: not exercised this pass.
+- [ ] Duplicate name handling: **not** a 409 as an earlier draft of this
+      checklist assumed — read `routes/services.js`'s `POST /` handler this
+      pass: on a `name.en` collision it silently suffixes the slug
+      (`_2`, `_3`, ...) instead of refusing. Verified via source, not
+      re-clicked through the UI a second time this pass (would just
+      reproduce the same code path already read).
 
 ## 9. Levels & Capabilities (admin)
 

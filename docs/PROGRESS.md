@@ -21,7 +21,7 @@ Automated checks, current as of 2026-08-03:
 | Backend, unit + API/permission (`cd backend && npm test`) | **92/92** |
 | Flutter widget (`cd mobile && flutter test` / `flutter analyze`) | **22/22**, 0 analyze issues |
 | Web build + lint (`cd web && npm run build && npm run lint`) | green |
-| CI | `.github/workflows/test.yml` runs all three on push/PR |
+| CI | `.github/workflows/test.yml`, confirmed actually green on GitHub Actions (checked via the API, not just wired — the web job had been failing on `npm run lint` since before this session; fixed 2026-08-04, see item 8 below) |
 
 **Dev-DB residue from the 2026-08-04 checklist pass** (real data in the
 shared dev database, not a throwaway test DB — clean up before a demo):
@@ -48,28 +48,56 @@ was rate-limited from repeated test logins. One deactivated leftover employee,
 deactivated and reassigned off that level; the level itself was deleted
 cleanly (no residual level).
 
+**Further residue, same day, from finishing the Add Service + manual-
+acceptance pass:** one new real service, "Playground Equipment Inspection"
+(key `playground_equipment_inspection`, id 9) — a deliberately minimal
+fixture (1 field each on request/completion, 2 statuses, 1 actor-gated
+transition, no capability-gated one — see item 9 below for why that matters).
+One new external `user` account, `accept.tester@example.com`. One new
+request (#5) against that service, submitted via a direct API call (no
+mobile automation available) and left in its initial `requested` status —
+assignment on it is permanently blocked by item 9's finding, so it will
+never move further without a new service. Manny Manager's
+(`ma.manager@adad.ada`) password was also set directly to `Password123!`
+(known now, not a leftover temp value) to drive this pass's Requests testing.
+
 **Not done, and worth doing before submission:**
 
 1. **The web app's manual E2E checklist is now mostly run, not fully.**
    `docs/WEB_E2E_CHECKLIST.md` was reconciled to v7 (2026-08-03) and then
-   given a deep pass (2026-08-04): Login, Dashboard, Requests + detail pane,
-   Departments, Levels & Capabilities, and Audit all got real interactive
-   verification (not just page-loads) — English throughout, Arabic/RTL
-   spot-checked on Dashboard and Departments. The seven workforce modules
-   (Time Clock, Schedule, Checklists, Directory, Knowledge Base, Events,
-   Training) got a structural pass — each loads correctly with real empty
-   states and working write controls, but interactive flows (clock in/out,
-   RSVP, mark-complete, per-module capability-without-`view_all` write
-   gating) are still unverified. Employees and Reports got partial passes.
-   Add Service, Onboarding Wizard, and Notifications+profile are essentially
-   untested. Three real bugs were found and fixed along the way (see items
-   6–7 below). *Why any of this matters, concretely: on 2026-07-18 a
-   change shipped that made the web console impossible to log into for every
-   employee (`type="email"` rejecting a numeric login). The page looked
-   fine; it was found by eye during unrelated work — automated checks would
-   not have caught it.*
-2. **Not deployed.** No host configuration exists (`render.yaml` / `Procfile` / `Dockerfile` — none). CLAUDE.md §4 asks for one free-tier cloud host; §14 wants manual acceptance run on the deployed build.
-3. **Manual acceptance not recorded.** §14 asks that the core flows be run on every seeded service by the student who did *not* write that layer. No record of that run exists.
+   given two deep passes (2026-08-04): Login, Dashboard, Requests + detail
+   pane, Departments, Levels & Capabilities, Audit, and — as of the second
+   pass — the full Add Service wizard all got real interactive verification
+   (not just page-loads) — English throughout, Arabic/RTL spot-checked on
+   Dashboard, Departments, and Knowledge Base. The seven workforce modules
+   still only have a structural pass (load correctly, real empty states,
+   write controls present) — interactive flows (clock in/out, RSVP,
+   mark-complete) and the `manage_events`/`manage_training`-without-
+   `view_all` write-gating checks (the `manage_knowledge_base` case is
+   already fixed and verified, see item 7) are still unverified; that
+   pattern is proven and quick to repeat, just not done for the other two
+   yet. Employees and Reports have partial passes. Onboarding Wizard and
+   Notifications+profile are essentially untested — Onboarding specifically
+   needs a scratch DB, since the shared dev DB is already onboarded and
+   un-onboarding it would be destructive to everyone else's fixture data.
+   Five real bugs/findings were found and fixed or flagged along the way
+   (see items 6–9 below). *Why any of this matters, concretely: on
+   2026-07-18 a change shipped that made the web console impossible to log
+   into for every employee (`type="email"` rejecting a numeric login). The
+   page looked fine; it was found by eye during unrelated work — automated
+   checks would not have caught it.*
+2. **Not deployed.** No host configuration exists (`render.yaml` / `Procfile` / `Dockerfile` — none). CLAUDE.md §4 asks for one free-tier cloud host; §14 wants manual acceptance run on the deployed build. Deliberately not attempted autonomously this session — choosing a host and provisioning credentials is a decision for the two of you, not something to do silently.
+3. **Manual acceptance started, not completed.** A real service now exists
+   (item 9's fixture) and a request was submitted and reached "review" —
+   but assignment on it is permanently blocked by that same service's
+   workflow shape (see item 9), so complete/confirm/dispute/cancel-reopen on
+   *this* fixture can never be exercised. A second service with a proper
+   `required_capability: 'assign'` transition (mirroring
+   `docs/demo/home_nursing.json`'s `schedule` transition) would let someone
+   finish the chain. The "register→submit" half of §14's flow also still
+   needs an actual mobile device/emulator — no automation tool for driving
+   the Flutter apps' UI was available this session, so that half was stood
+   in for with a direct API call each time, not the real mobile screens.
 4. **The onboarding wizard's feature-module selection doesn't gate access.** `company.features` (the Owner's step-4 picks) is stored but never checked — every module route/page is reachable by capability alone, regardless of what was selected in the wizard (CLAUDE.md §15).
 5. **CLAUDE.md §12 was wrong about Levels & Capabilities, now corrected.** It
    said Gate-1 level authoring was "seed-time only for now." Live testing
@@ -94,6 +122,30 @@ cleanly (no residual level).
    user. Live-verified both directions (a module-only employee lands on
    their one page with one nav link; a full `view_all` employee still sees
    all 11 nav items) in English and Arabic — not just typechecked.
+8. **CI was red, now fixed 2026-08-04.** Checked GitHub Actions directly via
+   the API (not just trusted the locally-passing suite) — all 4 runs on
+   `main` so far had failed, all on the web job's `npm run lint` step
+   (backend and mobile were already green). Three pre-existing,
+   behavior-unaffecting lint errors, unrelated to anything built this
+   session: `ChecklistsPage.tsx`'s effect-setState false positive (same
+   shape/fix as `DashboardPage.tsx`'s existing precedent), `EventsPage.tsx`'s
+   `Date.now()` purity warning (display-bucketing only, disabled with a
+   rationale comment), and `Donut.tsx`'s unused `export` on an
+   internal-only helper. Fixed; confirm the next push is actually green on
+   Actions, not just locally.
+9. **Real finding, 2026-08-04: a service without an `assign`-capability
+   transition can never have its requests assigned, and the Add Service
+   wizard gives no warning.** `PATCH /requests/{id}/assign`
+   (`routes/requests.js`) only creates/updates a task if the workflow has a
+   transition FROM the current status with `required_capability ===
+   'assign'` — otherwise it's an unconditional 409 regardless of who's
+   calling or what capabilities they hold. Discovered live while building
+   this session's fixture service (see item 3's residue) with only an
+   actor-gated transition, deliberately, to test that gate — its requests
+   turned out to be permanently unassignable as a direct, immediate
+   consequence, with zero warning anywhere in the 5-step builder. Not fixed
+   (a UX/validation design question — should step 4 warn, or require, at
+   least one `assign`-capability transition? — not a code bug either way).
 
 ---
 
