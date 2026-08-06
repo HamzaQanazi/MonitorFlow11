@@ -171,7 +171,7 @@ class _TimeOffDetailScreenState extends State<TimeOffDetailScreen> {
       if (!mounted) return;
       // 409 = the state moved under us (e.g. approved meanwhile) — the
       // reload shows the truth and the stale button disappears.
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(i18n.apiError(e))));
       _load(silent: true);
     } on NetworkException {
       if (!mounted) return;

@@ -398,7 +398,7 @@ class DynamicFormState extends State<DynamicForm> {
       });
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _errors[field.id] = e.fieldErrors['file'] ?? e.message);
+      setState(() => _errors[field.id] = e.fieldErrors['file'] ?? _i18n.apiError(e));
     } catch (_) {
       if (!mounted) return;
       // English (label.en) to match the server's authoritative form errors.

@@ -64,7 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       setState(() => _profileErrors = e.fieldErrors.isNotEmpty
           ? e.fieldErrors
-          : {'name': e.message});
+          : {'name': context.read<I18n>().apiError(e)});
     } on NetworkException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -96,7 +96,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       setState(() => _passwordErrors = e.fieldErrors.isNotEmpty
           ? e.fieldErrors
-          : {'currentPassword': e.message});
+          : {'currentPassword': context.read<I18n>().apiError(e)});
     } on NetworkException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

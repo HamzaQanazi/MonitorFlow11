@@ -239,7 +239,7 @@ class _RequestDetailScreenState extends State<RequestDetailScreen>
       if (!mounted) return;
       // 409 = the state moved under us (e.g. assigned meanwhile) — the
       // reload shows the truth and the stale button disappears.
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(i18n.apiError(e))));
       _load(silent: true);
     } on NetworkException {
       if (!mounted) return;

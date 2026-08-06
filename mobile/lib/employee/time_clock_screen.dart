@@ -72,7 +72,7 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
       setState(() => _shift = parsed?.status == 'active' ? parsed : null);
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(i18n.apiError(e))));
     } on NetworkException {
       if (!mounted) return;
       ScaffoldMessenger.of(context)

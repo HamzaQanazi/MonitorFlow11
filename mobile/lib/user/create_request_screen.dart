@@ -65,11 +65,12 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
       );
     } on ApiException catch (e) {
       if (!mounted) return;
+      final message = context.read<I18n>().apiError(e);
       setState(() {
         if (e.fieldErrors.isNotEmpty) {
           _formKey.currentState!.applyServerErrors(e.fieldErrors);
         } else {
-          _bannerError = e.message;
+          _bannerError = message;
         }
       });
     } on NetworkException {

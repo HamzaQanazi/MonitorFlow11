@@ -225,7 +225,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
     } on ApiException catch (e) {
       if (!mounted) return;
       // 409 = someone changed the task under us — reload shows the truth.
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(i18n.apiError(e))));
       _load(silent: true);
     } on NetworkException {
       if (!mounted) return;

@@ -68,11 +68,13 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       // Success: the auth gate in main.dart swaps this screen out.
     } on ApiException catch (e) {
+      if (!mounted) return;
+      final message = context.read<I18n>().apiError(e);
       setState(() {
         if (e.fieldErrors.isNotEmpty) {
           _fieldErrors = e.fieldErrors;
         } else {
-          _bannerError = e.message;
+          _bannerError = message;
         }
       });
     } on NetworkException {

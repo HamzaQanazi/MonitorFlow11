@@ -1,13 +1,20 @@
 // Bilingual + RTL for the mobile apps (Phase 3), the sibling of web/src/i18n.tsx.
-//   tr(key)  — UI chrome, from the `_dict` below (en + ar).
-//   l(Loc)   — a data label the API returns as { en, ar }; picks the language.
+//   tr(key)       — UI chrome, from the `_dict` below (en + ar).
+//   l(Loc)        — a data label the API returns as { en, ar }; picks the language.
+//   apiError(err) — a caught ApiException/NetworkException; picks the language
+//                   for the finite set of server error strings mobile screens
+//                   can actually trigger (`_serverErrorDict` below), falling
+//                   back to the server's raw English text for anything not
+//                   recognized — an honest degradation, not a mistranslation.
 // The provider persists the choice and exposes a TextDirection; main.dart wraps
 // the app in a Directionality so layout (EdgeInsetsDirectional, Row, text)
-// flips between LTR and RTL. Runtime/server-composed text (validation messages,
-// notification bodies) stays English, matching the backend — the bilingual-
+// flips between LTR and RTL. Notification bodies (server-composed, not an
+// {en,ar} object) still stay English — that part of the bilingual-
 // notifications work is deferred to Phase 5.
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'api/api_client.dart';
 
 /// A bilingual label as returned by the API: { en, ar }. Defensive against a
 /// plain string (older payloads) so a render never throws.
@@ -54,6 +61,20 @@ class I18n extends ChangeNotifier {
 
   /// Look up a UI chrome string. Falls back to English, then the key itself.
   String tr(String key) => _dict[key]?[_lang] ?? _dict[key]?['en'] ?? key;
+
+  /// Localizes a caught API error for display. A NetworkException gets the
+  /// generic "could not reach the server" copy; an ApiException's message is
+  /// looked up in `_serverErrorDict` and falls back to the raw server string
+  /// (English) if this particular error isn't in that finite list yet.
+  String apiError(Object error) {
+    if (error is NetworkException) return tr('net_retry');
+    if (error is ApiException) {
+      final loc = _serverErrorDict[error.message];
+      if (loc != null) return loc[_lang] ?? loc['en']!;
+      return error.message;
+    }
+    return error.toString();
+  }
 
   /// "high" → "High priority" / "أولوية عالية" (word order differs, so the
   /// whole phrase is a single key rather than composed).
@@ -367,4 +388,69 @@ const Map<String, Map<String, String>> _dict = {
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},
   'fr_no': {'en': 'No', 'ar': 'لا'},
   'fr_photo': {'en': 'Photo attached', 'ar': 'صورة مرفقة'},
+};
+
+// Server-composed error strings (`routes/*.js`'s `res.status(...).json({error:
+// '...'})` bodies) that mobile screens can actually trigger, keyed by the
+// exact literal the backend sends. Not every backend error string is here —
+// web/admin-only ones (department, level, plan-cap errors) never reach a
+// mobile screen, so they're left out rather than translated speculatively.
+// A message not found here falls back to its raw English text (apiError()
+// above) instead of guessing.
+const Map<String, Map<String, String>> _serverErrorDict = {
+  'Invalid credentials': {'en': 'Invalid credentials', 'ar': 'بيانات الدخول غير صحيحة'},
+  'Too many login attempts, try again later': {
+    'en': 'Too many login attempts, try again later',
+    'ar': 'محاولات دخول كثيرة جدًا، حاول لاحقًا',
+  },
+  'Account is not active': {'en': 'Account is not active', 'ar': 'الحساب غير نشط'},
+  'Invalid or expired token': {
+    'en': 'Invalid or expired token',
+    'ar': 'الجلسة غير صالحة أو منتهية',
+  },
+  'Authentication required': {'en': 'Authentication required', 'ar': 'تسجيل الدخول مطلوب'},
+  'Forbidden': {'en': 'Forbidden', 'ar': 'غير مسموح'},
+  'Not found': {'en': 'Not found', 'ar': 'غير موجود'},
+  'Internal server error': {'en': 'Internal server error', 'ar': 'خطأ في الخادم'},
+  'You are already clocked in': {
+    'en': 'You are already clocked in',
+    'ar': 'أنت مسجّل حضورك بالفعل',
+  },
+  'You are not clocked in': {'en': 'You are not clocked in', 'ar': 'لم تسجّل حضورك'},
+  'You already have an active break': {
+    'en': 'You already have an active break',
+    'ar': 'لديك استراحة نشطة بالفعل',
+  },
+  'No active break to end': {
+    'en': 'No active break to end',
+    'ar': 'لا توجد استراحة نشطة لإنهائها',
+  },
+  'End your break before clocking out': {
+    'en': 'End your break before clocking out',
+    'ar': 'أنهِ استراحتك قبل تسجيل الانصراف',
+  },
+  'Entries can only be added to an active shift': {
+    'en': 'Entries can only be added to an active shift',
+    'ar': 'يمكن إضافة الإدخالات فقط أثناء وردية نشطة',
+  },
+  'This request cannot be cancelled': {
+    'en': 'This request cannot be cancelled',
+    'ar': 'لا يمكن إلغاء هذا الطلب',
+  },
+  'This task is already assigned to that employee': {
+    'en': 'This task is already assigned to that employee',
+    'ar': 'هذه المهمة مُسندة بالفعل لهذا الموظف',
+  },
+  'This request cannot be assigned in its current state': {
+    'en': 'This request cannot be assigned in its current state',
+    'ar': 'لا يمكن إسناد هذا الطلب في حالته الحالية',
+  },
+  'This feature is not enabled for your company': {
+    'en': 'This feature is not enabled for your company',
+    'ar': 'هذه الميزة غير مفعّلة لشركتك',
+  },
+  'date must be YYYY-MM-DD': {
+    'en': 'date must be YYYY-MM-DD',
+    'ar': 'يجب أن يكون التاريخ بصيغة YYYY-MM-DD',
+  },
 };

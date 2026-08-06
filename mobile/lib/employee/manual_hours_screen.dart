@@ -81,7 +81,7 @@ class _ManualHoursScreenState extends State<ManualHoursScreen> {
       if (e.fieldErrors.isNotEmpty) {
         setState(() => _errors = e.fieldErrors);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(i18n.apiError(e))));
       }
     } on NetworkException {
       if (!mounted) return;
