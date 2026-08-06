@@ -339,11 +339,12 @@ router.get('/:id', async (req, res, next) => {
 // GET /requests/{id}/transitions — the ONE generic call (Phase 4 §10): the
 // legal next actions from the current status that this caller may fire, both
 // gates already applied. The requester sees their own actions (own request,
-// 404 otherwise); the assigned employee sees theirs (own task, 404 otherwise);
-// oversight employees act through the dedicated /assign, /priority, /status
-// endpoints, so they get an empty list here. Clients render exactly these
-// buttons and nothing else — the accept/reject/complete/confirm/dispute
-// endpoints are gone.
+// 404 otherwise); the assigned employee sees theirs (own task, 404 otherwise)
+// — including an oversight employee assigned to their own task; an oversight
+// employee with no stake in this particular request acts through the
+// dedicated /assign, /priority, /status endpoints instead, so they get an
+// empty list here. Clients render exactly these buttons and nothing else —
+// the accept/reject/complete/confirm/dispute endpoints are gone.
 async function loadTransitionContext(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {
@@ -365,8 +366,10 @@ async function loadTransitionContext(req, res) {
 
   // Party + ownership (404-over-403). Oversight employees have no actor
   // transitions here — they use the dedicated oversight endpoints, unless
-  // they're also the requester (e.g. their own Time Off submission), checked
-  // first so that still resolves to 'requester'.
+  // they're also the requester (e.g. their own Time Off submission) or the
+  // assignee (e.g. a working manager assigned their own task) — both checked
+  // first so those still resolve to their real party instead of the oversight
+  // no-actor-transitions default.
   if (req.user.role === 'user') {
     if (request.user_id !== req.user.id) {
       res.status(404).json({ error: 'Not found' });
@@ -375,16 +378,16 @@ async function loadTransitionContext(req, res) {
     return { id, request, party: 'requester' };
   }
   if (request.user_id === req.user.id) return { id, request, party: 'requester' };
-  if (isOversight(req.user)) return { id, request, party: null };
   const { rows: taskRows } = await pool.query(
     'SELECT employee_id FROM task WHERE request_id = $1',
     [id]
   );
-  if (!taskRows.length || taskRows[0].employee_id !== req.user.id) {
-    res.status(404).json({ error: 'Not found' });
-    return null;
+  if (taskRows.length && taskRows[0].employee_id === req.user.id) {
+    return { id, request, party: 'assignee' };
   }
-  return { id, request, party: 'assignee' };
+  if (isOversight(req.user)) return { id, request, party: null };
+  res.status(404).json({ error: 'Not found' });
+  return null;
 }
 
 router.get('/:id/transitions', async (req, res, next) => {
