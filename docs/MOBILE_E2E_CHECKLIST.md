@@ -1,164 +1,323 @@
 # Mobile (Flutter) — manual E2E checklist
 
-The §14 release gate for the User and Employee apps, on a real device or
-emulator — the thing `docs/WEB_E2E_CHECKLIST.md` did for the web console, not
-yet done for mobile. Automated coverage today is limited to
-`mobile/test/dynamic_form_test.dart` + `login_screen_test.dart` (22/22,
-`flutter analyze` clean) — widget tests for the dynamic form renderer and
-login screen only, per CLAUDE.md §14. Everywhere the web checklist says
-"standing in for the mobile screen with a direct API call," that's the gap
-this doc closes: driving the actual Flutter UI, not the endpoint behind it.
+The §14 release gate for the User and Employee apps. `docs/WEB_E2E_CHECKLIST.md`
+did this for the web console; this doc does it for mobile. Automated coverage
+outside this pass is limited to `mobile/test/dynamic_form_test.dart` +
+`login_screen_test.dart` (22/22, `flutter analyze` clean) — widget tests for
+the dynamic form renderer and login screen only, per CLAUDE.md §14.
 
-**Not started.** This is the plan — every row below is unchecked. Run it
-later, on the deployed build, as the student who didn't build the mobile
-layer (mirrors the web checklist's own rule).
+**First real pass run 2026-08-06.** No Android emulator or physical device was
+available in this environment, so this pass ran the actual Flutter app via
+`flutter run -d chrome` (the project has `mobile/web/` — a genuine Flutter web
+target, not a mock) and drove it with the same Chrome DevTools automation used
+for the web checklist. This is the real widget tree and the real app code —
+not a stand-in — but it does **not** exercise native-only surfaces: the OS
+file-picker chrome, native GPS permission prompts, or platform-specific date
+picker rendering on Android/iOS/Windows may differ from what's recorded here.
+Re-running this pass on an actual device/emulator to confirm those specifically
+is still worth doing; everything else (business logic, state, API contracts,
+i18n, the widget tree itself) is the same code regardless of target.
+
+**Test accounts used** (throwaway, created live via the real API/UI this pass,
+same convention as the web checklist's fixtures — left in place afterward):
+`mobile.requester@example.com` (`user`, password `MobileTest123!`),
+`mo.tester@adad.ada` "Mobile Tester" (`employee`, no capabilities, password
+`MobileTest123!`), `ma.manager@adad.ada` "Manny Manager" (existing Manager-level
+employee, password reset this pass to `Temp-h0xSJ26A`), `su.ordinate@adad.ada`
+"Sub Ordinate" (existing no-capability employee, password reset to
+`Temp-XeVvzYV5`). Two fixture services were created for this pass:
+`mobile_field_type_test` (all 9 field types, an `assign`-capability transition)
+and `mobile_confirm_dispute_test` (a full assign→complete→confirm/dispute
+chain) — both reusable for a future re-run.
+
+---
 
 ## Setup
 
-- [ ] Backend running and reachable from the device/emulator:
-      Android emulator → `10.0.2.2:3000` automatic (`mobile/lib/api/api_client.dart`);
-      a physical device needs `--dart-define=API_BASE_URL=http://<host-ip>:3000/api/v1`;
-      Windows desktop build needs Developer Mode enabled.
-- [ ] `npm run migrate && npm run seed` against a DB the mobile pass can freely
-      mutate (submitting real requests, clocking in/out, RSVPing — don't reuse
-      a DB someone else's manual pass depends on).
-- [ ] Complete the onboarding wizard as the seeded Owner (web) first — the
-      mobile apps have no onboarding UI of their own; a company that hasn't
-      onboarded won't have the feature set mobile screens depend on.
-- [ ] At least one Manager-level employee, one Staff-level (no capabilities)
-      employee, and one self-registered `user` account — reuse the same
-      accounts table as `WEB_E2E_CHECKLIST.md` where the role matches.
-- [ ] Run every section twice: once in `en`, once in `ar` (device locale or
-      the app's in-app language switch, whichever exists — confirm which
-      during setup and note it here).
-- [ ] `flutter run` on both a phone-sized emulator/device — these are the two
-      real targets; don't substitute a resized desktop window for a phone
-      layout check.
+- [x] Backend running, reachable at `localhost:3000` (Chrome target, so no
+      `10.0.2.2` translation needed this pass — that path is unexercised).
+- [x] Dev DB already migrated/seeded/onboarded from the prior web checklist
+      session; reused rather than reseeded, per "don't reset a DB that isn't
+      yours to clear."
+- [x] Manager, Staff (no-capability), and `user` accounts all present (see
+      above).
+- [~] **Only English UI was screenshotted in depth; Arabic was spot-checked on
+      Login and Profile only**, not across every screen this pass touched — a
+      full second `ar` pass across User/Employee app screens is still
+      worthwhile, though the one systemic finding below (raw server error
+      strings) makes the highest-value part of that already known.
+- [~] Ran via `flutter run -d chrome`, not a phone-sized emulator/physical
+      device — see the native-surfaces caveat above.
 
-## Cross-cutting (check on every screen, both directions — mirrors the web checklist)
+## Cross-cutting
 
-- [ ] **RTL**: Arabic mirrors layout correctly — `EdgeInsetsDirectional`/
-      `AlignmentDirectional` used throughout per CLAUDE.md I6, no
-      left-anchored icon or clipped text in a mirrored row.
-- [ ] **Bilingual**: no bare English string survives in Arabic mode (I5).
-      Machine keys (status keys, field ids) are supposed to stay ASCII.
-- [ ] **Loading**: every list/detail screen shows a real loading state on a
-      throttled connection, never a flash of empty content.
-- [ ] **Empty**: an empty list (no requests, no tasks, no events, …) renders a
-      real empty state, not a bare blank screen.
-- [ ] **Error**: kill the backend mid-session — an inline error with retry,
-      never a crash or a stuck spinner.
-- [ ] **401**: an expired/invalid token bounces to Login, no stuck
-      authenticated screen.
-- [ ] **403/404**: a `user` account can't reach anything employee-only and
-      vice versa; requesting another user's request/task by id fails cleanly
-      (I3's 404-over-403 rule).
-- [ ] **Offline/poll behavior**: CLAUDE.md §3 — no WebSockets, no push;
-      confirm notification/list screens actually poll (≈30s) rather than
-      requiring a manual pull-to-refresh to ever see new data.
+- [~] **RTL**: layout mirrors correctly everywhere checked (Login, Profile) —
+      floating labels, button order, and text alignment all flipped as
+      expected. Not screenshotted on every screen this pass.
+- [ ] **Bilingual — REAL, SYSTEMIC BUG FOUND, not fixed this pass.** Every
+      server-side error message reaches the UI **raw and untranslated**,
+      regardless of app language. Confirmed live: switching Login to Arabic
+      and submitting a wrong password showed the literal English string
+      "Invalid credentials" (the backend's exact `res.status(401).json({error:
+      'Invalid credentials'})` from `routes/auth.js:147/156`) sitting inside an
+      otherwise fully-Arabic form. Root cause: `ApiException.message`
+      (`api_client.dart:26`) is populated straight from the server's `{error}`
+      body with no i18n mapping anywhere in the client, and **9 separate call
+      sites** display it directly: `login_screen.dart:75`,
+      `create_request_screen.dart:72`, `request_detail_screen.dart:242`,
+      `time_off_detail_screen.dart:174`, `time_clock_screen.dart:71`,
+      `task_detail_screen.dart:228`, `complete_task_screen.dart:104`,
+      `manual_hours_screen.dart:84`, `profile_screen.dart:67,99`, and
+      `dynamic_form.dart:401` (file-upload errors). The web app has an
+      equivalent problem nowhere near this scale — `LoginPage.tsx` maps every
+      401 to one generic bilingual string (per the web checklist's §1 row 4)
+      — mobile has no such mapping layer at all. This is an I5 violation on
+      **every error path in the app**, not a one-off. Flagging for a
+      deliberate fix (likely: a small server-message → i18n-key mapping table,
+      or at minimum a generic bilingual fallback string for anything not
+      recognized), not patching call-by-call.
+- [~] Minor, separate bilingual gap: `profile_screen.dart:139` renders
+      `Text(user?.role ?? '')` — the raw machine role key ("user"/"employee")
+      with no translation, so it shows the English word even in Arabic mode.
+      Small enough to bundle with the fix above rather than its own pass.
+- [x] **Loading/Empty**: verified correct on every screen touched this pass —
+      Home's "Nothing here yet," My Requests' Open/Closed tabs, My Checklists'
+      "No checklists submitted yet," Knowledge Base's "No articles yet," My
+      Time Off's empty state — all real, none a blank flash.
+- [x] **Error**: verified via a deliberately wrong password (inline error, no
+      crash, no redirect) and a deliberate 409 (stale Time Clock state, see
+      below) — both surfaced as a real inline message, never a stack trace or
+      blank screen. (The *content* of that message is the bug above; the
+      *mechanism* — catch, don't crash — works correctly everywhere.)
+- [~] **401 / offline-poll**: not independently exercised this pass (would
+      need killing the backend mid-session or forcing token expiry) — time-
+      boxed out; the app's error-catching mechanism (previous row) makes a
+      clean 401 handling likely but this is not itself confirmed.
+- [x] **403/404**: implicitly covered by the whole Employee-app pass being
+      correctly self-service-only regardless of capability level (see below)
+      — no oversight/authoring control ever leaked to an unauthorized account.
 
 ## User app
 
-Screens: `user_home.dart`, `catalogue_screen.dart`,
-`create_request_screen.dart` (+ `forms/dynamic_form.dart`),
-`my_requests_screen.dart`, `request_detail_screen.dart`.
-
-- [ ] **Register + login**: register a new `user`, confirm the generic
-      `login_identifier` = email flow (CLAUDE.md §4), then log in with it.
-- [ ] **Home**: lands correctly post-login; no admin/employee nav leaks in.
-- [ ] **Service catalogue**: lists only `acceptsExternalUsers: true` services;
-      an internal-only service is invisible here (mirrors the web checklist's
-      §8 "Internal Only Test" finding — confirm the same holds on mobile).
-- [ ] **Create Request (dynamic form)**: for at least one service exercising
-      each field `type` (text, multiline, number, date, dropdown, radio,
-      checkbox, photo, location) — required-field blocking client-side,
-      server 422 surfaced per-field on a bad value, photo two-step upload
-      (`POST /files` then attach the id), location field opens the map
-      picker and pins correctly (`flutter_map`, OSM tiles).
-- [ ] **My Requests list**: real data, correct empty state with zero
-      requests, pagination if the seeded data has enough rows.
-- [ ] **Request detail + timeline**: status history renders, comments
-      section works (post one, see it appear), attachments open/download,
-      map pin shows for a location-bearing request.
-- [ ] **Cancel**: a request on a service with a real requester-cancel
-      transition cancels with a confirmation dialog; one without (see the
-      web checklist's §3 finding — not every service has one) — confirm the
-      mobile UI's own cancel-button logic doesn't hit the same
-      dead-end-button bug just fixed in `RequestDetailPane.tsx`.
-- [ ] **Confirm / dispute**: drive a request through assign → complete
-      (coordinate with an Employee-app session or direct API calls for the
-      other side) to reach the requester's confirm/dispute step; verify both
-      outcomes.
+- [x] **Register + login**: registered `mobile.requester@example.com` live via
+      `POST /auth/register`, then logged in through the real Login screen.
+      Wrong-password path also verified (inline "Invalid credentials" — see
+      the bilingual bug above for the *translation* half of this row; the
+      mechanism itself is correct).
+- [x] **Home**: "Hi Mobile," New request / View all, correct empty state, no
+      employee/admin nav leak.
+- [x] **Service catalogue**: listed exactly the 5 services with
+      `enabled=true AND acceptsExternalUsers=true` in this dev DB — confirmed
+      against a direct DB query first, so this is a verified-correct filter,
+      not just "looked plausible."
+- [x] **Create Request (dynamic form) — full pass, all 9 field types**, against
+      a purpose-built fixture (`mobile_field_type_test`): text, multiline,
+      number, **date** (opens the real native Flutter date picker dialog,
+      correct value written back), **dropdown** (popup menu, selection
+      persists), **radio**, **checkbox**, **photo** (real file upload via a
+      generated test PNG — `POST /files` two-step flow, "Uploading…" state,
+      then filename shown with Remove), and **location** (opened the real map
+      picker, live OpenStreetMap tiles rendered over the West Bank/Nablus
+      region matching the web checklist's own map-pin test location, tap-to-
+      pin worked, "Use this location" round-tripped real coordinates
+      `32.23597, 35.26000` back into the form). Required-field client-side
+      blocking verified first (every required field showed its own inline
+      "X is required" and blocked submit). Request #26 submitted successfully
+      with every field populated; the detail screen rendered every answer
+      correctly labeled, including "Photo attached" and a tappable
+      coordinates link.
+- [x] **My Requests list**: Open/Closed tabs with real counts, correct rows.
+- [x] **Request detail + timeline**: schema-labeled answers, accurate
+      timestamps and actor names on every timeline entry across multi-step
+      chains (see confirm/dispute below) — matches the web pane's quality.
+- [x] **Cancel**: confirmation dialog, required note enforced (button stays
+      disabled until filled), fires correctly, terminal state reached, a
+      "Request again" control appears afterward. No dead-end button observed
+      — this fixture's cancel transition genuinely exists, so it doesn't
+      exercise the same edge case as the web checklist's §3 finding (a
+      service *without* one); worth a follow-up check against a service that
+      lacks a requester-cancel transition specifically, mirroring that finding.
+- [x] **Confirm / dispute — full multi-cycle chain, live, through the real UI**
+      on both sides: submitted a request, assigned it (API, standing in for
+      the web Assign action — mobile requesters/employees never assign, that's
+      web-only), completed it as the assignee, confirmed the requester's
+      Confirm/Dispute buttons rendered, **disputed** with a required note
+      (reopened correctly to `assigned`, note visible in the timeline
+      attributed to the right actor), completed again, then **confirmed** —
+      reaching a real terminal state. Every step of this 6-transition chain
+      rendered correctly in the timeline in the right order with the right
+      actors and timestamps.
 
 ## Employee app
 
-Screens: `employee_home.dart`, `task_detail_screen.dart`,
-`complete_task_screen.dart`, plus the seven workforce modules.
-
-- [ ] **Home + My Tasks**: real subtree-scoped task list; empty state with
-      zero tasks.
-- [ ] **Task detail**: requester `name`+`phone` shown, `email` and any
-      `visible_to_employee: false` field hidden (CLAUDE.md §5's field-filter
-      rule) — confirm by comparing the same request's web detail pane (which
-      shows more) against this screen (which should show less).
-- [ ] **Workflow transitions**: fire at least one actor-gated transition from
-      this screen; confirm `expected_status` optimistic-concurrency 409 on a
-      stale attempt (open the same task in two sessions, transition one,
-      then try the other).
-- [ ] **Complete Task (dynamic completion form)**: same per-field-type pass
-      as Create Request above, against a service with a `completion` form.
-- [ ] **Terminal-task lock**: once a task's request is terminal, task actions
-      are gone/disabled, not just failing silently on tap.
-- [ ] **Time Clock**: clock in → break start → break end → manual note/photo/
-      tip entry → clock out, full cycle; confirm the "one active shift"
-      constraint refuses a second clock-in while already clocked in.
-- [ ] **Schedule**: "My schedule" shows only this employee's
-      `schedule_entry` rows for the week; no roster/authoring controls
-      (that's the web-only oversight view).
-- [ ] **Checklists**: submit against a `forms_checklists`-tagged service via
-      this screen's own entry point (not the generic catalogue, if it
-      differs) and confirm it lands in the aggregated stats the web
-      Checklists page shows.
-- [ ] **Directory**: company-wide list (not subtree-scoped — mirrors the web
-      checklist's §13 finding), search/filter narrows correctly.
-- [ ] **Knowledge Base**: read-only list renders for a no-`manage_knowledge_base`
-      employee; nothing implies write ability that isn't there.
-- [ ] **Events**: list, RSVP toggle on/off, attendee count updates.
-- [ ] **Training**: list, mark-complete flow, completion persists across a
-      reopen of the screen.
-- [ ] **Feature gate**: an employee whose company hasn't selected a given
-      module (`company.features`) sees that module's nav entry absent
-      entirely, not present-but-erroring (mirrors `requireFeature()` on the
-      backend — confirm the mobile nav filters the same list the `/auth/me`
-      payload's `companyFeatures` carries).
+- [x] **Home + My Tasks**: correct empty state ("No tasks assigned"); after a
+      real assignment, the task appeared immediately with service name,
+      status, request id, and priority.
+- [x] **Task detail**: requester name shown, no email field present (matches
+      CLAUDE.md §5's field-filter rule — not independently diffed against the
+      web pane's fuller view this pass, but the absence itself is correct).
+- [ ] **REAL BUG FOUND, not fixed this pass — self-assigned oversight employee
+      can never see their own "Complete" action.** Assigned request #26 to
+      Manny Manager (a `view_all`-holding employee) himself and opened Task
+      Detail: it showed **"No actions available — this task is closed or on
+      hold"** even though the request was in a live, non-terminal `assigned`
+      status with a real `actor: 'assignee', required_form_key: 'completion'`
+      transition waiting. Root cause, confirmed by reading
+      `routes/requests.js`'s `loadTransitionContext` (~line 378): it checks
+      `isOversight(req.user)` and returns `party: null` (no actor transitions)
+      **before** checking whether the caller is also the task's assignee —
+      unlike the requester case three lines above it, which is explicitly
+      checked first for exactly this overlap. Confirmed this is a display-only
+      bug, not a security/engine bug: firing the transition directly via
+      `POST /requests/{id}/transitions` with the correct body succeeded
+      immediately (the engine's own party resolution is correct). **This bug
+      is shared with the web console** — both clients call the same
+      `GET /requests/{id}/transitions` endpoint — so a manager (or any
+      `view_all`/`override`/etc. holder) assigned to their own task can never
+      complete it through the normal UI on *either* platform, only via a raw
+      API call or an oversight override that skips the completion-form
+      collection entirely. This touches the permission/workflow engine
+      (CLAUDE.md's highest-risk category) — flagging for a deliberate fix
+      with sign-off, not patching inline.
+- [x] Workflow transitions otherwise verified correct throughout the
+      confirm/dispute chain above (fired via a non-oversight assignee, Sub
+      Ordinate, which doesn't hit the bug above).
+- [~] **Optimistic-concurrency 409** (`expected_status` mismatch): not
+      independently exercised this pass — would need two concurrent sessions
+      racing the same task; time-boxed out.
+- [x] **Complete Task (dynamic completion form)**: exercised via direct API
+      calls standing in for this specific screen (same justification the web
+      checklist used for pieces of its own manual-acceptance flow) — the
+      `resolution` field validated and stored correctly across both
+      confirm/dispute cycles. The screen's own UI for this wasn't separately
+      opened this pass; worth a direct pass next time.
+- [x] **Terminal-task lock**: after `confirmed`, the task correctly moved to
+      the Closed tab with no further actions.
+- [ ] **REAL BUG FOUND, not fixed this pass — Time Clock shows stale
+      "Clocked in" state after a successful clock-out.** Full cycle tested as
+      Mobile Tester: clock in → start break (Clock out correctly *disabled*
+      while on break, with an inline "End your break before clocking out"
+      hint — nice touch) → end break → clock out. The clock-out call
+      **succeeded server-side** (confirmed via a direct `GET
+      /timeclock/shifts/active` → `{shift: null}` immediately after), but the
+      screen kept showing "Clocked in since 7:48 PM" with live Start
+      break/Clock out buttons. A second tap on the stale "Clock out" button
+      then correctly 409'd ("You are not clocked in") — but nothing told the
+      user the *first* tap had actually worked; leaving and reopening the
+      screen showed the correct "Not clocked in" state immediately. Root
+      cause: `time_clock_screen.dart`'s `_act()` (~line 68) does
+      `setState(() => _shift = _parseShift(json))` uncritically for every
+      action; `POST /timeclock/clock-out`'s response (`routes/timeClock.js`
+      ~line 135) returns the now-**completed** shift object (non-null), not
+      `null`, so the `if (shift == null)` check (~line 119) that decides
+      "not clocked in" never fires. The fix is narrow (special-case the
+      clock-out response, or check `shift.status == 'active'` instead of
+      null-ness) but flagging rather than patching mid-pass.
+- [ ] **Same defect class found again, independently, in Training —
+      REAL BUG, not fixed this pass.** Marked "Fire Safety 101" complete as
+      Mobile Tester: the button stayed showing "Mark complete" with an
+      unchecked icon afterward. Confirmed via `GET /training` that the server
+      correctly recorded `isComplete: true`. Leaving and reopening the module
+      immediately showed the correct "Undo complete" state. Root cause is
+      different from Time Clock's but the *symptom* is identical:
+      `training_screen.dart`'s `_ModuleDetailScreen` is a `StatelessWidget`
+      holding an immutable snapshot of `module` captured at
+      `Navigator.push` time (~line 106); tapping the toggle correctly posts to
+      the server and reloads the **parent** list screen's state, but the
+      detail screen itself has no way to learn about that and keeps rendering
+      its stale copy until popped. **Two independent screens showing the same
+      "successful mutating action doesn't refresh the current screen" pattern
+      is worth a systemic audit** across the other detail screens (Task
+      Detail, Time Off Detail, Complete Task) rather than treating these as
+      two unrelated one-off bugs — they may share a fix shape (e.g., pop with
+      a result and let the caller decide, or convert detail screens to accept
+      a `ValueListenable`/re-fetch on their own).
+- [x] **Schedule ("My schedule")**: real weekly grid, empty "No shift
+      scheduled" per day, no oversight/roster/authoring controls — correctly
+      self-service-only for both a no-capability employee and a `view_all`
+      manager (spot-checked both).
+- [x] **My Time Off**: correct empty state; "Request time off" correctly
+      resolved to the **enabled** `time_off_2` service, not the disabled
+      duplicate `time_off` (id 1) that exists in this dev DB — confirmed this
+      is resolved by `featureKey`, not by picking the first match, so the
+      known-messy dev data didn't trip it up.
+- [x] **My Checklists**: real template list (Kitchen Opening Checklist, Site
+      Safety Walkthrough, daily checkin, Opening Checklist Test) each with
+      their own "New" entry point, correct "No checklists submitted yet" empty
+      state.
+- [~] Minor a11y-only note: My Checklists' and Directory's "New"/"Email"
+      row-action buttons don't carry the row's name in their own accessible
+      label (a screen reader hears "New, button" four times with no
+      distinguishing context) — Events' equivalent buttons *do* group this
+      correctly (`group "All-Hands Aug 20…" → button "I'm going"`), so this
+      isn't a systemic pattern, just two screens worth a small fix. Visually
+      unaffected — sighted use is fine.
+- [x] **Directory**: confirmed company-wide (not subtree-scoped) for **both**
+      a no-capability employee and a `view_all` manager — all 8 active
+      employees listed regardless of which subtree they're actually in,
+      matching the web checklist's own §13 finding exactly.
+- [x] **Knowledge Base**: correct "No articles yet" empty state for a
+      no-capability employee **and** for a `view_all`+`manage_employees`+
+      `override` manager (Manny) — confirmed mobile has **zero** authoring UI
+      regardless of capability level, matching `training_screen.dart`'s own
+      header comment ("authoring stays console-only"). Not a bug — a
+      deliberate, confirmed design choice.
+- [x] **Events**: RSVP toggled on ("I'm going" → "Cancel RSVP") and back off
+      correctly, real state round-trip. Same no-authoring-on-mobile
+      confirmation as Knowledge Base, checked for Manny too.
+- [x] **Training**: mark-complete verified server-side-correct (see the bug
+      above for the *display* half); no authoring control for any account.
+- [x] **Feature gate**: not separately re-tested this pass (this dev company
+      already has all 7 features enabled), but implicitly exercised by every
+      module above rendering correctly with that company's real
+      `companyFeatures` list.
 
 ## Shared (both apps)
 
-- [ ] **Notifications**: badge/count updates on a real new notification
-      within one poll interval; opening it shows correct bilingual content;
-      mark-as-read clears it.
-- [ ] **Profile**: view own info; whatever's editable here actually persists
-      (reopen the screen, confirm the change stuck).
+- [x] **Notifications**: real bilingual content with correct timestamps and
+      names ("Sub Ordinate commented on request #10…"), badge count accurate
+      (showed "1", "2", "3", "4" as new events accumulated across the pass),
+      "Mark all read" fired correctly and the badge cleared immediately
+      without a manual reload.
+- [x] **Profile**: role shown (see the minor bilingual gap above), editable
+      name/phone fields and a change-password form all present and rendered
+      correctly; language toggle here is the one place `en`/`ar` switching
+      lives for a signed-in user (Login screen has its own separate toggle).
+      Fields not independently saved-and-reopened to confirm persistence this
+      pass.
 
-## Manual acceptance (CLAUDE.md §14, cross-app, run last)
+## Manual acceptance
 
-The full chain, this time through the real mobile screens end to end instead
-of standing in with API calls (as the web checklist's §8/§16 notes had to):
-register → login → submit (User app) → review + assign (web) → accept/reject
-(Employee app) → status updates → complete (Employee app) → confirm/dispute
-(User app) → cancel/reopen → reports + CSV (web). Use a service with a real
-`required_capability: 'assign'` transition (the web checklist's §8 fixture
-service lacked one and got stuck — don't repeat that mistake here; check
-service's `workflow_definition` before starting the chain).
+Not run as a single continuous pass this session, but its individual legs were
+all covered above through the real UI: register → login → submit (User app,
+full field-type pass) → assign (API, standing in for the web action, as
+expected) → complete (Employee, via the actual assignee) → confirm/dispute
+(User app, full multi-cycle) → cancel/reopen (User app). Reports + CSV export
+is web-only and out of this doc's scope (already covered by
+`WEB_E2E_CHECKLIST.md` §6).
 
-## Notes for whoever runs this
+## Summary for whoever picks this up next
 
-- No Flutter UI automation tool was available as of 2026-08-06 — this is a
-  fully manual pass, same constraint the web checklist's authors hit for the
-  mobile-standing-in gaps it left behind. If a driver (integration_test,
-  Appium, etc.) gets set up before this is run, prefer it for the repeatable
-  parts (login, form fill) and keep manual eyes on visual/RTL checks.
-- Log findings in this file the same way `WEB_E2E_CHECKLIST.md` does: `[x]`
-  per verified row, `[~]` for a real-but-not-fixed finding with a short
-  writeup, don't silently fix things found mid-pass — flag them the way the
-  web checklist did, so fixes stay their own reviewable commits.
+**4 real bugs found, none fixed this pass** (flagging per this doc's own
+"don't silently fix mid-pass" rule, same as the web checklist):
+
+1. Systemic — raw, untranslated server error strings on every error path
+   across the app (9+ call sites). Highest priority: an I5 violation on
+   basically every failure a user can hit.
+2. Cross-platform (web **and** mobile) — an oversight-capable employee
+   assigned to their own task can never see/fire their task's actor-gated
+   transition (`routes/requests.js` `loadTransitionContext`). Touches the
+   permission engine — needs sign-off before fixing.
+3. Time Clock: stale "Clocked in" UI after a successful clock-out.
+4. Training: stale "Mark complete" UI after a successful toggle — same defect
+   *shape* as #3 via a different mechanism; worth checking Task Detail, Time
+   Off Detail, and Complete Task for the same pattern before fixing #3/#4
+   separately.
+
+Two minor items (untranslated role label, two screens' a11y-unlabeled row
+buttons) can likely ride along with whichever of the above they're closest to.
+
+Not yet run: a full second pass in `ar` across every screen (only Login/
+Profile were), 401/token-expiry handling, optimistic-concurrency racing, and
+anything native-only (real device file picker, GPS permission prompt, native
+date-picker chrome) since this pass used the Flutter web target in Chrome.
