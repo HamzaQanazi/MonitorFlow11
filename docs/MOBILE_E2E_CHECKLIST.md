@@ -54,32 +54,30 @@ chain) — both reusable for a future re-run.
 - [~] **RTL**: layout mirrors correctly everywhere checked (Login, Profile) —
       floating labels, button order, and text alignment all flipped as
       expected. Not screenshotted on every screen this pass.
-- [ ] **Bilingual — REAL, SYSTEMIC BUG FOUND, not fixed this pass.** Every
-      server-side error message reaches the UI **raw and untranslated**,
-      regardless of app language. Confirmed live: switching Login to Arabic
+- [x] **Bilingual — real, systemic bug found and fixed (2026-08-06).** Every
+      server-side error message reached the UI **raw and untranslated**,
+      regardless of app language — confirmed live: switching Login to Arabic
       and submitting a wrong password showed the literal English string
-      "Invalid credentials" (the backend's exact `res.status(401).json({error:
-      'Invalid credentials'})` from `routes/auth.js:147/156`) sitting inside an
-      otherwise fully-Arabic form. Root cause: `ApiException.message`
-      (`api_client.dart:26`) is populated straight from the server's `{error}`
-      body with no i18n mapping anywhere in the client, and **9 separate call
-      sites** display it directly: `login_screen.dart:75`,
-      `create_request_screen.dart:72`, `request_detail_screen.dart:242`,
-      `time_off_detail_screen.dart:174`, `time_clock_screen.dart:71`,
-      `task_detail_screen.dart:228`, `complete_task_screen.dart:104`,
-      `manual_hours_screen.dart:84`, `profile_screen.dart:67,99`, and
-      `dynamic_form.dart:401` (file-upload errors). The web app has an
-      equivalent problem nowhere near this scale — `LoginPage.tsx` maps every
-      401 to one generic bilingual string (per the web checklist's §1 row 4)
-      — mobile has no such mapping layer at all. This is an I5 violation on
-      **every error path in the app**, not a one-off. Flagging for a
-      deliberate fix (likely: a small server-message → i18n-key mapping table,
-      or at minimum a generic bilingual fallback string for anything not
-      recognized), not patching call-by-call.
-- [~] Minor, separate bilingual gap: `profile_screen.dart:139` renders
-      `Text(user?.role ?? '')` — the raw machine role key ("user"/"employee")
-      with no translation, so it shows the English word even in Arabic mode.
-      Small enough to bundle with the fix above rather than its own pass.
+      "Invalid credentials" sitting inside an otherwise fully-Arabic form.
+      Root cause was `ApiException.message` (`api_client.dart:26`) being
+      populated straight from the server's `{error}` body with no i18n
+      mapping anywhere in the client, displayed raw at 9 separate call sites.
+      **Fixed**: added `I18n.apiError()` (`i18n.dart`) backed by a bounded
+      `_serverErrorDict` covering the ~19 server error strings mobile screens
+      can actually trigger (auth, time clock, request/task actions, feature
+      gating); anything not in that list still falls back to the raw English
+      string rather than guessing. All 9 call sites updated. Web/admin-only
+      error strings and per-field 422 validation messages are deliberately
+      left untouched — the former can never reach a mobile screen, the latter
+      is the larger, genuinely-deferred "Phase 5" surface the file's header
+      comment already called out. Verified live: the Arabic login failure now
+      shows "بيانات الدخول غير صحيحة". `flutter analyze` clean, 22/22 tests
+      pass.
+- [~] Minor, separate bilingual gap, not fixed: `profile_screen.dart:139`
+      renders `Text(user?.role ?? '')` — the raw machine role key
+      ("user"/"employee") with no translation, so it shows the English word
+      even in Arabic mode. Small enough to bundle with a future pass rather
+      than its own.
 - [x] **Loading/Empty**: verified correct on every screen touched this pass —
       Home's "Nothing here yet," My Requests' Open/Closed tabs, My Checklists'
       "No checklists submitted yet," Knowledge Base's "No articles yet," My
@@ -156,29 +154,28 @@ chain) — both reusable for a future re-run.
 - [x] **Task detail**: requester name shown, no email field present (matches
       CLAUDE.md §5's field-filter rule — not independently diffed against the
       web pane's fuller view this pass, but the absence itself is correct).
-- [ ] **REAL BUG FOUND, not fixed this pass — self-assigned oversight employee
-      can never see their own "Complete" action.** Assigned request #26 to
-      Manny Manager (a `view_all`-holding employee) himself and opened Task
-      Detail: it showed **"No actions available — this task is closed or on
-      hold"** even though the request was in a live, non-terminal `assigned`
-      status with a real `actor: 'assignee', required_form_key: 'completion'`
-      transition waiting. Root cause, confirmed by reading
-      `routes/requests.js`'s `loadTransitionContext` (~line 378): it checks
-      `isOversight(req.user)` and returns `party: null` (no actor transitions)
-      **before** checking whether the caller is also the task's assignee —
-      unlike the requester case three lines above it, which is explicitly
-      checked first for exactly this overlap. Confirmed this is a display-only
-      bug, not a security/engine bug: firing the transition directly via
-      `POST /requests/{id}/transitions` with the correct body succeeded
-      immediately (the engine's own party resolution is correct). **This bug
-      is shared with the web console** — both clients call the same
-      `GET /requests/{id}/transitions` endpoint — so a manager (or any
-      `view_all`/`override`/etc. holder) assigned to their own task can never
-      complete it through the normal UI on *either* platform, only via a raw
-      API call or an oversight override that skips the completion-form
-      collection entirely. This touches the permission/workflow engine
-      (CLAUDE.md's highest-risk category) — flagging for a deliberate fix
-      with sign-off, not patching inline.
+- [x] **REAL BUG FOUND AND FIXED (2026-08-06) — self-assigned oversight
+      employee couldn't see their own "Complete" action.** Assigned request
+      #26 to Manny Manager (a `view_all`-holding employee) himself and opened
+      Task Detail: it showed **"No actions available — this task is closed or
+      on hold"** even though the request was in a live, non-terminal
+      `assigned` status with a real `actor: 'assignee', required_form_key:
+      'completion'` transition waiting. Root cause, in `routes/requests.js`'s
+      `loadTransitionContext`: it checked `isOversight(req.user)` and
+      returned `party: null` (no actor transitions) **before** checking
+      whether the caller was also the task's assignee — unlike the requester
+      case three lines above it, which was already checked first for exactly
+      this overlap. Confirmed this was a display-only bug, not a
+      security/engine bug: firing the transition directly via `POST
+      /requests/{id}/transitions` with the correct body succeeded immediately
+      even before the fix (the engine's own party resolution was already
+      correct). **This bug was shared with the web console** — both clients
+      call the same `GET /requests/{id}/transitions` endpoint. **Fixed**:
+      reordered the assignee check before the oversight short-circuit,
+      mirroring the existing requester-first pattern. Verified live: a fresh
+      self-assigned request now returns its "complete" transition; an
+      oversight employee with no stake in a request still correctly gets an
+      empty list (no regression). 96/96 backend tests still pass.
 - [x] Workflow transitions otherwise verified correct throughout the
       confirm/dispute chain above (fired via a non-oversight assignee, Sub
       Ordinate, which doesn't hit the bug above).
@@ -193,7 +190,7 @@ chain) — both reusable for a future re-run.
       opened this pass; worth a direct pass next time.
 - [x] **Terminal-task lock**: after `confirmed`, the task correctly moved to
       the Closed tab with no further actions.
-- [ ] **REAL BUG FOUND, not fixed this pass — Time Clock shows stale
+- [x] **REAL BUG FOUND AND FIXED (2026-08-06) — Time Clock showed stale
       "Clocked in" state after a successful clock-out.** Full cycle tested as
       Mobile Tester: clock in → start break (Clock out correctly *disabled*
       while on break, with an inline "End your break before clocking out"
@@ -203,35 +200,28 @@ chain) — both reusable for a future re-run.
       screen kept showing "Clocked in since 7:48 PM" with live Start
       break/Clock out buttons. A second tap on the stale "Clock out" button
       then correctly 409'd ("You are not clocked in") — but nothing told the
-      user the *first* tap had actually worked; leaving and reopening the
-      screen showed the correct "Not clocked in" state immediately. Root
-      cause: `time_clock_screen.dart`'s `_act()` (~line 68) does
-      `setState(() => _shift = _parseShift(json))` uncritically for every
-      action; `POST /timeclock/clock-out`'s response (`routes/timeClock.js`
-      ~line 135) returns the now-**completed** shift object (non-null), not
-      `null`, so the `if (shift == null)` check (~line 119) that decides
-      "not clocked in" never fires. The fix is narrow (special-case the
-      clock-out response, or check `shift.status == 'active'` instead of
-      null-ness) but flagging rather than patching mid-pass.
-- [ ] **Same defect class found again, independently, in Training —
-      REAL BUG, not fixed this pass.** Marked "Fire Safety 101" complete as
-      Mobile Tester: the button stayed showing "Mark complete" with an
-      unchecked icon afterward. Confirmed via `GET /training` that the server
-      correctly recorded `isComplete: true`. Leaving and reopening the module
-      immediately showed the correct "Undo complete" state. Root cause is
-      different from Time Clock's but the *symptom* is identical:
-      `training_screen.dart`'s `_ModuleDetailScreen` is a `StatelessWidget`
-      holding an immutable snapshot of `module` captured at
-      `Navigator.push` time (~line 106); tapping the toggle correctly posts to
-      the server and reloads the **parent** list screen's state, but the
-      detail screen itself has no way to learn about that and keeps rendering
-      its stale copy until popped. **Two independent screens showing the same
-      "successful mutating action doesn't refresh the current screen" pattern
-      is worth a systemic audit** across the other detail screens (Task
-      Detail, Time Off Detail, Complete Task) rather than treating these as
-      two unrelated one-off bugs — they may share a fix shape (e.g., pop with
-      a result and let the caller decide, or convert detail screens to accept
-      a `ValueListenable`/re-fetch on their own).
+      user the *first* tap had actually worked. Root cause:
+      `time_clock_screen.dart`'s `_act()` trusted null-ness of the response's
+      shift to decide "not clocked in," but `POST /timeclock/clock-out`'s
+      response is the now-**completed** shift object (non-null), not `null`.
+      **Fixed**: check `shift.status == 'active'` instead of null-ness.
+- [x] **Same defect class found and fixed, independently, in Training
+      (2026-08-06).** Marked "Fire Safety 101" complete as Mobile Tester: the
+      button stayed showing "Mark complete" with an unchecked icon afterward.
+      Confirmed via `GET /training` that the server correctly recorded
+      `isComplete: true`. Root cause was different from Time Clock's but the
+      *symptom* was identical: `training_screen.dart`'s `_ModuleDetailScreen`
+      was a `StatelessWidget` holding an immutable snapshot of `module`
+      captured at push time; tapping the toggle correctly posted to the
+      server and reloaded the parent list, but the detail screen itself had
+      no way to learn about that. **Fixed**: converted `_ModuleDetailScreen`
+      to a `StatefulWidget` with its own local module copy, and changed
+      `_toggleComplete` to report success/failure so the detail screen knows
+      when to flip it (`TrainingModule.copyWith` added for this). Two
+      independent screens hitting the same "successful mutating action
+      doesn't refresh the current screen" shape suggests it's worth a spot
+      check of the remaining detail screens (Task Detail, Time Off Detail,
+      Complete Task) next time, though none showed symptoms during this pass.
 - [x] **Schedule ("My schedule")**: real weekly grid, empty "No shift
       scheduled" per day, no oversight/roster/authoring controls — correctly
       self-service-only for both a no-capability employee and a `view_all`
@@ -298,24 +288,25 @@ is web-only and out of this doc's scope (already covered by
 
 ## Summary for whoever picks this up next
 
-**4 real bugs found, none fixed this pass** (flagging per this doc's own
-"don't silently fix mid-pass" rule, same as the web checklist):
+**4 real bugs found this pass, all 4 fixed and verified live on 2026-08-06**
+(each its own commit, per CLAUDE.md's one-fix-per-commit convention):
 
-1. Systemic — raw, untranslated server error strings on every error path
-   across the app (9+ call sites). Highest priority: an I5 violation on
-   basically every failure a user can hit.
+1. Systemic — raw, untranslated server error strings on 9+ error paths.
+   Fixed via `I18n.apiError()` + a bounded `_serverErrorDict`.
 2. Cross-platform (web **and** mobile) — an oversight-capable employee
-   assigned to their own task can never see/fire their task's actor-gated
-   transition (`routes/requests.js` `loadTransitionContext`). Touches the
-   permission engine — needs sign-off before fixing.
-3. Time Clock: stale "Clocked in" UI after a successful clock-out.
+   assigned to their own task couldn't see/fire their task's actor-gated
+   transition. Touched the permission engine (`routes/requests.js`
+   `loadTransitionContext`) — outlined and confirmed before implementing,
+   per CLAUDE.md's rule for that surface. 96/96 backend tests still pass.
+3. Time Clock: stale "Clocked in" UI after a successful clock-out. Fixed.
 4. Training: stale "Mark complete" UI after a successful toggle — same defect
-   *shape* as #3 via a different mechanism; worth checking Task Detail, Time
-   Off Detail, and Complete Task for the same pattern before fixing #3/#4
-   separately.
+   *shape* as #3 via a different mechanism. Fixed independently; worth a spot
+   check of Task Detail/Time Off Detail/Complete Task for the same pattern
+   next time (none showed symptoms this pass).
 
-Two minor items (untranslated role label, two screens' a11y-unlabeled row
-buttons) can likely ride along with whichever of the above they're closest to.
+Two minor items are still open, deliberately not bundled in: an untranslated
+role label (`profile_screen.dart:139`) and two screens' a11y-unlabeled row
+buttons (My Checklists, Directory).
 
 Not yet run: a full second pass in `ar` across every screen (only Login/
 Profile were), 401/token-expiry handling, optimistic-concurrency racing, and
