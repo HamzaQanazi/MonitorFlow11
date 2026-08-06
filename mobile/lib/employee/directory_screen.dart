@@ -192,16 +192,26 @@ class _EntryCard extends StatelessWidget {
               ),
             ),
             if (entry.phone != null)
-              IconButton(
-                icon: const Icon(Icons.call_outlined),
-                tooltip: i18n.tr('dir_call'),
-                onPressed: () => onCall(entry.phone!),
+              Semantics(
+                button: true,
+                excludeSemantics: true,
+                label: '${entry.name}: ${i18n.tr('dir_call')}',
+                child: IconButton(
+                  icon: const Icon(Icons.call_outlined),
+                  tooltip: i18n.tr('dir_call'),
+                  onPressed: () => onCall(entry.phone!),
+                ),
               ),
             if (entry.email != null)
-              IconButton(
-                icon: const Icon(Icons.mail_outline),
-                tooltip: i18n.tr('dir_email'),
-                onPressed: () => onEmail(entry.email!),
+              Semantics(
+                button: true,
+                excludeSemantics: true,
+                label: '${entry.name}: ${i18n.tr('dir_email')}',
+                child: IconButton(
+                  icon: const Icon(Icons.mail_outline),
+                  tooltip: i18n.tr('dir_email'),
+                  onPressed: () => onEmail(entry.email!),
+                ),
               ),
           ],
         ),

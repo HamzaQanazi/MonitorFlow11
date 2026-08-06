@@ -162,7 +162,12 @@ class _ChecklistTemplateRow extends StatelessWidget {
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
             ),
-            OutlinedButton(onPressed: onNew, child: Text(i18n.tr('cl_new_template'))),
+            Semantics(
+              button: true,
+              excludeSemantics: true,
+              label: '${i18n.l(template.name)}: ${i18n.tr('cl_new_template')}',
+              child: OutlinedButton(onPressed: onNew, child: Text(i18n.tr('cl_new_template'))),
+            ),
           ],
         ),
       ),
