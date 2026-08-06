@@ -212,7 +212,7 @@ export default function OnboardingWizard() {
         },
       })
       const logoPreview = logoFile ? await readAsDataUrl(logoFile).catch(() => null) : null
-      markOnboarded(name, logoPreview)
+      markOnboarded(name, logoPreview, features)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'logo') {
         setSaveError(t('ob_err_logo'))

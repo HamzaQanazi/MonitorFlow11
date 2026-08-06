@@ -64,8 +64,11 @@ interface AuthContextValue {
   // URI preview of the logo, if one was picked) the Owner just entered so the
   // shell wordmark switches immediately, without waiting on a fresh /auth/me
   // round-trip — the real, server-inlined logo replaces this preview on the
-  // next login/restore anyway, so it doesn't need to be exact.
-  markOnboarded: (companyName: Loc, companyLogo: string | null) => void
+  // next login/restore anyway, so it doesn't need to be exact. Also takes the
+  // step-4 feature picks: `companyFeatures` was still the empty array
+  // captured at the original pre-onboarding login, so without this the nav's
+  // OPERATIONS/COMMUNICATION sections stayed empty until a manual refresh.
+  markOnboarded: (companyName: Loc, companyLogo: string | null, companyFeatures: string[]) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -119,8 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null)
         setStatus('signedOut')
       },
-      markOnboarded(companyName, companyLogo) {
-        setUser((u) => (u ? { ...u, onboardingCompleted: true, companyName, companyLogo } : u))
+      markOnboarded(companyName, companyLogo, companyFeatures) {
+        setUser((u) => (u ? { ...u, onboardingCompleted: true, companyName, companyLogo, companyFeatures } : u))
       },
     }),
     [status, user],
