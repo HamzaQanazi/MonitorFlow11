@@ -367,10 +367,23 @@ export default function RequestDetailPane({
           tr.from === detail.status.key && tr.required_capability !== null && tr.to !== assignTarget
       )
     : []
-  // Standalone cancel only when no workflow button already terminates from
-  // here (the /cancel endpoint covers states with no oversight transitions).
+  // Standalone cancel only when a requester-cancel transition actually exists
+  // for this service AND no workflow button already terminates from here
+  // (the /cancel endpoint covers states with no oversight transitions). Mirrors
+  // the server's own derivation (routes/requests.js `cancelTransition`): a
+  // requester-actor transition out of the initial status into a terminal one.
+  // A service built without one (the wizard doesn't require it) used to show
+  // a Cancel button that could never succeed — server always 409'd, but the
+  // button itself was a dead end.
+  const isAtInitialStatus = !!workflow?.statuses.find((s) => s.key === detail.status.key)?.is_initial
+  const hasCancelTransition = !!workflow?.transitions.some(
+    (tr) =>
+      tr.actor === 'requester' &&
+      terminalOf(tr.to) &&
+      workflow.statuses.find((s) => s.key === tr.from)?.is_initial
+  )
   const showCancel =
-    assignable && !monitorMoves.some((tr) => terminalOf(tr.to))
+    assignable && isAtInitialStatus && hasCancelTransition && !monitorMoves.some((tr) => terminalOf(tr.to))
   // Reopen (override) may target any non-initial, non-terminal status —
   // mirrors the server's loosened override rule, minus terminal targets
   // (those are the reject/cancel buttons above, not a reopen).
