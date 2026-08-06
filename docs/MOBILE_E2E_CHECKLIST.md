@@ -73,11 +73,11 @@ chain) — both reusable for a future re-run.
       comment already called out. Verified live: the Arabic login failure now
       shows "بيانات الدخول غير صحيحة". `flutter analyze` clean, 22/22 tests
       pass.
-- [~] Minor, separate bilingual gap, not fixed: `profile_screen.dart:139`
-      renders `Text(user?.role ?? '')` — the raw machine role key
-      ("user"/"employee") with no translation, so it shows the English word
-      even in Arabic mode. Small enough to bundle with a future pass rather
-      than its own.
+- [x] Minor, separate bilingual gap — fixed (2026-08-06): `profile_screen.dart:139`
+      rendered `Text(user?.role ?? '')`, the raw machine role key
+      ("user"/"employee") with no translation. Added `role_user`/
+      `role_employee` dict keys and routed the label through `i18n.tr()`.
+      Verified live in both languages ("Employee" / "موظف").
 - [x] **Loading/Empty**: verified correct on every screen touched this pass —
       Home's "Nothing here yet," My Requests' Open/Closed tabs, My Checklists'
       "No checklists submitted yet," Knowledge Base's "No articles yet," My
@@ -235,13 +235,14 @@ chain) — both reusable for a future re-run.
       Safety Walkthrough, daily checkin, Opening Checklist Test) each with
       their own "New" entry point, correct "No checklists submitted yet" empty
       state.
-- [~] Minor a11y-only note: My Checklists' and Directory's "New"/"Email"
-      row-action buttons don't carry the row's name in their own accessible
-      label (a screen reader hears "New, button" four times with no
-      distinguishing context) — Events' equivalent buttons *do* group this
-      correctly (`group "All-Hands Aug 20…" → button "I'm going"`), so this
-      isn't a systemic pattern, just two screens worth a small fix. Visually
-      unaffected — sighted use is fine.
+- [x] Minor a11y-only note — fixed (2026-08-06): My Checklists' and
+      Directory's "New"/Call/Email row-action buttons didn't carry the row's
+      name in their own accessible label (a screen reader heard "Email,
+      button" repeated with no distinguishing context). Wrapped each button
+      in `Semantics(excludeSemantics: true, label: '<row name>: <action>')`
+      to match Events' already-correct grouping. Verified live: Directory's
+      buttons now read e.g. "Manny Manager: Email"; Checklists' read e.g.
+      "Kitchen Opening Checklist: New." Visual layout unaffected.
 - [x] **Directory**: confirmed company-wide (not subtree-scoped) for **both**
       a no-capability employee and a `view_all` manager — all 8 active
       employees listed regardless of which subtree they're actually in,
@@ -304,9 +305,8 @@ is web-only and out of this doc's scope (already covered by
    check of Task Detail/Time Off Detail/Complete Task for the same pattern
    next time (none showed symptoms this pass).
 
-Two minor items are still open, deliberately not bundled in: an untranslated
-role label (`profile_screen.dart:139`) and two screens' a11y-unlabeled row
-buttons (My Checklists, Directory).
+The two minor items (untranslated role label, two screens' a11y-unlabeled row
+buttons) were fixed and verified live the same day, in their own commits.
 
 Not yet run: a full second pass in `ar` across every screen (only Login/
 Profile were), 401/token-expiry handling, optimistic-concurrency racing, and
