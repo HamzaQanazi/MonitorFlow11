@@ -100,6 +100,8 @@ const Map<String, Map<String, String>> _dict = {
   'confirm': {'en': 'Confirm', 'ar': 'تأكيد'},
   'sign_out': {'en': 'Sign out', 'ar': 'تسجيل الخروج'},
   'profile': {'en': 'Profile', 'ar': 'الملف الشخصي'},
+  'role_user': {'en': 'User', 'ar': 'مستخدم'},
+  'role_employee': {'en': 'Employee', 'ar': 'موظف'},
   'note_required': {'en': 'Note (required)', 'ar': 'ملاحظة (مطلوبة)'},
   'clear_filter': {'en': 'Clear filter', 'ar': 'مسح التصفية'},
   'net_check': {

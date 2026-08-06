@@ -136,7 +136,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         Text(user?.email ?? user?.loginIdentifier ?? '',
                             style: const TextStyle(fontWeight: FontWeight.w600)),
-                        Text(user?.role ?? '',
+                        Text(user == null ? '' : i18n.tr('role_${user.role}'),
                             style: const TextStyle(
                                 color: MfColors.muted, fontSize: 13)),
                       ],
