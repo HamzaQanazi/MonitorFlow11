@@ -18,17 +18,25 @@ Re-running this pass on an actual device/emulator to confirm those specifically
 is still worth doing; everything else (business logic, state, API contracts,
 i18n, the widget tree itself) is the same code regardless of target.
 
-**Test accounts used** (throwaway, created live via the real API/UI this pass,
-same convention as the web checklist's fixtures — left in place afterward):
-`mobile.requester@example.com` (`user`, password `MobileTest123!`),
-`mo.tester@adad.ada` "Mobile Tester" (`employee`, no capabilities, password
-`MobileTest123!`), `ma.manager@adad.ada` "Manny Manager" (existing Manager-level
-employee, password reset this pass to `Temp-h0xSJ26A`), `su.ordinate@adad.ada`
-"Sub Ordinate" (existing no-capability employee, password reset to
-`Temp-XeVvzYV5`). Two fixture services were created for this pass:
-`mobile_field_type_test` (all 9 field types, an `assign`-capability transition)
-and `mobile_confirm_dispute_test` (a full assign→complete→confirm/dispute
-chain) — both reusable for a future re-run.
+**Test accounts used, cleaned up 2026-08-06 after the fixes above were
+verified** (throwaway, created live via the real API/UI this pass):
+`mobile.requester@example.com` (`user`, password `MobileTest123!`) — **left
+active**, since there's no admin-level deactivation endpoint for a plain
+`user`-role account (same as every other test `user` fixture already sitting
+in this dev DB — Resa Resident, Acceptance Tester, Flow Tester, the
+injection-test account). `mo.tester@adad.ada` "Mobile Tester" (`employee`, no
+capabilities) — **deactivated** via `PATCH /employees/20/deactivate`.
+`ma.manager@adad.ada` "Manny Manager" and `su.ordinate@adad.ada` "Sub
+Ordinate" are pre-existing accounts whose passwords were reset this pass
+(`Temp-h0xSJ26A` / `Temp-XeVvzYV5`) — left as-is, not fixture data to remove.
+The two fixture services created this pass, `mobile_field_type_test` (all 9
+field types, an `assign`-capability transition) and
+`mobile_confirm_dispute_test` (a full assign→complete→confirm/dispute chain),
+are **disabled** via `PATCH /services/{id}/enabled` rather than deleted —
+their definitions can't be removed once a request exists against them (§3),
+and disabling is this project's documented way to retire a service. Requests
+#26–29 against them remain as historical rows; both services stay reusable
+(re-enable via the same endpoint) if this checklist needs to run again.
 
 ---
 
