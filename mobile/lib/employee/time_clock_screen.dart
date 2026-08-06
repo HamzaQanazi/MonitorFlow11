@@ -65,7 +65,11 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
     try {
       final json = await api.post(path);
       if (!mounted) return;
-      setState(() => _shift = _parseShift(json));
+      // clock-out's response is the shift just completed, not an active one —
+      // treat anything non-active as "not clocked in" rather than trusting
+      // null-ness alone.
+      final parsed = _parseShift(json);
+      setState(() => _shift = parsed?.status == 'active' ? parsed : null);
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
