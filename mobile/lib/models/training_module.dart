@@ -30,4 +30,14 @@ class TrainingModule {
         completionCount: json['completionCount'] as int? ?? 0,
         isComplete: json['isComplete'] as bool? ?? false,
       );
+
+  TrainingModule copyWith({bool? isComplete}) => TrainingModule(
+        id: id,
+        title: title,
+        body: body,
+        createdByName: createdByName,
+        updatedAt: updatedAt,
+        completionCount: completionCount,
+        isComplete: isComplete ?? this.isComplete,
+      );
 }

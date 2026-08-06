@@ -46,7 +46,7 @@ class _TrainingScreenState extends State<TrainingScreen> {
     }
   }
 
-  Future<void> _toggleComplete(TrainingModule module) async {
+  Future<bool> _toggleComplete(TrainingModule module) async {
     final api = context.read<AuthState>().api;
     try {
       if (module.isComplete) {
@@ -55,11 +55,13 @@ class _TrainingScreenState extends State<TrainingScreen> {
         await api.post('/training/${module.id}/complete');
       }
       await _load();
+      return true;
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.read<I18n>().tr('tr_complete_fail'))),
       );
+      return false;
     }
   }
 
@@ -148,29 +150,47 @@ class _ModuleCard extends StatelessWidget {
   }
 }
 
-class _ModuleDetailScreen extends StatelessWidget {
+class _ModuleDetailScreen extends StatefulWidget {
   final TrainingModule module;
-  final VoidCallback onToggle;
+  final Future<bool> Function() onToggle;
 
   const _ModuleDetailScreen({required this.module, required this.onToggle});
+
+  @override
+  State<_ModuleDetailScreen> createState() => _ModuleDetailScreenState();
+}
+
+class _ModuleDetailScreenState extends State<_ModuleDetailScreen> {
+  // The pushed route only gets a snapshot of the module at push time —
+  // onToggle mutates the server and the underlying list screen, but this
+  // screen needs its own copy of isComplete to reflect a successful toggle
+  // without waiting for a pop + reopen.
+  late TrainingModule _module = widget.module;
+
+  Future<void> _handleToggle() async {
+    final ok = await widget.onToggle();
+    if (ok && mounted) {
+      setState(() => _module = _module.copyWith(isComplete: !_module.isComplete));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<I18n>();
     return Scaffold(
-      appBar: AppBar(title: Text(i18n.l(module.title))),
+      appBar: AppBar(title: Text(i18n.l(_module.title))),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             OutlinedButton.icon(
-              onPressed: onToggle,
-              icon: Icon(module.isComplete ? Icons.check_circle : Icons.radio_button_unchecked),
-              label: Text(module.isComplete ? i18n.tr('tr_uncomplete') : i18n.tr('tr_complete')),
+              onPressed: _handleToggle,
+              icon: Icon(_module.isComplete ? Icons.check_circle : Icons.radio_button_unchecked),
+              label: Text(_module.isComplete ? i18n.tr('tr_uncomplete') : i18n.tr('tr_complete')),
             ),
             const SizedBox(height: 20),
-            Text(i18n.l(module.body), style: const TextStyle(fontSize: 15, height: 1.5)),
+            Text(i18n.l(_module.body), style: const TextStyle(fontSize: 15, height: 1.5)),
           ],
         ),
       ),
