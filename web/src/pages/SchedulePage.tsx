@@ -131,7 +131,7 @@ function TemplatesView() {
       {error ? (
         <div className="req-status">
           <p className="req-status-msg">
-            {t('tc_load_err')} {error}
+            {t('sc_load_err')} {error}
           </p>
           <button
             type="button"
@@ -146,7 +146,7 @@ function TemplatesView() {
         </div>
       ) : !templates ? (
         <div className="req-skeleton" aria-busy="true">
-          <span className="visually-hidden">{t('tc_loading')}</span>
+          <span className="visually-hidden">{t('sc_loading')}</span>
           {Array.from({ length: 3 }, (_, i) => (
             <div className="skel-row" aria-hidden="true" key={i} />
           ))}
@@ -402,7 +402,7 @@ function RosterView() {
       {error ? (
         <div className="req-status">
           <p className="req-status-msg">
-            {t('tc_load_err')} {error}
+            {t('sc_load_err')} {error}
           </p>
           <button
             type="button"
@@ -417,7 +417,7 @@ function RosterView() {
         </div>
       ) : !employees ? (
         <div className="req-skeleton" aria-busy="true">
-          <span className="visually-hidden">{t('tc_loading')}</span>
+          <span className="visually-hidden">{t('sc_loading')}</span>
           {Array.from({ length: 6 }, (_, i) => (
             <div className="skel-row" aria-hidden="true" key={i} />
           ))}

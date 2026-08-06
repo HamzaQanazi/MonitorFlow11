@@ -462,6 +462,8 @@ const dict: Record<string, Loc> = {
 
   // Schedule
   sc_title: { en: 'Schedule', ar: 'الجدولة' },
+  sc_load_err: { en: 'Couldn’t load the schedule:', ar: 'تعذّر تحميل الجدول:' },
+  sc_loading: { en: 'Loading schedule…', ar: 'جارٍ تحميل الجدول…' },
   sc_tab_roster: { en: 'Roster', ar: 'الجدول' },
   sc_tab_templates: { en: 'Shift Templates', ar: 'قوالب الورديات' },
   sc_add_template: { en: 'Add template', ar: 'إضافة قالب' },
