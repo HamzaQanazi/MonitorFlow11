@@ -169,10 +169,18 @@ chain) — both reusable for a future re-run.
       security/engine bug: firing the transition directly via `POST
       /requests/{id}/transitions` with the correct body succeeded immediately
       even before the fix (the engine's own party resolution was already
-      correct). **This bug was shared with the web console** — both clients
-      call the same `GET /requests/{id}/transitions` endpoint. **Fixed**:
-      reordered the assignee check before the oversight short-circuit,
-      mirroring the existing requester-first pattern. Verified live: a fresh
+      correct). **Correction (2026-08-06, during the post-fix web regression
+      pass): this bug was mobile-only, not shared with web as first
+      documented here.** `RequestDetailPane.tsx` never calls
+      `GET /requests/{id}/transitions` at all — it derives its oversight
+      buttons (Assign/Priority/Status override/Cancel) straight from the raw
+      workflow definition, filtered client-side for
+      `required_capability !== null`. Actor-gated moves like "Complete" were
+      never rendered on web to begin with; that's mobile/employee-app-only
+      territory. The backend fix was still correct and necessary for mobile —
+      just not cross-platform as originally claimed. **Fixed**: reordered the
+      assignee check before the oversight short-circuit, mirroring the
+      existing requester-first pattern. Verified live: a fresh
       self-assigned request now returns its "complete" transition; an
       oversight employee with no stake in a request still correctly gets an
       empty list (no regression). 96/96 backend tests still pass.
@@ -277,6 +285,27 @@ chain) — both reusable for a future re-run.
       Fields not independently saved-and-reopened to confirm persistence this
       pass.
 
+## Web regression pass (2026-08-06, post-fix)
+
+Not a full re-run of `WEB_E2E_CHECKLIST.md` — a targeted pass on the 4 web
+pages this session's fixes touched, plus the areas the backend permission fix
+could affect, done live against the real dev server:
+
+- [x] **Reports**: page loads, summary/table render correctly, Export CSV
+      succeeds without wiping the loaded view (the fix's actual behavior,
+      confirmed — not just the absence of a crash).
+- [x] **Schedule**: both Roster and Shift Templates tabs show the correct
+      "Loading schedule…" label, no leftover `tc_`-prefixed mislabel.
+- [x] **Request Detail Cancel button**: verified the fixed behavior directly
+      — request #11 (`Assign Flow Test`, no requester-cancel transition)
+      correctly shows no Cancel button at all now.
+- [x] **Employees, Dashboard**: spot-checked, render correctly, no crash.
+- No regressions found in any of the above.
+
+**Correction surfaced during this pass**: bug #2 below was originally
+documented as affecting both web and mobile — that was wrong. See the
+correction inline in the Employee app section and in the summary.
+
 ## Manual acceptance
 
 Not run as a single continuous pass this session, but its individual legs were
@@ -294,11 +323,13 @@ is web-only and out of this doc's scope (already covered by
 
 1. Systemic — raw, untranslated server error strings on 9+ error paths.
    Fixed via `I18n.apiError()` + a bounded `_serverErrorDict`.
-2. Cross-platform (web **and** mobile) — an oversight-capable employee
-   assigned to their own task couldn't see/fire their task's actor-gated
-   transition. Touched the permission engine (`routes/requests.js`
-   `loadTransitionContext`) — outlined and confirmed before implementing,
-   per CLAUDE.md's rule for that surface. 96/96 backend tests still pass.
+2. Mobile-only (corrected 2026-08-06 — originally miswritten here as
+   cross-platform; the web console never calls this endpoint) — an
+   oversight-capable employee assigned to their own task couldn't see/fire
+   their task's actor-gated transition. Touched the permission engine
+   (`routes/requests.js` `loadTransitionContext`) — outlined and confirmed
+   before implementing, per CLAUDE.md's rule for that surface. 96/96 backend
+   tests still pass.
 3. Time Clock: stale "Clocked in" UI after a successful clock-out. Fixed.
 4. Training: stale "Mark complete" UI after a successful toggle — same defect
    *shape* as #3 via a different mechanism. Fixed independently; worth a spot
