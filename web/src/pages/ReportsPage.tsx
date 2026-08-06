@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, getToken } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
+import { useAuth } from '../auth/AuthContext'
 import Donut from '../components/Donut'
 import './RequestsPage.css'
 import './ReportsPage.css'
@@ -56,6 +57,8 @@ function formatDate(iso: string) {
 
 export default function ReportsPage() {
   const { t, L } = useI18n()
+  const { user } = useAuth()
+  const canExport = !!user?.capabilities.includes('export')
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
   const state = params.get('state') ?? ''
@@ -76,6 +79,9 @@ export default function ReportsPage() {
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
   const [search, setSearch] = useState(q)
   const [exporting, setExporting] = useState(false)
+  // Separate from the page-load `error` state on purpose: an export failure
+  // shouldn't blow away an already-successfully-loaded report view.
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const setFilter = useCallback(
     (key: string, value: string) => {
@@ -155,6 +161,7 @@ export default function ReportsPage() {
   // fetch the blob and trigger a download.
   async function exportCsv() {
     setExporting(true)
+    setExportError(null)
     try {
       const res = await fetch(`/api/v1/reports/export.csv?${backendQuery().toString()}`, {
         headers: { Authorization: `Bearer ${getToken() ?? ''}` },
@@ -168,7 +175,7 @@ export default function ReportsPage() {
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
-      setError((err as Error).message)
+      setExportError((err as Error).message)
     } finally {
       setExporting(false)
     }
@@ -180,7 +187,8 @@ export default function ReportsPage() {
   // Human-readable summary of the active filters, printed in the PDF header.
   const filterSummary = [
     state && `${t('req_filter_state')}: ${t(`state_${state}`)}`,
-    serviceTypeId && `${t('col_service')}: ${L(services.find((s) => String(s.id) === serviceTypeId)?.name)}`,
+    serviceTypeId &&
+      `${t('col_service')}: ${L(services.find((s) => String(s.id) === serviceTypeId)?.name) || serviceTypeId}`,
     employeeId && `${t('rep_filter_employee')}: ${employees.find((e) => String(e.id) === employeeId)?.name ?? ''}`,
     priority && `${t('col_priority')}: ${t(`pri_${priority}`)}`,
     dateFrom && `${t('rep_from')} ${dateFrom}`,
@@ -206,7 +214,8 @@ export default function ReportsPage() {
             type="button"
             className="req-retry emp-add rep-print-btn"
             onClick={() => window.print()}
-            disabled={!data || data.total === 0}
+            disabled={!canExport || !data || data.total === 0}
+            title={canExport ? undefined : t('rep_export_no_cap')}
           >
             {t('rep_export_pdf')}
           </button>
@@ -214,11 +223,17 @@ export default function ReportsPage() {
             type="button"
             className="req-retry emp-add"
             onClick={exportCsv}
-            disabled={exporting || !data || data.total === 0}
+            disabled={!canExport || exporting || !data || data.total === 0}
+            title={canExport ? undefined : t('rep_export_no_cap')}
           >
             {exporting ? t('rep_exporting') : t('rep_export')}
           </button>
         </div>
+        {exportError && (
+          <p className="assign-error" role="alert">
+            {t('rep_export_err')} {exportError}
+          </p>
+        )}
       </header>
 
       {/* Print-only header — the browser's Print → Save as PDF (feature 8) uses

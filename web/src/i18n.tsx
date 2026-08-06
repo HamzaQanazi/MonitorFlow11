@@ -412,6 +412,8 @@ const dict: Record<string, Loc> = {
   rep_by_requester: { en: 'By requester', ar: 'حسب مُقدّم الطلب' },
   rep_load_err: { en: 'Couldn’t load reports:', ar: 'تعذّر تحميل التقارير:' },
   rep_loading: { en: 'Loading reports…', ar: 'جارٍ تحميل التقارير…' },
+  rep_export_err: { en: 'Couldn’t export:', ar: 'تعذّر التصدير:' },
+  rep_export_no_cap: { en: 'Your level doesn’t grant the export capability.', ar: 'مستواك لا يمنح صلاحية التصدير.' },
   rep_no_match_h: { en: 'No matching requests', ar: 'لا طلبات مطابقة' },
   rep_no_match_p: { en: 'Nothing matches these filters. Loosen or clear them to see more.', ar: 'لا شيء يطابق عوامل التصفية هذه. خفّفها أو امسحها لعرض المزيد.' },
 
