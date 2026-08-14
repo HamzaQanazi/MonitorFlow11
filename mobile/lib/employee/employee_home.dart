@@ -125,71 +125,6 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       appBar: AppBar(
         title: Text('${i18n.tr('eh_title')} — $firstName'),
         actions: [
-          if (features.contains('time_clock'))
-            IconButton(
-              icon: const Icon(Icons.access_time_filled_outlined),
-              tooltip: i18n.tr('tc_title'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TimeClockScreen()),
-              ),
-            ),
-          if (features.contains('schedule'))
-            IconButton(
-              icon: const Icon(Icons.calendar_month_outlined),
-              tooltip: i18n.tr('sc_title'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ScheduleScreen()),
-              ),
-            ),
-          // Time Off is a normal service type through the request engine
-          // (I1), not one of the 7 gated modules — always offered.
-          IconButton(
-            icon: const Icon(Icons.beach_access_outlined),
-            tooltip: i18n.tr('to_title'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const TimeOffScreen()),
-            ),
-          ),
-          if (features.contains('forms_checklists'))
-            IconButton(
-              icon: const Icon(Icons.checklist_outlined),
-              tooltip: i18n.tr('cl_title'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ChecklistsScreen()),
-              ),
-            ),
-          if (features.contains('directory'))
-            IconButton(
-              icon: const Icon(Icons.people_outline),
-              tooltip: i18n.tr('dir_title'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const DirectoryScreen()),
-              ),
-            ),
-          if (features.contains('knowledge_base'))
-            IconButton(
-              icon: const Icon(Icons.menu_book_outlined),
-              tooltip: i18n.tr('kb_title'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const KnowledgeBaseScreen()),
-              ),
-            ),
-          if (features.contains('events'))
-            IconButton(
-              icon: const Icon(Icons.event_outlined),
-              tooltip: i18n.tr('ev_title'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const EventsScreen()),
-              ),
-            ),
-          if (features.contains('training_onboarding'))
-            IconButton(
-              icon: const Icon(Icons.school_outlined),
-              tooltip: i18n.tr('tr_title'),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TrainingScreen()),
-              ),
-            ),
           NotificationBell(
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
@@ -198,21 +133,73 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.person_outline),
-            tooltip: i18n.tr('profile'),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: i18n.tr('sign_out'),
-            onPressed: () => context.read<AuthState>().logout(),
-          ),
         ],
       ),
+      drawer: _buildDrawer(context, i18n, features),
       body: _body(i18n),
+    );
+  }
+
+  // Feature modules moved off the AppBar into a Drawer once the module count
+  // grew past what fits as icons (7 gated modules + Time Off + notifications
+  // + profile + logout). Material caps a bottom nav bar around 5
+  // destinations, so a Drawer — not a bottom bar — is the right native fit
+  // here. Scaffold auto-adds the hamburger button, so no leading IconButton.
+  Widget _buildDrawer(BuildContext context, I18n i18n, List<String> features) {
+    Widget item(IconData icon, String label, Widget screen) => ListTile(
+          leading: Icon(icon),
+          title: Text(label),
+          onTap: () {
+            Navigator.of(context).pop();
+            Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => screen));
+          },
+        );
+
+    return Drawer(
+      child: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            if (features.contains('time_clock'))
+              item(Icons.access_time_filled_outlined, i18n.tr('tc_title'),
+                  const TimeClockScreen()),
+            if (features.contains('schedule'))
+              item(Icons.calendar_month_outlined, i18n.tr('sc_title'),
+                  const ScheduleScreen()),
+            // Time Off is a normal service type through the request engine
+            // (I1), not one of the 7 gated modules — always offered.
+            item(Icons.beach_access_outlined, i18n.tr('to_title'),
+                const TimeOffScreen()),
+            if (features.contains('forms_checklists'))
+              item(Icons.checklist_outlined, i18n.tr('cl_title'),
+                  const ChecklistsScreen()),
+            if (features.contains('directory'))
+              item(Icons.people_outline, i18n.tr('dir_title'),
+                  const DirectoryScreen()),
+            if (features.contains('knowledge_base'))
+              item(Icons.menu_book_outlined, i18n.tr('kb_title'),
+                  const KnowledgeBaseScreen()),
+            if (features.contains('events'))
+              item(Icons.event_outlined, i18n.tr('ev_title'),
+                  const EventsScreen()),
+            if (features.contains('training_onboarding'))
+              item(Icons.school_outlined, i18n.tr('tr_title'),
+                  const TrainingScreen()),
+            const Divider(),
+            item(Icons.person_outline, i18n.tr('profile'),
+                const ProfileScreen()),
+            ListTile(
+              leading: const Icon(Icons.logout),
+              title: Text(i18n.tr('sign_out')),
+              onTap: () {
+                Navigator.of(context).pop();
+                context.read<AuthState>().logout();
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
