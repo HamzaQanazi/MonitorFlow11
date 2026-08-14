@@ -14,6 +14,14 @@ import 'theme.dart';
 import 'user/user_home.dart';
 
 void main() {
+  // AuthState.init() below reaches SharedPreferences on its first await,
+  // which needs a platform channel — that channel doesn't exist until the
+  // binding is initialized. runApp() normally does this implicitly, but
+  // init() (fire-and-forget, unawaited) can run before runApp() gets there,
+  // throwing "Binding has not yet been initialized" and leaving the app
+  // stuck on the restoring spinner forever. Explicit and first, so there's
+  // no race.
+  WidgetsFlutterBinding.ensureInitialized();
   final auth = AuthState(ApiClient())..init();
   final i18n = I18n()..init();
   runApp(
