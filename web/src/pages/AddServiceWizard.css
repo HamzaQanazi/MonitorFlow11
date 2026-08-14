@@ -55,8 +55,19 @@
   align-items: end;
 }
 
+.svc-row-grid > * {
+  /* Grid items default to min-inline-size: auto, so a text input's own
+     intrinsic minimum width refused to shrink and pushed its track past
+     the container instead of wrapping — that's what broke the layout at
+     narrower widths. */
+  min-inline-size: 0;
+}
+
 .svc-row-grid input,
 .svc-row-grid select {
+  inline-size: 100%;
+  min-inline-size: 0;
+  box-sizing: border-box;
   block-size: 34px;
   padding-inline: 8px;
   border: 1px solid var(--border);
@@ -67,9 +78,14 @@
 }
 
 /* Persistent label above a row input — matches Step 1's <label class="field">
-   convention instead of relying on a placeholder that vanishes once typed. */
+   convention instead of relying on a placeholder that vanishes once typed.
+   grid-template-columns is explicit (not the implicit auto default) so this
+   track sizes to the width its own outer grid cell gave it, not to the
+   input's browser-default intrinsic width — otherwise the input overflows
+   straight out of this label at narrow widths. */
 .svc-mini-field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
 }
 
