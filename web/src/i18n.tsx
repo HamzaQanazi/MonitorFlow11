@@ -814,6 +814,11 @@ const dict: Record<string, Loc> = {
     en: 'The employee whose subtree can see this service’s requests.',
     ar: 'الموظف الذي يمكن لفريقه رؤية طلبات هذه الخدمة.',
   },
+  svc_auto_assign: { en: 'Auto-assign new requests', ar: 'إسناد الطلبات الجديدة تلقائيًا' },
+  svc_auto_assign_hint: {
+    en: 'Automatically picks the least-busy active employee in the owner’s team when a request comes in. Requires a workflow transition below with "Requires capability: assign" — otherwise this has no effect. You can always reassign manually afterward.',
+    ar: 'يختار تلقائيًا الموظف النشط الأقل انشغالًا في فريق المسؤول عند وصول طلب جديد. يتطلب انتقالًا في سير العمل أدناه بخاصية "يتطلب صلاحية: إسناد" — وإلا فلن يكون لهذا أي أثر. يمكنك دائمًا إعادة الإسناد يدويًا لاحقًا.',
+  },
   svc_request_fields_h: { en: 'Request form fields', ar: 'حقول نموذج الطلب' },
   svc_completion_fields_h: { en: 'Completion form fields', ar: 'حقول نموذج الإنجاز' },
   svc_add_field: { en: 'Add field', ar: 'إضافة حقل' },

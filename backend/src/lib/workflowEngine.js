@@ -174,6 +174,116 @@ function resolveOverride({ statuses, currentStatus, user, to, note }) {
   };
 }
 
+// The write path shared by every transition, whoever fires it: status +
+// task-status writes, the history row, the audit row, the caller's
+// beforeCommit hook, and notifications — all in the caller's transaction.
+// Split out of executeTransition so lib/autoAssign.js (a system-triggered
+// caller with no human actor to run resolveTransition's Gate 1/2 checks
+// against) can reuse the exact same writes instead of a second hand-rolled
+// copy. `actorId`/`actorName` attribute the history/audit/notification rows —
+// executeTransition passes the human user; autoAssign.js passes the
+// service's owner_id, since there's no human actor for an auto-fired pick.
+async function applyTransition(client, {
+  request,
+  transition,
+  task,
+  actorId,
+  actorName = null,
+  note,
+  auditAction,
+  auditDetail,
+  beforeCommit,
+}) {
+  await client.query('UPDATE request SET status = $1, updated_at = now() WHERE id = $2', [
+    transition.to,
+    request.id,
+  ]);
+  if (task) {
+    await client.query('UPDATE task SET status = $1 WHERE id = $2', [transition.to, task.id]);
+  }
+  await client.query(
+    `INSERT INTO request_status_history (request_id, status, changed_by, note)
+     VALUES ($1, $2, $3, $4)`,
+    [request.id, transition.to, actorId, note || null]
+  );
+
+  // Operational audit row, same transaction (I9). `request.status` here is
+  // still the pre-transition value (the JS var, not re-read after the UPDATE).
+  await logAudit(client, actorId, auditAction, 'request', request.id,
+    auditDetail || { from: request.status, to: transition.to, transition: transition.key });
+
+  const newStatus = statusOf(request.statuses, transition.to);
+
+  let extra;
+  if (beforeCommit) {
+    extra = await beforeCommit(client, { request, task, transition, newStatus });
+  }
+
+  // Notification triggers (Section 7 table), Phase 5 model: targets are
+  // RELATIONSHIPS resolved at fire time — created_by / assigned_to /
+  // assignee_manager — never user ids or roles. Runs after beforeCommit so
+  // `assigned_to` sees the task row /assign just wrote. Messages are
+  // bilingual {en, ar} (deferred here by Phase 3).
+  const svc = (l) => pick(request.service_name, l);
+  for (const target of transition.notify || []) {
+    let row = null; // [user_id, type, {en, ar}]
+    if (target === 'created_by') {
+      row = [
+        request.user_id,
+        // A transition carrying a required form is the "completed" event
+        // (only completion transitions do); the rest are status_changed.
+        transition.required_form_key ? 'completed' : 'status_changed',
+        {
+          en: `Your request #${request.id} (${svc('en')}) is now “${pick(newStatus.label, 'en')}”.`,
+          ar: `طلبك رقم ${request.id} (${svc('ar')}) أصبح الآن «${pick(newStatus.label, 'ar')}».`,
+        },
+      ];
+    } else {
+      // assigned_to / assignee_manager both hang off the task's current
+      // assignee — re-read, the row may have been written in beforeCommit.
+      const { rows: a } = await client.query(
+        `SELECT t.employee_id, u.manager_id FROM task t
+         JOIN users u ON u.id = t.employee_id
+         WHERE t.request_id = $1`,
+        [request.id]
+      );
+      if (!a.length) continue;
+      if (target === 'assigned_to') {
+        row = [
+          a[0].employee_id,
+          'assigned',
+          {
+            en: `You have been assigned request #${request.id} (${svc('en')}).`,
+            ar: `تم إسنادك إلى الطلب رقم ${request.id} (${svc('ar')}).`,
+          },
+        ];
+      } else {
+        // assignee_manager: one step up the tree (§10 gate); a manager-less
+        // assignee falls back to the service owner so the alert never drops.
+        // ponytail: the one seeded use is the reject transition, so the type
+        // and wording say "rejected" — generalize both when a workflow
+        // notifies managers on other transitions.
+        const to = a[0].manager_id || request.owner_id;
+        if (!to) continue;
+        row = [
+          to,
+          'task_rejected',
+          {
+            en: `${actorName} rejected the task for request #${request.id} (${svc('en')}): ${note}`,
+            ar: `رفض ${actorName} المهمة الخاصة بالطلب رقم ${request.id} (${svc('ar')}): ${note}`,
+          },
+        ];
+      }
+    }
+    await client.query(
+      'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
+      [row[0], request.id, row[1], JSON.stringify(row[2])]
+    );
+  }
+
+  return { status: newStatus, extra };
+}
+
 // Executes one transition. `beforeCommit(client, ctx)` runs inside the same
 // transaction after the status/history writes — /complete uses it to store the
 // completion form response. With `override: true` the transition table is
@@ -257,92 +367,17 @@ async function executeTransition({
       throw new WorkflowError(404, 'Not found');
     }
 
-    await client.query('UPDATE request SET status = $1, updated_at = now() WHERE id = $2', [
-      transition.to,
-      request.id,
-    ]);
-    if (task) {
-      await client.query('UPDATE task SET status = $1 WHERE id = $2', [transition.to, task.id]);
-    }
-    await client.query(
-      `INSERT INTO request_status_history (request_id, status, changed_by, note)
-       VALUES ($1, $2, $3, $4)`,
-      [request.id, transition.to, user.id, note || null]
-    );
-
-    // Operational audit row, same transaction (I9). `request.status` here is
-    // still the pre-transition value (the JS var, not re-read after the UPDATE).
-    await logAudit(client, user.id, auditAction, 'request', request.id,
-      auditDetail || { from: request.status, to: transition.to, transition: transition.key });
-
-    const newStatus = statusOf(request.statuses, transition.to);
-
-    let extra;
-    if (beforeCommit) {
-      extra = await beforeCommit(client, { request, task, transition, newStatus });
-    }
-
-    // Notification triggers (Section 7 table), Phase 5 model: targets are
-    // RELATIONSHIPS resolved at fire time — created_by / assigned_to /
-    // assignee_manager — never user ids or roles. Runs after beforeCommit so
-    // `assigned_to` sees the task row /assign just wrote. Messages are
-    // bilingual {en, ar} (deferred here by Phase 3).
-    const svc = (l) => pick(request.service_name, l);
-    for (const target of transition.notify || []) {
-      let row = null; // [user_id, type, {en, ar}]
-      if (target === 'created_by') {
-        row = [
-          request.user_id,
-          // A transition carrying a required form is the "completed" event
-          // (only completion transitions do); the rest are status_changed.
-          transition.required_form_key ? 'completed' : 'status_changed',
-          {
-            en: `Your request #${request.id} (${svc('en')}) is now “${pick(newStatus.label, 'en')}”.`,
-            ar: `طلبك رقم ${request.id} (${svc('ar')}) أصبح الآن «${pick(newStatus.label, 'ar')}».`,
-          },
-        ];
-      } else {
-        // assigned_to / assignee_manager both hang off the task's current
-        // assignee — re-read, the row may have been written in beforeCommit.
-        const { rows: a } = await client.query(
-          `SELECT t.employee_id, u.manager_id FROM task t
-           JOIN users u ON u.id = t.employee_id
-           WHERE t.request_id = $1`,
-          [request.id]
-        );
-        if (!a.length) continue;
-        if (target === 'assigned_to') {
-          row = [
-            a[0].employee_id,
-            'assigned',
-            {
-              en: `You have been assigned request #${request.id} (${svc('en')}).`,
-              ar: `تم إسنادك إلى الطلب رقم ${request.id} (${svc('ar')}).`,
-            },
-          ];
-        } else {
-          // assignee_manager: one step up the tree (§10 gate); a manager-less
-          // assignee falls back to the service owner so the alert never drops.
-          // ponytail: the one seeded use is the reject transition, so the type
-          // and wording say "rejected" — generalize both when a workflow
-          // notifies managers on other transitions.
-          const to = a[0].manager_id || request.owner_id;
-          if (!to) continue;
-          row = [
-            to,
-            'task_rejected',
-            {
-              en: `${user.name} rejected the task for request #${request.id} (${svc('en')}): ${note}`,
-              ar: `رفض ${user.name} المهمة الخاصة بالطلب رقم ${request.id} (${svc('ar')}): ${note}`,
-            },
-          ];
-        }
-      }
-      await client.query(
-        'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
-        [row[0], request.id, row[1], JSON.stringify(row[2])]
-      );
-    }
+    const { status: newStatus, extra } = await applyTransition(client, {
+      request,
+      transition,
+      task,
+      actorId: user.id,
+      actorName: user.name,
+      note,
+      auditAction,
+      auditDetail,
+      beforeCommit,
+    });
 
     await client.query('COMMIT');
 
@@ -363,5 +398,6 @@ module.exports = {
   validTransitions,
   resolveTransition,
   resolveOverride,
+  applyTransition,
   executeTransition,
 };

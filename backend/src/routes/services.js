@@ -40,7 +40,7 @@ router.get('/', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT st.id, st.name, st.department_id, d.name AS department_name,
               st.default_priority, st.accepts_external_users, st.accepts_employee_submitters,
-              st.feature_key
+              st.auto_assign, st.feature_key
        FROM service_type st
        JOIN department d ON d.id = st.department_id
        WHERE st.enabled ${externalOnly ? 'AND st.accepts_external_users' : ''} ${ownedClause}
@@ -56,6 +56,7 @@ router.get('/', async (req, res, next) => {
         defaultPriority: r.default_priority,
         acceptsExternalUsers: r.accepts_external_users,
         acceptsEmployeeSubmitters: r.accepts_employee_submitters,
+        autoAssign: r.auto_assign,
         featureKey: r.feature_key,
       })),
     });
@@ -129,6 +130,11 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
     if (typeof b.acceptsEmployeeSubmitters !== 'boolean') {
       errors.push('acceptsEmployeeSubmitters must be a boolean');
     }
+    // Optional — defaults to false (§13 re-scope: auto-assign is opt-in per
+    // service, not the default for every new one).
+    if (b.autoAssign !== undefined && typeof b.autoAssign !== 'boolean') {
+      errors.push('autoAssign must be a boolean');
+    }
     if (b.featureKey != null && !FEATURE_KEYS.has(b.featureKey)) {
       errors.push('featureKey must be null or a known onboarding feature key');
     }
@@ -176,8 +182,8 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
       const { rows: st } = await tx.query(
         `INSERT INTO service_type
            (name, department_id, default_priority, enabled, owner_id, key,
-            accepts_external_users, accepts_employee_submitters, feature_key)
-         VALUES ($1::jsonb, $2, $3, TRUE, $4, $5, $6, $7, $8)
+            accepts_external_users, accepts_employee_submitters, auto_assign, feature_key)
+         VALUES ($1::jsonb, $2, $3, TRUE, $4, $5, $6, $7, $8, $9)
          RETURNING id`,
         [
           JSON.stringify(b.name),
@@ -187,6 +193,7 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
           key,
           b.acceptsExternalUsers,
           b.acceptsEmployeeSubmitters,
+          b.autoAssign ?? false,
           b.featureKey ?? null,
         ]
       );
@@ -239,6 +246,36 @@ router.patch('/:id/enabled', requireRole('admin'), async (req, res, next) => {
 
     if (!result) return res.status(404).json({ error: 'Not found' });
     res.json({ id, enabled });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /:id/auto-assign — toggle only, same shape as /enabled. auto_assign
+// isn't part of the immutable form/workflow definition (§3/§15) — it only
+// affects requests submitted after the toggle, so unlike form/workflow
+// content it's safe to flip on an existing, already-live service.
+router.patch('/:id/auto-assign', requireRole('admin'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
+    if (typeof (req.body || {}).autoAssign !== 'boolean') {
+      return res.status(422).json({ errors: { autoAssign: 'autoAssign must be a boolean' } });
+    }
+    const autoAssign = req.body.autoAssign;
+
+    const result = await withTx(async (tx) => {
+      const { rows } = await tx.query(
+        'UPDATE service_type SET auto_assign = $1 WHERE id = $2 RETURNING id',
+        [autoAssign, id]
+      );
+      if (!rows.length) return null;
+      await logAudit(tx, req.user.id, autoAssign ? 'service.auto_assign_enabled' : 'service.auto_assign_disabled', 'service_type', id);
+      return rows[0];
+    });
+
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    res.json({ id, autoAssign });
   } catch (err) {
     next(err);
   }

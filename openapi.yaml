@@ -355,6 +355,15 @@ paths:
                 acceptsEmployeeSubmitters:
                   type: boolean
                   description: whether an employee (not just a self-registered user) may submit to this service, e.g. Time Off
+                autoAssign:
+                  type: boolean
+                  default: false
+                  description: >
+                    Opt-in (§13 re-scope). When true, a new request auto-picks
+                    the least-loaded active employee in ownerId's subtree and
+                    fires the workflow's assign-capability transition — a
+                    no-op if the workflow has none. Toggle later via PATCH
+                    /services/{id}/auto-assign.
                 featureKey:
                   type: string
                   nullable: true
@@ -421,6 +430,39 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Validation' }
 
+  /services/{id}/auto-assign:
+    patch:
+      tags: [services]
+      summary: >
+        Toggle auto-assign on/off (admin-only, §13 re-scope). Unlike
+        /enabled's neighbor, this isn't part of the immutable form/workflow
+        definition — it only affects requests submitted after the toggle, so
+        it's safe to flip on an already-live service.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [autoAssign]
+              properties:
+                autoAssign: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  autoAssign: { type: boolean }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+
   /services/{serviceKey}/forms/{formKey}:
     get:
       tags: [services]
@@ -456,7 +498,12 @@ paths:
                 location: { $ref: '#/components/schemas/Point' }
       responses:
         '201':
-          description: Created — lands in workflow.initial_status; creation event written
+          description: >
+            Created — lands in workflow.initial_status; creation event
+            written. If the service has auto_assign on (§13 re-scope) and
+            picked someone, the request's status/task reflect that
+            immediately and the body also carries a top-level assignedTask
+            (null otherwise): { id, employeeId, employeeName, assignedAt }.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Request' }
@@ -2059,6 +2106,7 @@ components:
         enabled: { type: boolean }
         acceptsExternalUsers: { type: boolean }
         acceptsEmployeeSubmitters: { type: boolean }
+        autoAssign: { type: boolean }
         featureKey: { type: string, nullable: true }
 
     TransitionDef:

@@ -19,6 +19,7 @@ const { isOversight } = require('../lib/capabilities');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
 const { pick } = require('../lib/i18nLabel');
 const { logAudit } = require('../lib/audit');
+const { maybeAutoAssign } = require('../lib/autoAssign');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -56,8 +57,8 @@ router.post('/', async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT st.id, st.key, st.default_priority, st.accepts_external_users,
-              st.accepts_employee_submitters, fd.field_schema, w.statuses
+      `SELECT st.id, st.key, st.name, st.owner_id, st.default_priority, st.accepts_external_users,
+              st.accepts_employee_submitters, st.auto_assign, fd.field_schema, w.statuses, w.transitions
        FROM service_type st
        JOIN form_definition fd ON fd.service_type_id = st.id AND fd.form_type = 'request'
        JOIN workflow_definition w ON w.service_type_id = st.id
@@ -93,6 +94,7 @@ router.post('/', async (req, res, next) => {
 
     const client = await pool.connect();
     let created;
+    let autoAssigned = null;
     try {
       await client.query('BEGIN');
       ({ rows: [created] } = await client.query(
@@ -136,6 +138,25 @@ router.post('/', async (req, res, next) => {
             .json({ errors: { [field.id]: `${pick(field.label)} must be an uploaded attachment id` } });
         }
       }
+
+      // Opt-in per service (§13 re-scope) — same transaction as creation, so
+      // a request is never left half-assigned by a failure here; see
+      // lib/autoAssign.js. No-ops (returns null) for every service that
+      // hasn't turned this on, and silently stays unassigned — same as today
+      // — if the workflow has no assign-capability transition or no eligible
+      // employee is found.
+      autoAssigned = await maybeAutoAssign(client, {
+        request: { id: created.id, user_id: req.user.id, status: created.status },
+        service: {
+          ownerId: service.owner_id,
+          name: service.name,
+          autoAssign: service.auto_assign,
+          statuses: service.statuses,
+          transitions: service.transitions,
+        },
+      });
+      if (autoAssigned) created.status = autoAssigned.status.key;
+
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -155,6 +176,7 @@ router.post('/', async (req, res, next) => {
         updatedAt: created.updated_at,
         requester: { id: req.user.id, name: req.user.name },
       },
+      assignedTask: autoAssigned ? autoAssigned.task : null,
     });
   } catch (err) {
     next(err);
