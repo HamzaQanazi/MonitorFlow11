@@ -293,6 +293,28 @@ is off for the Owner too. `companyFeatures` rides the same `/auth/me`/
 `/auth/login` payload as `capabilities` so clients filter nav/routes the same
 way (I4); the server is the actual enforcement.
 
+**Auto-assign (added 2026-08-14, §13 re-scope — opt-in, not a third gate):**
+`service_type.auto_assign` (default `false`). When on, `POST /requests`
+picks the least-loaded active employee in the service's own subtree
+(`subtreeIds(service.owner_id)`, the same Gate-2 scope every other
+assignment call uses) and fires the workflow's `required_capability: 'assign'`
+transition automatically, in the same transaction as the request's creation
+— via `lib/autoAssign.js`, reusing `workflowEngine.js`'s write path
+(`applyTransition`) rather than a second hand-rolled one, so the status
+write, task row, history row, audit row, and `assigned_to` notification are
+byte-for-byte what a human `/assign` call produces. It is a no-op — the
+request just stays unassigned, exactly like today — when the service hasn't
+opted in, the workflow has no assign-capability transition from the initial
+status (the existing gap: a service built without one is unassignable either
+way, human or auto), or no eligible employee exists. There is no human actor
+for a system pick, so Gate 1 doesn't apply here — authorization is the
+service's own `auto_assign` flag, set only by an admin; Gate 2 is enforced by
+construction, since the candidate pool can never be anything but the
+service's own subtree. Always reversible: a human can reassign afterward
+through the exact same UI as any manual reassignment. Ranks by open task
+count (the same outcome metric `EmployeesPage` already surfaces) — not a
+behavioural signal, I10-safe.
+
 ---
 
 ## 6. Database schema (current — authoritative source is `backend/migrations/*.sql`)
@@ -344,7 +366,9 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 - **level_capability** — (level_id, capability_key). Gate 1 grants.
 - **service_type** — id, **key** (unique string handle), name `{en,ar}`,
   department_id (FK), default_priority, enabled, **owner_id** (FK → users; the
-  visibility anchor, Gate 2), **accepts_external_users** (bool).
+  visibility anchor, Gate 2), **accepts_external_users** (bool),
+  **auto_assign** (bool, default false — §5's re-scope; opt-in, toggleable
+  post-creation unlike the form/workflow definition itself).
 - **form_definition** — id, service_type_id (FK), form_type
   (`request`/`completion`), field_schema (JSONB, §7). Unique (service_type_id,
   form_type) — exactly two rows per service.
@@ -653,14 +677,20 @@ MIME validated by magic bytes, UUID name outside web root, served
 ## 13. Deliberately NOT built (do not add without a deliberate re-scoping decision)
 
 Visual Form Builder / Workflow Config UI · standalone Operations Monitor page ·
-WebSocket live refresh · push notifications · **automatic assignment** (assignment
-is manual; the server returns a subtree-scoped candidate list, a human chooses —
-no ranking, no auto-select) · **live/continuous GPS tracking, location history,
+WebSocket live refresh · push notifications ·
+**live/continuous GPS tracking, location history,
 behavioural monitoring** (I10) · signature capture · draft saving · satisfaction
 ratings · multi-organization / true multi-tenancy (single-org per deployment;
 "many companies" = one deployment each) · payments · advanced BI · **named vendor
 integrations** · self-service forgot/reset password · request deadlines ·
 form/workflow versioning · refresh tokens / server-side logout.
+
+**Re-scoped 2026-08-14 (deliberate, was on this list): automatic assignment.**
+Manual assignment (the server returns a subtree-scoped candidate list, a
+human chooses) is still the default and stays fully available on every
+service. Auto-assign is opt-in **per service** (`service_type.auto_assign`,
+set by an admin building the service through Add Service, or toggled later
+via `PATCH /services/{id}/auto-assign`) — see §5 and §8 for the design.
 
 **Removed in v7 (do not re-add without a deliberate decision):** the JSON **config
 API** (`POST /config/services` — sector-as-data onboarding) and **outbound signed
