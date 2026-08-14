@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { validateManualShift, computeAttendance, computeTimesheetDay } = require('../src/lib/timeClock');
+const { validateManualShift, validateClockInLocation, computeAttendance, computeTimesheetDay } = require('../src/lib/timeClock');
 
 test('accepts a well-formed past shift', () => {
   const clockInAt = new Date(Date.now() - 2 * 3600e3).toISOString();
@@ -34,6 +34,25 @@ test('rejects a shift longer than 24 hours', () => {
   const clockOutAt = new Date(Date.now() - 1 * 3600e3).toISOString();
   const errors = validateManualShift({ clockInAt, clockOutAt });
   assert.equal(errors.clockOutAt, 'A single shift cannot exceed 24 hours');
+});
+
+// validateClockInLocation — mandatory device fix at clock-in (I10-scoped).
+
+test('accepts a well-formed location', () => {
+  assert.equal(validateClockInLocation({ lat: 32.22, lng: 35.26 }), null);
+});
+
+test('rejects a missing location', () => {
+  assert.deepEqual(validateClockInLocation(undefined), { location: 'A device location is required to clock in' });
+  assert.deepEqual(validateClockInLocation(null), { location: 'A device location is required to clock in' });
+});
+
+test('rejects out-of-range or malformed coordinates', () => {
+  assert.ok(validateClockInLocation({ lat: 91, lng: 0 }));
+  assert.ok(validateClockInLocation({ lat: 0, lng: 181 }));
+  assert.ok(validateClockInLocation({ lat: 'nope', lng: 0 }));
+  assert.ok(validateClockInLocation({ lat: 0 })); // lng missing
+  assert.ok(validateClockInLocation({ lat: 0, lng: 0, extra: 1 })); // unknown key
 });
 
 // computeAttendance — the Today tab's per-employee math.

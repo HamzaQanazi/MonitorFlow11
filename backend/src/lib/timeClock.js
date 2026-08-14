@@ -16,6 +16,26 @@ function validateManualShift({ clockInAt, clockOutAt }) {
   return Object.keys(errors).length ? errors : null;
 }
 
+// Clock-in requires a one-shot device location fix (mandatory, I10-scoped —
+// see 026_time_shift_location.sql's header: this only checks a fix was
+// present, the coordinate itself is discarded, never persisted). Same
+// lat/lng bounds as the dynamic form engine's `location` field type
+// (validateFormResponse.js) for one consistent contract.
+function validateClockInLocation(location) {
+  if (location === undefined || location === null || typeof location !== 'object') {
+    return { location: 'A device location is required to clock in' };
+  }
+  const keysOk = Object.keys(location).length === 2 && 'lat' in location && 'lng' in location;
+  const latOk = keysOk && typeof location.lat === 'number' && Number.isFinite(location.lat)
+    && location.lat >= -90 && location.lat <= 90;
+  const lngOk = keysOk && typeof location.lng === 'number' && Number.isFinite(location.lng)
+    && location.lng >= -180 && location.lng <= 180;
+  if (!latOk || !lngOk) {
+    return { location: 'location must be {lat, lng} with lat in [-90,90] and lng in [-180,180]' };
+  }
+  return null;
+}
+
 function round2(n) {
   return Math.round(n * 100) / 100;
 }
@@ -94,4 +114,4 @@ function computeTimesheetDay({ shifts, defaultShift, now = new Date() }) {
   };
 }
 
-module.exports = { validateManualShift, computeAttendance, computeTimesheetDay, round2 };
+module.exports = { validateManualShift, validateClockInLocation, computeAttendance, computeTimesheetDay, round2 };

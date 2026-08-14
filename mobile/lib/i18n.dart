@@ -314,6 +314,15 @@ const Map<String, Map<String, String>> _dict = {
   'tc_on_break': {'en': 'On break', 'ar': 'في استراحة'},
   'tc_since': {'en': 'since', 'ar': 'منذ'},
   'tc_clock_in': {'en': 'Clock in', 'ar': 'تسجيل حضور'},
+  'tc_locating': {'en': 'Getting your location…', 'ar': 'جارٍ تحديد موقعك…'},
+  'tc_location_denied': {
+    'en': 'Location permission is required to clock in. Enable it in Settings and try again.',
+    'ar': 'يلزم إذن الموقع لتسجيل الحضور. فعّله من الإعدادات وحاول مجددًا.',
+  },
+  'tc_location_failed': {
+    'en': 'Could not get your location. Check that location services are on and try again.',
+    'ar': 'تعذّر تحديد موقعك. تأكد من تفعيل خدمة الموقع وحاول مجددًا.',
+  },
   'tc_clock_out': {'en': 'Clock out', 'ar': 'تسجيل انصراف'},
   'tc_start_break': {'en': 'Start break', 'ar': 'بدء الاستراحة'},
   'tc_end_break': {'en': 'End break', 'ar': 'إنهاء الاستراحة'},

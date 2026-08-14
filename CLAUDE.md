@@ -170,6 +170,13 @@ NO    live GPS, location history, idle time, "what are they doing right now"
 ```
 An ethical, GDPR, and product position: a buyer wants an operations tool, not a
 surveillance tool. Do not add behavioural tracking, even if asked casually.
+**The one deliberate, scoped exception:** Time Clock's `location_captured`
+flag (§6) — a mandatory one-shot device location fix at clock-in, checked
+then immediately discarded, never stored as a coordinate and never a stream.
+A presence check at a single moment the employee themselves triggers, not
+tracking. Any future feature that wants to *store* or *compare* a
+coordinate (geofencing, "was this shift on-site") is a new decision, not a
+natural extension of this one — flag it the same way before building it.
 
 ---
 
@@ -370,8 +377,17 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 - **time_shift** — id, employee_id (FK), company_id (FK), clock_in_at,
   clock_out_at (nullable), source (`clock`/`manual`), status
   (`active`/`completed`), approval_status (`pending`/`approved`/`edited`),
-  note, approved_by/approved_at. At most one `active` shift per employee
-  (DB-enforced unique index, not app locking). **time_break** — shift_id (FK),
+  note, approved_by/approved_at, **location_captured** (bool, default false —
+  a `clock` source shift requires the mobile app to obtain a one-shot device
+  location fix before `POST /timeclock/clock-in` will accept it,
+  `lib/timeClock.js` `validateClockInLocation`; the coordinate is validated
+  then discarded — **no lat/lng column exists here, deliberately** — this
+  flag is the only trace it leaves. A `manual`/edited entry has no live
+  clock-in moment, so it's always false. This is a presence *check*, not
+  tracking: one point-in-time fixed at the moment the employee acts, never a
+  stream, never a history table — I10 stays intact). At most one `active`
+  shift per employee (DB-enforced unique index, not app locking).
+  **time_break** — shift_id (FK),
   break_start_at, break_end_at (nullable, at most one active per shift).
   **time_entry** — shift_id (FK), type (`note`/`photo`/`tip`), body, amount,
   created_by — in-shift extras; a `photo` entry is the parent for a
@@ -566,7 +582,8 @@ cancel, confirm/dispute resolution, attachments, map pin).
 **Employee mobile:** Home + My Tasks · Task Details · workflow transitions ·
 Complete Task (dynamic completion form) · **Workforce feature modules** (shipped
 post-pivot, not yet gated by the company's onboarding feature selection — §15):
-Time Clock (clock in/out, breaks, manual hours, in-shift notes/photos/tips) ·
+Time Clock (clock in/out — clock-in requires a one-shot device location fix,
+§2 I10 exception, §6 — breaks, manual hours, in-shift notes/photos/tips) ·
 Schedule (my roster) · Checklists · Directory · Knowledge Base · Events (RSVP) ·
 Training (complete). Time Off is **not** a separate module — it's a normal
 service type through the dynamic form/workflow engine (I1), themed as its own
@@ -701,7 +718,8 @@ transitions → exactly one wins · cancel-vs-assign race → one wins other 409
 deactivated JWT → 401 · deactivate employee holding an open task → 409 · confirm
 before done → 409 · cross-subtree assign → refused · override to nonexistent
 status → 422 · download another user's file → 404 · user submit to internal-only
-service → 403 · hire past the plan's employee cap → 409.
+service → 403 · hire past the plan's employee cap → 409 · clock-in with
+missing/out-of-range location → 422.
 
 ---
 

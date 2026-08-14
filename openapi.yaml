@@ -1529,10 +1529,25 @@ paths:
   /timeclock/clock-in:
     post:
       tags: [timeclock]
-      summary: Start a shift. 409 if already clocked in (DB-enforced, one active shift per employee).
+      summary: Start a shift. Requires a one-shot device location fix (validated then discarded — only whether one was captured is stored, I10). 409 if already clocked in (DB-enforced, one active shift per employee).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [location]
+              properties:
+                location:
+                  type: object
+                  required: [lat, lng]
+                  properties:
+                    lat: { type: number, minimum: -90, maximum: 90 }
+                    lng: { type: number, minimum: -180, maximum: 180 }
       responses:
         '201': { description: Clocked in, content: { application/json: { schema: { type: object, properties: { shift: { $ref: '#/components/schemas/TimeShift' } } } } } }
         '409': { description: Already clocked in }
+        '422': { description: Missing or out-of-range location }
 
   /timeclock/clock-out:
     post:
@@ -2163,6 +2178,7 @@ components:
         status: { type: string, enum: [active, completed] }
         approvalStatus: { type: string, enum: [pending, approved, edited] }
         note: { type: string, nullable: true }
+        locationCaptured: { type: boolean, description: Whether a device location fix was captured at clock-in. The coordinate itself is never stored (I10) — false for manual/edited entries, which have no live clock-in moment. }
         breaks:
           type: array
           items:
