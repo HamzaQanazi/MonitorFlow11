@@ -8,7 +8,7 @@ const { requireAuth, requireRole, requireCapability, requireFeature } = require(
 const { withTx, logAudit } = require('../lib/audit');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
 const { csvCell } = require('../lib/csv');
-const { validateManualShift, computeAttendance, computeTimesheetDay, round2 } = require('../lib/timeClock');
+const { validateManualShift, validateClockInLocation, computeAttendance, computeTimesheetDay, round2 } = require('../lib/timeClock');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -21,7 +21,7 @@ async function loadShiftDetail(shiftId, db = pool) {
   const [shiftRes, breaksRes, entriesRes] = await Promise.all([
     db.query(
       `SELECT id, employee_id, clock_in_at, clock_out_at, source, status,
-              approval_status, note, approved_by, approved_at, created_at
+              approval_status, note, approved_by, approved_at, created_at, location_captured
        FROM time_shift WHERE id = $1`,
       [shiftId]
     ),
@@ -51,6 +51,7 @@ async function loadShiftDetail(shiftId, db = pool) {
     approvedBy: s.approved_by,
     approvedAt: s.approved_at,
     createdAt: s.created_at,
+    locationCaptured: s.location_captured,
     breaks: breaksRes.rows.map((b) => ({ id: b.id, breakStartAt: b.break_start_at, breakEndAt: b.break_end_at })),
     entries: entriesRes.rows.map((e) => ({
       id: e.id,
@@ -94,12 +95,18 @@ router.get('/shifts/active', async (req, res, next) => {
   }
 });
 
-// POST /timeclock/clock-in
+// POST /timeclock/clock-in — { location: { lat, lng } } is mandatory (a
+// one-shot device fix proving presence). The coordinate itself is validated
+// then discarded: only whether it was captured gets stored (I10 — no
+// location history).
 router.post('/clock-in', async (req, res, next) => {
   try {
+    const errors = validateClockInLocation((req.body || {}).location);
+    if (errors) return res.status(422).json({ errors });
+
     const { rows } = await pool.query(
-      `INSERT INTO time_shift (employee_id, company_id, clock_in_at, source, status, approval_status)
-       VALUES ($1, $2, now(), 'clock', 'active', 'approved')
+      `INSERT INTO time_shift (employee_id, company_id, clock_in_at, source, status, approval_status, location_captured)
+       VALUES ($1, $2, now(), 'clock', 'active', 'approved', true)
        RETURNING id`,
       [req.user.id, req.user.company_id]
     );

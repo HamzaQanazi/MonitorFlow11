@@ -4,6 +4,7 @@
 // In-shift notes/photos/tips are the next increment (shift extras), added
 // once an active shift exists here.
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -27,6 +28,7 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
   bool _loaded = false;
   Object? _error;
   bool _acting = false;
+  bool _locating = false;
 
   @override
   void initState() {
@@ -58,12 +60,12 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
     return s == null ? null : TimeShift.fromJson(s);
   }
 
-  Future<void> _act(String path) async {
+  Future<void> _act(String path, {Object? body}) async {
     final i18n = context.read<I18n>();
     setState(() => _acting = true);
     final api = context.read<AuthState>().api;
     try {
-      final json = await api.post(path);
+      final json = await api.post(path, body: body);
       if (!mounted) return;
       // clock-out's response is the shift just completed, not an active one —
       // treat anything non-active as "not clocked in" rather than trusting
@@ -80,6 +82,42 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
     } finally {
       if (mounted) setState(() => _acting = false);
     }
+  }
+
+  // Mandatory one-shot device location fix before clocking in (never a
+  // stream, never stored as a coordinate server-side — see timeclock.js's
+  // clock-in handler). Blocks the action entirely on denial/failure rather
+  // than clocking in without one.
+  Future<void> _clockIn() async {
+    final i18n = context.read<I18n>();
+    setState(() => _locating = true);
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _showError(i18n.tr('tc_location_failed'));
+        return;
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        _showError(i18n.tr('tc_location_denied'));
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      await _act('/timeclock/clock-in', body: {
+        'location': {'lat': pos.latitude, 'lng': pos.longitude},
+      });
+    } catch (_) {
+      if (mounted) _showError(i18n.tr('tc_location_failed'));
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _openManualHours() async {
@@ -122,9 +160,15 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
           const SizedBox(height: 24),
           if (shift == null)
             ElevatedButton.icon(
-              onPressed: _acting ? null : () => _act('/timeclock/clock-in'),
-              icon: const Icon(Icons.login),
-              label: Text(i18n.tr('tc_clock_in')),
+              onPressed: _acting || _locating ? null : _clockIn,
+              icon: _locating
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.login),
+              label: Text(_locating ? i18n.tr('tc_locating') : i18n.tr('tc_clock_in')),
             )
           else ...[
             if (shift.isOnBreak)
