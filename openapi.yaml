@@ -1430,6 +1430,11 @@ paths:
               properties:
                 title: { $ref: '#/components/schemas/LocalizedText' }
                 body: { $ref: '#/components/schemas/LocalizedText' }
+                attachmentFileId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: Optional — id of a parentless upload from POST /files, made by this caller.
       responses:
         '201':
           description: Created
@@ -1460,7 +1465,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [training]
-      summary: Edit a training module's title/body (view_all or admin).
+      summary: Edit a training module's title/body/attachment (view_all or admin).
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
@@ -1471,6 +1476,11 @@ paths:
               properties:
                 title: { $ref: '#/components/schemas/LocalizedText' }
                 body: { $ref: '#/components/schemas/LocalizedText' }
+                attachmentFileId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                  description: Omit to keep the current attachment, null to remove it, a new upload id to replace it.
       responses:
         '200':
           description: Updated
@@ -1534,7 +1544,11 @@ paths:
   /files:
     post:
       tags: [files]
-      summary: Upload (multipart; requestId XOR taskId). Allowlist jpg/png/pdf, ≤5MB, magic-byte checked.
+      summary: >-
+        Upload (multipart; requestId XOR taskId XOR neither for a parentless
+        upload — a user's pending request photo, the Owner's onboarding logo,
+        or a training module attachment from an employee who can write
+        training). Allowlist jpg/png/pdf, ≤5MB, magic-byte checked.
       requestBody:
         content:
           multipart/form-data:
@@ -1999,6 +2013,14 @@ components:
         completionCount: { type: integer }
         completedByNames: { type: array, items: { type: string }, description: only present on GET /training/{id} }
         isComplete: { type: boolean }
+        attachment:
+          nullable: true
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            originalFilename: { type: string }
+            mimeType: { type: string }
+            sizeBytes: { type: integer }
 
     EmployeeLevel:
       type: object

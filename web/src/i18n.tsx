@@ -581,6 +581,10 @@ const dict: Record<string, Loc> = {
   tr_edit_h: { en: 'Edit module', ar: 'تعديل الوحدة' },
   tr_create: { en: 'Create', ar: 'إنشاء' },
   tr_err_save: { en: 'Could not save the module.', ar: 'تعذّر حفظ الوحدة.' },
+  tr_col_attachment: { en: 'Attachment', ar: 'المرفق' },
+  tr_no_attachment: { en: 'None', ar: 'لا يوجد' },
+  tr_attachment: { en: 'Attachment (optional, PDF/JPG/PNG, max 5MB)', ar: 'مرفق (اختياري، PDF أو JPG أو PNG، بحد أقصى 5 ميجابايت)' },
+  tr_remove_attachment: { en: 'Remove', ar: 'إزالة' },
 
   // levels & capabilities (Gate 1 configuration — admin only)
   lvl_title: { en: 'Levels & Capabilities', ar: 'المستويات والصلاحيات' },

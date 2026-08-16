@@ -394,6 +394,8 @@ const Map<String, Map<String, String>> _dict = {
   'tr_complete': {'en': 'Mark complete', 'ar': 'تمييز كمكتملة'},
   'tr_uncomplete': {'en': 'Undo complete', 'ar': 'إلغاء الإكمال'},
   'tr_complete_fail': {'en': 'Could not update your progress', 'ar': 'تعذّر تحديث تقدّمك'},
+  'tr_attachment_fail': {'en': 'Could not load the attachment', 'ar': 'تعذّر تحميل المرفق'},
+  'tr_attachment_web_only': {'en': 'Open this file from the web console', 'ar': 'افتح هذا الملف من لوحة التحكم'},
 
   // form response view (shared)
   'fr_yes': {'en': 'Yes', 'ar': 'نعم'},

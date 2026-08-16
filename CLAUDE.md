@@ -609,7 +609,10 @@ post-pivot, not yet gated by the company's onboarding feature selection — §15
 Time Clock (clock in/out — clock-in requires a one-shot device location fix,
 §2 I10 exception, §6 — breaks, manual hours, in-shift notes/photos/tips) ·
 Schedule (my roster) · Checklists · Directory · Knowledge Base · Events (RSVP) ·
-Training (complete). Time Off is **not** a separate module — it's a normal
+Training (complete — a module may carry one optional PDF/image attachment,
+027_training_attachment.sql, reusing the existing file_attachment allowlist;
+images preview in-app, PDFs point back to the web console — no PDF viewer
+dependency added for this). Time Off is **not** a separate module — it's a normal
 service type through the dynamic form/workflow engine (I1), themed as its own
 screen over `/requests` + `/services`.
 

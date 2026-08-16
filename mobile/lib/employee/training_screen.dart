@@ -2,6 +2,8 @@
 // completion on mobile — authoring stays console-only. Flat list, completed
 // modules show a checkmark instead of being hidden (an employee should still
 // be able to re-read something they already finished).
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -166,6 +168,7 @@ class _ModuleDetailScreenState extends State<_ModuleDetailScreen> {
   // screen needs its own copy of isComplete to reflect a successful toggle
   // without waiting for a pop + reopen.
   late TrainingModule _module = widget.module;
+  bool _loadingAttachment = false;
 
   Future<void> _handleToggle() async {
     final ok = await widget.onToggle();
@@ -174,9 +177,36 @@ class _ModuleDetailScreenState extends State<_ModuleDetailScreen> {
     }
   }
 
+  // Images preview in-app (fetch bytes with the auth header, Image.memory —
+  // no new dependency needed). PDFs don't: no PDF viewer is installed on
+  // mobile, so those just point back to the web console rather than adding
+  // one for this cheap pass.
+  Future<void> _viewImageAttachment(TrainingAttachment attachment) async {
+    setState(() => _loadingAttachment = true);
+    try {
+      final api = context.read<AuthState>().api;
+      final bytes = await api.getBytes('/files/${attachment.id}');
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => Dialog(
+          child: InteractiveViewer(child: Image.memory(Uint8List.fromList(bytes))),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.read<I18n>().tr('tr_attachment_fail'))),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingAttachment = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<I18n>();
+    final attachment = _module.attachment;
     return Scaffold(
       appBar: AppBar(title: Text(i18n.l(_module.title))),
       body: SingleChildScrollView(
@@ -191,6 +221,27 @@ class _ModuleDetailScreenState extends State<_ModuleDetailScreen> {
             ),
             const SizedBox(height: 20),
             Text(i18n.l(_module.body), style: const TextStyle(fontSize: 15, height: 1.5)),
+            if (attachment != null) ...[
+              const SizedBox(height: 20),
+              Material(
+                color: MfColors.bg,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: const BorderSide(color: MfColors.border),
+                ),
+                child: ListTile(
+                  leading: Icon(attachment.isImage ? Icons.image_outlined : Icons.picture_as_pdf_outlined),
+                  title: Text(attachment.originalFilename),
+                  subtitle: attachment.isImage ? null : Text(i18n.tr('tr_attachment_web_only')),
+                  trailing: attachment.isImage
+                      ? (_loadingAttachment
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.chevron_right))
+                      : null,
+                  onTap: attachment.isImage && !_loadingAttachment ? () => _viewImageAttachment(attachment) : null,
+                ),
+              ),
+            ],
           ],
         ),
       ),

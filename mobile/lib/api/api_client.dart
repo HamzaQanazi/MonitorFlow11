@@ -101,6 +101,34 @@ class ApiClient {
     return _decode(response);
   }
 
+  /// Raw bytes (GET /files/{id}) — the one endpoint that doesn't return JSON,
+  /// so it bypasses _send/_decode. Used for previewing a training module's
+  /// attachment; same auth header, same 401/404 handling.
+  Future<List<int>> getBytes(String path) async {
+    final uri = Uri.parse('$baseUrl$path');
+    final request = http.Request('GET', uri);
+    if (_token != null) request.headers['Authorization'] = 'Bearer $_token';
+
+    http.Response response;
+    try {
+      response = await http.Response.fromStream(
+        await _http.send(request).timeout(const Duration(seconds: 30)),
+      );
+    } on TimeoutException {
+      throw NetworkException('The server took too long to respond');
+    } on http.ClientException {
+      throw NetworkException();
+    } on SocketException {
+      throw NetworkException();
+    }
+
+    if (response.statusCode == 401) onUnauthorized?.call();
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(response.statusCode, 'Could not load the file');
+    }
+    return response.bodyBytes;
+  }
+
   Future<Map<String, dynamic>> _send(
     String method,
     String path, {

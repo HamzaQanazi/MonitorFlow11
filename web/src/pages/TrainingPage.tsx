@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
-import { apiFetch, ApiError } from '../lib/api'
+import { apiFetch, ApiError, getToken } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './KnowledgeBasePage.css'
+import './OnboardingWizard.css'
 
 // Training & Onboarding (hr_skills feature group, onboarding wizard). Same
 // shape as Knowledge Base plus self-service completion (mirrors Events' RSVP).
+// Optional attachment ("cheap version" of a more versatile module, §11): a
+// module can carry one PDF/image via the existing /files upload — reusing
+// the request-detail download pattern below, since it needs the same auth
+// header a plain <a href> can't carry.
+
+interface Attachment {
+  id: string
+  originalFilename: string
+  mimeType: string
+  sizeBytes: number
+}
 
 interface TrainingModule {
   id: number
@@ -16,8 +28,27 @@ interface TrainingModule {
   updatedAt: string
   completionCount: number
   isComplete: boolean
+  attachment: Attachment | null
 }
 type FieldErrors = Record<string, string>
+
+async function downloadAttachment(id: string, filename: string) {
+  const res = await fetch(`/api/v1/files/${id}`, {
+    headers: { Authorization: `Bearer ${getToken() ?? ''}` },
+  })
+  if (!res.ok) return
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function formatSize(bytes: number) {
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
 
 function fieldErrorsOf(err: unknown): FieldErrors {
   if (err instanceof ApiError && err.body && typeof err.body === 'object') {
@@ -117,6 +148,7 @@ export default function TrainingPage() {
               <tr>
                 <th scope="col">{t('col_title')}</th>
                 <th scope="col">{t('kb_col_author')}</th>
+                <th scope="col">{t('tr_col_attachment')}</th>
                 <th scope="col">{t('tr_col_completed')}</th>
                 <th scope="col" className="emp-actions-col">
                   {t('col_actions')}
@@ -128,6 +160,22 @@ export default function TrainingPage() {
                 <tr key={m.id}>
                   <td className="req-service">{L(m.title)}</td>
                   <td>{m.createdByName}</td>
+                  <td>
+                    {m.attachment ? (
+                      <>
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => void downloadAttachment(m.attachment!.id, m.attachment!.originalFilename)}
+                        >
+                          {m.attachment.originalFilename}
+                        </button>
+                        <span className="tl-meta"> · {formatSize(m.attachment.sizeBytes)}</span>
+                      </>
+                    ) : (
+                      <span className="req-meta">{t('tr_no_attachment')}</span>
+                    )}
+                  </td>
                   <td>{m.completionCount}</td>
                   <td className="emp-actions">
                     <button
@@ -182,6 +230,8 @@ function ModuleForm({
   const [titleAr, setTitleAr] = useState(mod?.title.ar ?? '')
   const [bodyEn, setBodyEn] = useState(mod?.body.en ?? '')
   const [bodyAr, setBodyAr] = useState(mod?.body.ar ?? '')
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
+  const [removeAttachment, setRemoveAttachment] = useState(false)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
 
@@ -193,15 +243,37 @@ function ModuleForm({
 
   const canSubmit = titleEn.trim() && titleAr.trim() && bodyEn.trim() && bodyAr.trim()
 
+  // Same two-step contract as the onboarding wizard's logo upload: POST the
+  // file first (multipart, so a raw fetch rather than apiFetch), then send
+  // its id along with the module save.
+  async function uploadAttachment(file: File): Promise<string> {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch('/api/v1/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken() ?? ''}` },
+      body: form,
+    })
+    if (!res.ok) throw new ApiError(res.status, 'attachment upload failed', 'attachmentFileId')
+    const data = await res.json()
+    return data.attachment.id
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setErrors({})
-    const body = {
-      title: { en: titleEn, ar: titleAr },
-      body: { en: bodyEn, ar: bodyAr },
-    }
     try {
+      const attachmentFileId = attachmentFile
+        ? await uploadAttachment(attachmentFile)
+        : removeAttachment
+          ? null
+          : undefined
+      const body = {
+        title: { en: titleEn, ar: titleAr },
+        body: { en: bodyEn, ar: bodyAr },
+        ...(attachmentFileId !== undefined && { attachmentFileId }),
+      }
       if (isEdit) {
         await apiFetch(`/training/${mod!.id}`, { method: 'PATCH', body })
       } else {
@@ -237,6 +309,30 @@ function ModuleForm({
         <label className="field">
           {t('kb_body_ar')}
           <textarea className="kb-textarea" value={bodyAr} onChange={(e) => setBodyAr(e.target.value)} required dir="rtl" />
+        </label>
+        <label className="field">
+          {t('tr_attachment')}
+          {mod?.attachment && !removeAttachment && !attachmentFile ? (
+            <span className="ob-file">
+              <span>{mod.attachment.originalFilename}</span>
+              <button type="button" className="link-button" onClick={() => setRemoveAttachment(true)}>
+                {t('tr_remove_attachment')}
+              </button>
+            </span>
+          ) : (
+            <label className="ob-file">
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                onChange={(e) => {
+                  setAttachmentFile(e.target.files?.[0] ?? null)
+                  setRemoveAttachment(false)
+                }}
+              />
+              <span>{attachmentFile ? attachmentFile.name : t('ob_choose_file')}</span>
+            </label>
+          )}
+          {errors.attachmentFileId && <em className="field-err">{errors.attachmentFileId}</em>}
         </label>
         <div className="dialog-actions">
           <button type="button" className="detail-close-text" onClick={onClose}>
