@@ -4,7 +4,7 @@
 // ownership-by-404 shape as tasks.js).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireRole, requireCapability, requireFeature } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapabilityOrAdmin, requireFeature } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
 const { csvCell } = require('../lib/csv');
@@ -13,7 +13,9 @@ const { validateManualShift, validateClockInLocation, computeAttendance, compute
 const router = express.Router();
 router.use(requireAuth);
 router.use(requireFeature('time_clock'));
-router.use(requireRole('employee'));
+// Self-service routes below are individually requireRole('employee') — the
+// Owner has no shifts of their own. The manager-surface section (Today,
+// Timesheets, export, approve) admits the admin too via requireCapabilityOrAdmin.
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -82,7 +84,7 @@ function serialize(detail) {
 
 // GET /timeclock/shifts/active — the caller's current open shift, or null.
 // The one read the mobile app needs on launch to know what state to render.
-router.get('/shifts/active', async (req, res, next) => {
+router.get('/shifts/active', requireRole('employee'), async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT id FROM time_shift WHERE employee_id = $1 AND status = 'active'`,
@@ -99,7 +101,7 @@ router.get('/shifts/active', async (req, res, next) => {
 // one-shot device fix proving presence). The coordinate itself is validated
 // then discarded: only whether it was captured gets stored (I10 — no
 // location history).
-router.post('/clock-in', async (req, res, next) => {
+router.post('/clock-in', requireRole('employee'), async (req, res, next) => {
   try {
     const errors = validateClockInLocation((req.body || {}).location);
     if (errors) return res.status(422).json({ errors });
@@ -118,7 +120,7 @@ router.post('/clock-in', async (req, res, next) => {
 });
 
 // POST /timeclock/clock-out
-router.post('/clock-out', async (req, res, next) => {
+router.post('/clock-out', requireRole('employee'), async (req, res, next) => {
   try {
     const active = await pool.query(
       `SELECT id FROM time_shift WHERE employee_id = $1 AND status = 'active'`,
@@ -146,7 +148,7 @@ router.post('/clock-out', async (req, res, next) => {
 });
 
 // POST /timeclock/breaks/start
-router.post('/breaks/start', async (req, res, next) => {
+router.post('/breaks/start', requireRole('employee'), async (req, res, next) => {
   try {
     const active = await pool.query(
       `SELECT id FROM time_shift WHERE employee_id = $1 AND status = 'active'`,
@@ -165,7 +167,7 @@ router.post('/breaks/start', async (req, res, next) => {
 });
 
 // POST /timeclock/breaks/end
-router.post('/breaks/end', async (req, res, next) => {
+router.post('/breaks/end', requireRole('employee'), async (req, res, next) => {
   try {
     const active = await pool.query(
       `SELECT id FROM time_shift WHERE employee_id = $1 AND status = 'active'`,
@@ -188,7 +190,7 @@ router.post('/breaks/end', async (req, res, next) => {
 
 // POST /timeclock/shifts/manual — backdated hours entry, always lands
 // pending a manager's approval (approve/edit ship in the manager phase).
-router.post('/shifts/manual', async (req, res, next) => {
+router.post('/shifts/manual', requireRole('employee'), async (req, res, next) => {
   try {
     const { clockInAt, clockOutAt, note } = req.body || {};
     const errors = validateManualShift({ clockInAt, clockOutAt });
@@ -207,7 +209,7 @@ router.post('/shifts/manual', async (req, res, next) => {
 });
 
 // POST /timeclock/shifts/:id/entries — note/photo/tip, active shift only.
-router.post('/shifts/:id/entries', async (req, res, next) => {
+router.post('/shifts/:id/entries', requireRole('employee'), async (req, res, next) => {
   try {
     const shift = await loadOwnShift(Number(req.params.id), req.user.id);
     if (!shift) return res.status(404).json({ error: 'Not found' });
@@ -270,7 +272,7 @@ router.post('/shifts/:id/entries', async (req, res, next) => {
 // most recent shift that day, plus the 5 counters the web Today tab renders
 // as clickable filters. Filtering itself is client-side over this one payload
 // (thin renderer, I4) — no separate filter param.
-router.get('/today', requireCapability('view_all'), async (req, res, next) => {
+router.get('/today', requireCapabilityOrAdmin('view_all'), async (req, res, next) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -441,7 +443,7 @@ async function buildTimesheets(weekStart, ids) {
 
 // GET /timeclock/timesheets?weekStart=YYYY-MM-DD — weekStart is the grid's
 // first day, taken as given (no forced Monday-alignment; the web tab picks it).
-router.get('/timesheets', requireCapability('view_all'), async (req, res, next) => {
+router.get('/timesheets', requireCapabilityOrAdmin('view_all'), async (req, res, next) => {
   try {
     const { weekStart } = req.query;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart || '')) {
@@ -457,8 +459,8 @@ router.get('/timesheets', requireCapability('view_all'), async (req, res, next) 
 // GET /timeclock/timesheets/export.csv — same grid, frozen columns, payroll export.
 router.get(
   '/timesheets/export.csv',
-  requireCapability('view_all'),
-  requireCapability('export'),
+  requireCapabilityOrAdmin('view_all'),
+  requireCapabilityOrAdmin('export'),
   async (req, res, next) => {
     try {
       const { weekStart } = req.query;
@@ -496,7 +498,7 @@ async function loadScopedShift(id, actorId, db = pool) {
 
 // PATCH /timeclock/shifts/:id — manager correction. Requires both timestamps
 // (same shape/validation as a manual entry) and always lands 'edited'/'completed'.
-router.patch('/shifts/:id', requireCapability('manage_employees'), async (req, res, next) => {
+router.patch('/shifts/:id', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
     const detail = await loadScopedShift(Number(req.params.id), req.user.id);
     if (!detail) return res.status(404).json({ error: 'Not found' });
@@ -527,7 +529,7 @@ router.patch('/shifts/:id', requireCapability('manage_employees'), async (req, r
 });
 
 // POST /timeclock/shifts/:id/approve — clears a manual entry's 'pending' approval.
-router.post('/shifts/:id/approve', requireCapability('manage_employees'), async (req, res, next) => {
+router.post('/shifts/:id/approve', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
     const detail = await loadScopedShift(Number(req.params.id), req.user.id);
     if (!detail) return res.status(404).json({ error: 'Not found' });

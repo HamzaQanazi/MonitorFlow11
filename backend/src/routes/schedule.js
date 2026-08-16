@@ -6,7 +6,7 @@
 // per date instead of the old employee_default_shift).
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireRole, requireCapability, requireFeature } = require('../middleware/auth');
+const { requireAuth, requireRole, requireCapabilityOrAdmin, requireFeature } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
 const { subtreeIds } = require('../lib/scope');
 const { isBilingual } = require('../lib/i18nLabel');
@@ -14,7 +14,6 @@ const { isBilingual } = require('../lib/i18nLabel');
 const router = express.Router();
 router.use(requireAuth);
 router.use(requireFeature('schedule'));
-router.use(requireRole('employee'));
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -25,7 +24,7 @@ function serializeTemplate(t) {
 
 // ---- Shift templates (manager, view_all to read, manage_employees to write) ----
 
-router.get('/templates', requireCapability('view_all'), async (req, res, next) => {
+router.get('/templates', requireCapabilityOrAdmin('view_all'), async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       'SELECT id, name, start_time, end_time FROM shift_template WHERE company_id = $1 ORDER BY start_time',
@@ -37,7 +36,7 @@ router.get('/templates', requireCapability('view_all'), async (req, res, next) =
   }
 });
 
-router.post('/templates', requireCapability('manage_employees'), async (req, res, next) => {
+router.post('/templates', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
     const { name, startTime, endTime } = req.body || {};
     const errors = {};
@@ -61,7 +60,7 @@ router.post('/templates', requireCapability('manage_employees'), async (req, res
   }
 });
 
-router.patch('/templates/:id', requireCapability('manage_employees'), async (req, res, next) => {
+router.patch('/templates/:id', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { name, startTime, endTime } = req.body || {};
@@ -92,7 +91,7 @@ router.patch('/templates/:id', requireCapability('manage_employees'), async (req
   }
 });
 
-router.delete('/templates/:id', requireCapability('manage_employees'), async (req, res, next) => {
+router.delete('/templates/:id', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const { rowCount: used } = await pool.query('SELECT 1 FROM schedule_entry WHERE shift_template_id = $1 LIMIT 1', [id]);
@@ -117,7 +116,7 @@ router.delete('/templates/:id', requireCapability('manage_employees'), async (re
 
 // GET /schedule/roster?from&to — one row per subtree employee, with every
 // schedule_entry in [from, to] (inclusive). The web Roster grid renders this.
-router.get('/roster', requireCapability('view_all'), async (req, res, next) => {
+router.get('/roster', requireCapabilityOrAdmin('view_all'), async (req, res, next) => {
   try {
     const { from, to } = req.query;
     if (!DATE_RE.test(from || '') || !DATE_RE.test(to || '')) {
@@ -166,7 +165,7 @@ router.get('/roster', requireCapability('view_all'), async (req, res, next) => {
 // templateId: null clears that employee's day. Every employeeId must be in the
 // caller's subtree (404-over-403, same shape as tasks.js) and every template
 // must belong to the caller's company (422 on a bad id via the FK).
-router.put('/roster', requireCapability('manage_employees'), async (req, res, next) => {
+router.put('/roster', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
     const entries = Array.isArray(req.body?.entries) ? req.body.entries : null;
     if (!entries || !entries.length) return res.status(422).json({ errors: { entries: 'At least one entry is required' } });
@@ -220,8 +219,10 @@ router.put('/roster', requireCapability('manage_employees'), async (req, res, ne
 
 // ---- Self-service ----
 
-// GET /schedule/mine?from&to — the caller's own upcoming schedule.
-router.get('/mine', async (req, res, next) => {
+// GET /schedule/mine?from&to — the caller's own upcoming schedule. Employee
+// only (the Owner has no schedule_entry rows of their own) — everything else
+// in this router admits the admin too, see requireCapabilityOrAdmin above.
+router.get('/mine', requireRole('employee'), async (req, res, next) => {
   try {
     const { from, to } = req.query;
     if (!DATE_RE.test(from || '') || !DATE_RE.test(to || '')) {

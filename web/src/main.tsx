@@ -130,8 +130,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="employees" element={<Guard need="manage_employees" orAdmin><EmployeesPage /></Guard>} />
             <Route path="departments" element={<Guard need="admin"><DepartmentsPage /></Guard>} />
             <Route path="reports" element={<Guard need="view_all"><ReportsPage /></Guard>} />
-            <Route path="timeclock" element={<Guard need="view_all" feature="time_clock"><TimeClockPage /></Guard>} />
-            <Route path="schedule" element={<Guard need="view_all" feature="schedule"><SchedulePage /></Guard>} />
+            <Route path="timeclock" element={<Guard need="view_all" orAdmin feature="time_clock"><TimeClockPage /></Guard>} />
+            <Route path="schedule" element={<Guard need="view_all" orAdmin feature="schedule"><SchedulePage /></Guard>} />
             <Route path="checklists" element={<Guard need="view_all" orAdmin feature="forms_checklists"><ChecklistsPage /></Guard>} />
             <Route path="directory" element={<Guard need="view_all" orAdmin feature="directory"><DirectoryPage /></Guard>} />
             <Route path="knowledge-base" element={<Guard need={['view_all', 'manage_knowledge_base']} orAdmin feature="knowledge_base"><KnowledgeBasePage /></Guard>} />
