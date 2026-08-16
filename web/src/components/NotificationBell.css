@@ -15,11 +15,17 @@
   background: none;
   color: var(--muted);
   cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 
 .bell-button:hover {
   background: var(--surface);
   color: var(--ink);
+}
+
+.bell-button:active {
+  transform: scale(0.92);
 }
 
 .bell-button:focus-visible {
@@ -46,13 +52,50 @@
 .bell-panel {
   position: absolute;
   top: calc(100% + 8px);
+  /* The bell sits at the end (right in LTR) of the full-width .shell-topbar
+     (DashboardShell.css) — pinning the panel's end edge to the bell's own
+     end edge and growing toward inline-start is the conventional top-right
+     bell behavior, and safe here since the topbar is wide, not the old
+     236px sidebar rail this used to be squeezed into. */
   inset-inline-end: 0;
   z-index: var(--z-dropdown);
   width: min(360px, calc(100vw - 32px));
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
+  /* Two-layer elevation — a tight near shadow for edge definition, a soft
+     far shadow for lift — reads as a considered surface instead of a single
+     generic blur (DESIGN.md §4: shadows are earned by state, so a raised
+     dropdown gets one, a resting card never does). */
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 12px 28px -6px rgb(0 0 0 / 0.16);
+  /* Centered rather than corner-anchored: which physical corner sits nearest
+     the bell flips with inset-inline-end between LTR/RTL, and transform-origin
+     has no logical keyword to follow it — "top" avoids picking the wrong one. */
+  transform-origin: top;
+  animation: bell-panel-in var(--dur-fast) var(--ease-out);
+}
+
+/* Mounts fresh on every open ({open && …} in the component), so a plain
+   `animation` (which plays on insert) gets real feedback for free — no
+   mounted/closing state machine needed for a panel this size (DESIGN.md:
+   "responsive motion, no choreography"). */
+@keyframes bell-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bell-panel {
+    animation: none;
+  }
 }
 
 .bell-head {
@@ -108,6 +151,7 @@
   text-align: start;
   font: inherit;
   cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
 .bell-item:hover {

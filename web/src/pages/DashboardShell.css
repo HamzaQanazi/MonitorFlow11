@@ -16,7 +16,12 @@
   display: flex;
   flex-direction: column;
   border-inline-end: 1px solid var(--border);
-  overflow-y: auto;
+  /* No overflow here on purpose — setting overflow-y without overflow-x
+     makes browsers resolve the other axis to 'auto' too (CSS Overflow §3),
+     turning this into a clipping box that cut the notification panel's
+     absolute-positioned dropdown off at the sidebar's own edge. .shell-nav
+     below is the one part that actually needs to scroll; the header and the
+     session/bell footer stay pinned and unclipped. */
 }
 
 .shell-sidebar-top {
@@ -56,6 +61,13 @@
   flex-direction: column;
   gap: 18px;
   padding: 16px 12px;
+  /* The scrollable middle of the sidebar (see .shell-sidebar) — flex:1 lets
+     it absorb the space between the fixed header and footer, min-height:0
+     is what lets it actually shrink and scroll instead of pushing the
+     footer off the bottom. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .shell-nav-group {
@@ -187,6 +199,21 @@
   flex-direction: column;
   min-width: 0;
   overflow-y: auto;
+}
+
+/* The bell's home (moved out of the 236px sidebar, which was too narrow for
+   its 360px dropdown). Sticky within .shell-main's own scroll, so it stays
+   put as the page content scrolls beneath it, and it has the full width of
+   the content area to open into instead of a cramped rail. */
+.shell-topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 24px;
+  background: var(--bg);
+  border-block-end: 1px solid var(--border);
 }
 
 /* Centered message block — used by not-yet-built pages */

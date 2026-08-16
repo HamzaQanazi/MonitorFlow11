@@ -104,8 +104,6 @@ export default function DashboardShell() {
             <span className="shell-user">{user?.name}</span>
           </div>
           <div className="shell-session-actions">
-            {/* No notification triggers target the admin — an always-empty bell is noise. */}
-            {!isAdmin && <NotificationBell />}
             <button
               type="button"
               className="shell-icon-btn"
@@ -129,6 +127,12 @@ export default function DashboardShell() {
       </aside>
 
       <main className="shell-main">
+        {/* No notification triggers target the admin — an always-empty bell is noise. */}
+        {!isAdmin && (
+          <div className="shell-topbar">
+            <NotificationBell />
+          </div>
+        )}
         <Outlet />
       </main>
     </div>
