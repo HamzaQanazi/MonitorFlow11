@@ -182,11 +182,20 @@ natural extension of this one — flag it the same way before building it.
 
 ## 3. Hard constraints (in addition to the invariants)
 
-- **No visual Form Builder UI and no visual Workflow Config UI.** Form/workflow
-  definitions enter only via the seed script (`seed.js` + `formSchema.js`/
-  `workflowSchema.js` validators). There is no authoring UI and no per-field write
-  endpoint. (The onboarding wizard configures the *company*, not forms/workflows.)
-  The old JSON config API that onboarded whole sectors is **removed** (§9, §13).
+- **Revised — there IS a visual Form Builder / Workflow Config UI.** Original
+  MVP scope said definitions could only enter via the seed script; that's no
+  longer true. `web/src/pages/AddServiceWizard.tsx` (admin-only, `POST
+  /services`) lets an admin build a service's fields, statuses, and
+  transitions through a wizard, validated server-side by the same
+  `formSchema.js`/`workflowSchema.js` validators the seed script used to be
+  the only caller of — nothing the UI submits can pass client-side and fail
+  server-side for a different reason than "you left something blank." Seeding
+  (`seed.js`) is still how the demo/dev data and the Owner's initial account
+  get created, but it's no longer the only path to a new service. (The
+  onboarding wizard is still separate — it configures the *company*, not
+  forms/workflows.) The old JSON config API that onboarded whole sectors is
+  still **removed** (§9, §13) — this is a from-scratch admin-authored service,
+  not a return of sector-as-a-JSON-body onboarding.
 - **Definitions are immutable once any request exists** for their service type.
   No versioning system; changing a live definition means adding a new service and
   disabling the old (documented MVP limitation).
@@ -696,7 +705,7 @@ MIME validated by magic bytes, UUID name outside web root, served
 
 ## 13. Deliberately NOT built (do not add without a deliberate re-scoping decision)
 
-Visual Form Builder / Workflow Config UI · standalone Operations Monitor page ·
+standalone Operations Monitor page ·
 WebSocket live refresh · push notifications ·
 **live/continuous GPS tracking, location history,
 behavioural monitoring** (I10) · signature capture · draft saving · satisfaction
@@ -704,6 +713,14 @@ ratings · multi-organization / true multi-tenancy (single-org per deployment;
 "many companies" = one deployment each) · payments · advanced BI · **named vendor
 integrations** · self-service forgot/reset password · request deadlines ·
 form/workflow versioning · refresh tokens / server-side logout.
+
+**Re-scoped 2026-07-31 (deliberate, was on this list): the visual Form
+Builder / Workflow Config UI.** `AddServiceWizard.tsx` + `POST /services`
+(§3) now let an admin author a service's fields/statuses/transitions
+through the console instead of only via the seed script. Still gated
+admin-only, still validated server-side by the original seed-time
+validators, still subject to the immutability rule (§3) — this widens *who*
+can author a definition, not what a definition is allowed to contain.
 
 **Re-scoped 2026-08-14 (deliberate, was on this list): automatic assignment.**
 Manual assignment (the server returns a subtree-scoped candidate list, a
