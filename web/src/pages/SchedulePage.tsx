@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
+import { TranslateButton } from '../components/TranslateButton'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './ReportsPage.css'
@@ -246,6 +247,7 @@ function TemplateFormDialog({ template, onClose, onDone }: { template?: ShiftTem
             <span>{t('sc_field_name_ar')}</span>
             <input value={nameAr} onChange={(e) => setNameAr(e.target.value)} dir="rtl" required />
           </label>
+          <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
           <label className="field">
             <span>{t('sc_field_start')}</span>
             <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { apiFetch, ApiError } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
+import { TranslateButton } from '../components/TranslateButton'
+import { TranslateAllButton } from '../components/TranslateAllButton'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './ChecklistsPage.css'
@@ -285,6 +287,7 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
               <span>{t('svc_name_ar')}</span>
               <input value={nameAr} onChange={(e) => setNameAr(e.target.value)} dir="rtl" />
             </label>
+            <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
             <label className="field">
               <span>{t('svc_owner')}</span>
               <select className="req-select" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
@@ -299,6 +302,12 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
           </div>
 
           <div className="cl-builder-items">
+            <TranslateAllButton
+              rows={items}
+              getEn={(r) => r.labelEn}
+              getAr={(r) => r.labelAr}
+              setPair={(i, en, ar) => updateItem(i, { labelEn: en, labelAr: ar })}
+            />
             {items.map((row, i) => (
               <div className="cl-item-row" key={row.rid}>
                 <input
