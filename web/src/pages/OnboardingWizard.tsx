@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useI18n, type Loc } from '../i18n'
 import { ApiError, apiFetch, getToken } from '../lib/api'
 import { Wordmark } from '../components/Wordmark'
+import { TranslateButton } from '../components/TranslateButton'
 import './OnboardingWizard.css'
 
 // The first-login "Customize your app in 1 minute" wizard. Six steps, one save
@@ -288,6 +289,7 @@ export default function OnboardingWizard() {
               <Field label={t('ob_company_name_ar')} error={errors.nameAr}>
                 <input dir="rtl" value={nameAr} onChange={(e) => setNameAr(e.target.value)} aria-invalid={!!errors.nameAr || undefined} />
               </Field>
+              <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
               <Field label={t('ob_company_address_en')} error={errors.addressEn}>
                 <input value={addressEn} onChange={(e) => setAddressEn(e.target.value)} aria-invalid={!!errors.addressEn || undefined} />
               </Field>
@@ -300,6 +302,7 @@ export default function OnboardingWizard() {
               <Field label={t('ob_job_title_ar')} error={errors.ownerJobTitleAr}>
                 <input dir="rtl" value={ownerJobTitleAr} onChange={(e) => setOwnerJobTitleAr(e.target.value)} aria-invalid={!!errors.ownerJobTitleAr || undefined} />
               </Field>
+              <TranslateButton en={ownerJobTitleEn} ar={ownerJobTitleAr} setEn={setOwnerJobTitleEn} setAr={setOwnerJobTitleAr} />
               <Field label={t('ob_phone')} error={errors.phone}>
                 <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" aria-invalid={!!errors.phone || undefined} />
               </Field>
@@ -378,6 +381,20 @@ export default function OnboardingWizard() {
                       aria-invalid={!!errors[`branch${i}ar`] || undefined}
                     />
                   </Field>
+                  <TranslateButton
+                    en={b.en}
+                    ar={b.ar}
+                    setEn={(v) => {
+                      const next = [...branchNames]
+                      next[i] = { ...next[i], en: v }
+                      setBranchNames(next)
+                    }}
+                    setAr={(v) => {
+                      const next = [...branchNames]
+                      next[i] = { ...next[i], ar: v }
+                      setBranchNames(next)
+                    }}
+                  />
                 </div>
               ))}
             </>

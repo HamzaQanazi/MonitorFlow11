@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
+import { TranslateButton } from '../components/TranslateButton'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './KnowledgeBasePage.css'
@@ -258,6 +259,7 @@ function EventForm({ event, onClose, onDone }: { event?: Event; onClose: () => v
           {t('kb_title_ar')}
           <input value={titleAr} onChange={(e) => setTitleAr(e.target.value)} required dir="rtl" />
         </label>
+        <TranslateButton en={titleEn} ar={titleAr} setEn={setTitleEn} setAr={setTitleAr} />
         <label className="field">
           {t('ev_desc_en')}
           <textarea className="kb-textarea" value={descEn} onChange={(e) => setDescEn(e.target.value)} />
@@ -267,6 +269,7 @@ function EventForm({ event, onClose, onDone }: { event?: Event; onClose: () => v
           <textarea className="kb-textarea" value={descAr} onChange={(e) => setDescAr(e.target.value)} dir="rtl" />
           {errors.description && <em className="field-err">{errors.description}</em>}
         </label>
+        <TranslateButton en={descEn} ar={descAr} setEn={setDescEn} setAr={setDescAr} />
         <label className="field">
           {t('ev_starts_at')}
           <input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} required />

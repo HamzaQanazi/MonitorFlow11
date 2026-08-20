@@ -18,9 +18,11 @@ and the **onboarding wizard** (backend + React) are in.
 form engine, the dynamic workflow engine, the two-gate permission model, requests/
 tasks/audit. Invariants I2–I10 (§2) still hold for that layer. The workforce
 feature modules the wizard lets an Owner *select* (`features` on `company`) have
-since **shipped**: Time Clock, Schedule, Checklists, Directory, Knowledge Base,
-Events, Training — backend routes + migrations, web pages, and mobile screens for
-each (§11). Where this file still describes the old config-driven surface, treat
+since **shipped**: Time Clock, Schedule, Checklists, Knowledge Base, Events —
+backend routes + migrations, web pages, and mobile screens for each (§11).
+Directory and Training & Onboarding shipped the same way but were **removed
+2026-08-21** (§13 — deliberate, low product/thesis value for the effort).
+Where this file still describes the old config-driven surface, treat
 §1/§9/§13 as the current truth and flag any conflict.
 
 Supersedes the old ER v3 / API v2 spec. The API contract lives in `openapi.yaml`
@@ -282,7 +284,7 @@ resolved by the two gates (I3):
 
 - **Gate 1 — capability.** The fixed catalogue (`lib/capabilities.js`):
   `view_all · assign · set_priority · override · manage_employees · export ·
-  manage_events · manage_knowledge_base · manage_training`. The last three let a
+  manage_events · manage_knowledge_base`. The last two let a
   level author just one workforce feature module (§11) without also holding
   `view_all`'s general oversight. A `employee_level` grants a subset via
   `level_capability`. An "oversight" employee is one whose level grants
@@ -311,9 +313,9 @@ lock. This closes check-then-act races (concurrent transitions, cancel-vs-assign
 **Testing rule:** the permission model is the test plan — every allowed/denied
 combination gets at least one automated API test (§14).
 
-**Feature gate (added 2026-08-04, orthogonal to Gates 1/2):** the seven
-workforce module route files (Time Clock, Schedule, Checklists, Directory,
-Knowledge Base, Events, Training) also require `requireFeature(key)`
+**Feature gate (added 2026-08-04, orthogonal to Gates 1/2):** the five
+workforce module route files (Time Clock, Schedule, Checklists, Knowledge
+Base, Events) also require `requireFeature(key)`
 (`middleware/auth.js`) — does the deployment's `company.features` (the
 onboarding wizard's step-4 picks, §9) include this module at all. This isn't
 about *who* may act (that's still Gate 1/2) — it's about whether the module
@@ -633,11 +635,7 @@ Complete Task (dynamic completion form) · **Workforce feature modules** (shippe
 post-pivot, not yet gated by the company's onboarding feature selection — §15):
 Time Clock (clock in/out — clock-in requires a one-shot device location fix,
 §2 I10 exception, §6 — breaks, manual hours, in-shift notes/photos/tips) ·
-Schedule (my roster) · Checklists · Directory · Knowledge Base · Events (RSVP) ·
-Training (complete — a module may carry one optional PDF/image attachment,
-027_training_attachment.sql, reusing the existing file_attachment allowlist;
-images preview in-app, PDFs point back to the web console — no PDF viewer
-dependency added for this). Time Off is **not** a separate module — it's a normal
+Schedule (my roster) · Checklists · Knowledge Base · Events (RSVP). Time Off is **not** a separate module — it's a normal
 service type through the dynamic form/workflow engine (I1), themed as its own
 screen over `/requests` + `/services`.
 
@@ -650,10 +648,10 @@ Employees Management · Departments Management · Employee Levels · Reports + C
 export · Audit · **Workforce feature modules** (shipped post-pivot): Time Clock
 (shift/timesheet oversight + CSV export) · Schedule (shift templates + roster) ·
 Checklists (forms-and-checklists submission stats, aggregated from existing
-request/workflow data, not a new engine surface) · Directory · Knowledge Base ·
-Events · Training. Each module route is capability-gated (§5) — `view_all` for
-the oversight views, plus `manage_events`/`manage_knowledge_base`/
-`manage_training` for authoring that module without granting general oversight.
+request/workflow data, not a new engine surface) · Knowledge Base ·
+Events. Each module route is capability-gated (§5) — `view_all` for
+the oversight views, plus `manage_events`/`manage_knowledge_base` for
+authoring that module without granting general oversight.
 
 **Shared component:** Notifications + Profile, reused by both mobile apps.
 
@@ -750,9 +748,50 @@ API** (`POST /config/services` — sector-as-data onboarding) and **outbound sig
 webhooks** (`/config/webhooks`, `lib/webhooks.js`, the `X-MonitorFlow-Signature`
 delivery). The municipality seed (`company-config.js`) went with them.
 
+**Removed 2026-08-21 (deliberate, supervisor decision — do not re-add without
+the same conversation): the Directory and Training & Onboarding feature
+modules.** Low product/thesis value relative to their effort: neither
+exercised the dynamic form/workflow engine or the two-gate permission model
+beyond a basic company-wide read, unlike Time Clock (I10's location-capture
+exception), Schedule (Time Clock's late/absent baseline), or Checklists
+(reuses the request/workflow engine, no new surface). Backend routes,
+migrations (`024_training.sql`, `025_module_capabilities.sql`'s
+`manage_training` grant, `027_training_attachment.sql`, dropped by
+`029_remove_training_directory.sql`), the `manage_training` capability, web
+pages, and mobile screens are gone; the onboarding wizard's feature catalogue
+(`lib/onboardingOptions.js`) no longer offers either. A company already
+carrying one of these keys in its `features` array keeps it stored — nothing
+retroactively strips it — but the module it once unlocked no longer exists.
+
+**Re-scoped 2026-08-21 (deliberate, second exception to the named-vendor
+ban — supervisor decision): bilingual auto-fill via the Gemini API.**
+`POST /translate` (`lib/translate.js`, `routes/translate.js`) is a server-side
+proxy to Google's Gemini API, same shape as the Nominatim geocode proxy (§9):
+the vendor key (`GEMINI_API_KEY`) never reaches the client, and the caller
+gets back only the translated string, never the raw upstream response. Given
+one side of a bilingual `{en,ar}` field pair (I5) the admin/employee already
+typed, it suggests the other — an explicit "Translate" button, never
+autofire-while-typing, so it can't clobber something the caller was about to
+type themselves. Purely a UX shortcut: the caller can still edit or reject
+the suggestion, and every save endpoint (services.js, knowledgeBase.js,
+events.js, `PATCH /company/onboarding`, …) still validates both languages
+are present itself (I5, I8) exactly as before — this route has no write path
+of its own and isn't in the trust chain for anything it doesn't type.
+Frontend: `components/TranslateButton.tsx`, one shared component wired into
+every bilingual field pair across the console (Add Service, the onboarding
+wizard, Knowledge Base, Events, Levels, Departments). Add Service's field and
+status editors — the two places a form can have many bilingual rows at once —
+also get `components/TranslateAllButton.tsx`: a sequential loop over the same
+per-row call (`lib/translate.ts`'s `translatePair`), not a combined multi-row
+API call, so a bad response only ever affects the one row currently being
+translated and it stays naturally rate-limit-friendly. Not added to the
+two-field forms (Knowledge Base, Events, Levels, Departments, Onboarding) —
+one click is already trivial there.
+
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
-`audit_event`). GPS tracking stays out (I10).
+`audit_event`) · **bilingual auto-fill** (Gemini, above). GPS tracking stays
+out (I10).
 
 ---
 
@@ -802,9 +841,9 @@ there is no re-run/edit UI for the wizard's step-4 picks, §9).
 **Corrected 2026-08-04** (this used to be listed here as a limitation — it
 isn't anymore): the onboarding wizard's feature-module selection now *does*
 gate module routes/pages. `requireFeature()` (`middleware/auth.js`) checks
-`company.features` independently of Gate 1/2, applied to all seven module
-route files (Time Clock, Schedule, Checklists, Directory, Knowledge Base,
-Events, Training) — no admin bypass, since an unselected feature doesn't
+`company.features` independently of Gate 1/2, applied to all five module
+route files (Time Clock, Schedule, Checklists, Knowledge Base, Events) —
+no admin bypass, since an unselected feature doesn't
 exist for the deployment at all, Owner included. The client
 (`companyFeatures` on the `/auth/me`/`/auth/login` payload) filters the nav
 and routes the same way, purely for UX — the server is what actually

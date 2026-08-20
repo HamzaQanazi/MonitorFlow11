@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
+import { TranslateButton } from '../components/TranslateButton'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './KnowledgeBasePage.css'
@@ -208,6 +209,7 @@ function ArticleForm({
           {t('kb_title_ar')}
           <input value={titleAr} onChange={(e) => setTitleAr(e.target.value)} required dir="rtl" />
         </label>
+        <TranslateButton en={titleEn} ar={titleAr} setEn={setTitleEn} setAr={setTitleAr} />
         <label className="field">
           {t('kb_body_en')}
           <textarea
@@ -228,6 +230,7 @@ function ArticleForm({
             dir="rtl"
           />
         </label>
+        <TranslateButton en={bodyEn} ar={bodyAr} setEn={setBodyEn} setAr={setBodyAr} />
         <div className="dialog-actions">
           <button type="button" className="detail-close-text" onClick={onClose}>
             {t('cancel')}

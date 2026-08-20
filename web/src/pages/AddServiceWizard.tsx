@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
+import { TranslateButton } from '../components/TranslateButton'
+import { TranslateAllButton } from '../components/TranslateAllButton'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './AddServiceWizard.css'
@@ -489,6 +491,7 @@ export default function AddServiceWizard() {
               <span>{t('svc_name_ar')}</span>
               <input value={nameAr} onChange={(e) => setNameAr(e.target.value)} dir="rtl" />
             </label>
+            <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
             <label className="field">
               <span>{t('emp_department')}</span>
               <select className="req-select" value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
@@ -583,6 +586,14 @@ export default function AddServiceWizard() {
                   {t('svc_add_status')}
                 </button>
               </div>
+              <TranslateAllButton
+                rows={statuses}
+                getEn={(r) => r.labelEn}
+                getAr={(r) => r.labelAr}
+                setPair={(i, en, ar) =>
+                  setStatuses((prev) => prev.map((r, j) => (j === i ? { ...r, labelEn: en, labelAr: ar } : r)))
+                }
+              />
               <p className="ob-hint">{t('svc_statuses_hint')}</p>
               {statuses.map((s, i) => (
                 <div key={s.rid} className={`svc-row${errorRows.statuses.has(i) ? ' has-error' : ''}`}>
@@ -604,6 +615,12 @@ export default function AddServiceWizard() {
                         }
                       />
                     </MiniField>
+                    <TranslateButton
+                      en={s.labelEn}
+                      ar={s.labelAr}
+                      setEn={(v) => setStatuses((prev) => prev.map((r, j) => (j === i ? { ...r, labelEn: v } : r)))}
+                      setAr={(v) => setStatuses((prev) => prev.map((r, j) => (j === i ? { ...r, labelAr: v } : r)))}
+                    />
                     <MiniField label={t('svc_sla_minutes')}>
                       <input
                         type="number"
@@ -663,6 +680,7 @@ export default function AddServiceWizard() {
                   <MiniField label={t('svc_field_label_ar')}>
                     <input dir="rtl" value={cancelLabelAr} onChange={(e) => setCancelLabelAr(e.target.value)} />
                   </MiniField>
+                  <TranslateButton en={cancelLabelEn} ar={cancelLabelAr} setEn={setCancelLabelEn} setAr={setCancelLabelAr} />
                 </div>
               )}
             </section>
@@ -777,6 +795,12 @@ function FieldSchemaEditor({
           {t('svc_add_field')}
         </button>
       </div>
+      <TranslateAllButton
+        rows={rows}
+        getEn={(r) => r.labelEn}
+        getAr={(r) => r.labelAr}
+        setPair={(i, en, ar) => update(i, { labelEn: en, labelAr: ar })}
+      />
       {rows.map((row, i) => (
         <div key={row.rid} className={`svc-row${errorRows.has(i) ? ' has-error' : ''}`}>
           <div className="svc-row-grid">
@@ -786,6 +810,12 @@ function FieldSchemaEditor({
             <MiniField label={t('svc_field_label_ar')}>
               <input dir="rtl" value={row.labelAr} onChange={(e) => update(i, { labelAr: e.target.value })} />
             </MiniField>
+            <TranslateButton
+              en={row.labelEn}
+              ar={row.labelAr}
+              setEn={(v) => update(i, { labelEn: v })}
+              setAr={(v) => update(i, { labelAr: v })}
+            />
             <MiniField label={t('svc_field_type')}>
               <select className="req-select" value={row.type} onChange={(e) => update(i, { type: e.target.value as FieldType })}>
                 {FIELD_TYPES.map((ft) => (
@@ -844,6 +874,12 @@ function FieldSchemaEditor({
                       }
                     />
                   </MiniField>
+                  <TranslateButton
+                    en={opt.labelEn}
+                    ar={opt.labelAr}
+                    setEn={(v) => update(i, { options: row.options.map((o, j) => (j === oi ? { ...o, labelEn: v } : o)) })}
+                    setAr={(v) => update(i, { options: row.options.map((o, j) => (j === oi ? { ...o, labelAr: v } : o)) })}
+                  />
                   <button
                     type="button"
                     className="action-btn is-danger"

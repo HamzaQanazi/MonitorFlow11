@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
+import { TranslateButton } from '../components/TranslateButton'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './DepartmentsPage.css'
@@ -252,6 +253,7 @@ function DepartmentForm({
           {t('dept_name_ar')}
           <input value={nameAr} onChange={(e) => setNameAr(e.target.value)} required dir="rtl" />
         </label>
+        <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
         <label className="field">
           {t('dept_branch_label')}
           <select value={branchId} onChange={(e) => setBranchId(e.target.value)} required>
@@ -360,6 +362,7 @@ function RenameDialog({
           {t('dept_name_ar')}
           <input value={nameAr} onChange={(e) => setNameAr(e.target.value)} required dir="rtl" />
         </label>
+        <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
         <label className="field">
           {t('dept_branch_label')}
           <select value={branchId} onChange={(e) => setBranchId(e.target.value)}>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
+import { TranslateButton } from '../components/TranslateButton'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './DepartmentsPage.css'
@@ -20,7 +21,6 @@ const CAPABILITIES = [
   'export',
   'manage_events',
   'manage_knowledge_base',
-  'manage_training',
 ] as const
 
 interface Level {
@@ -212,6 +212,7 @@ function LevelForm({ onClose, onDone }: { onClose: () => void; onDone: () => voi
           {t('lvl_name_ar')}
           <input value={nameAr} onChange={(e) => setNameAr(e.target.value)} required dir="rtl" />
         </label>
+        <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
         <div className="dialog-actions">
           <button type="button" className="detail-close-text" onClick={onClose}>
             {t('cancel')}

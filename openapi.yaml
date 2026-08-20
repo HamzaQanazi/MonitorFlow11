@@ -90,10 +90,9 @@ tags:
   - name: files
   - name: timeclock       # employee self-service: clock in/out, breaks, manual hours, in-shift entries
   - name: schedule        # manager roster (shift templates + per-date assignment) + employee "my schedule"
-  - name: directory       # company-wide staff directory (communication feature group) — deliberately not Gate-2 scoped
   - name: knowledge-base  # company article list (communication feature group) — read company-wide, write needs view_all/admin
   - name: events          # company calendar + self-service RSVP (communication feature group)
-  - name: training        # training modules + self-service completion tracking (hr_skills feature group)
+  - name: translate       # bilingual auto-fill assist (Gemini proxy) — CLAUDE.md §13, 2026-08-21 exception
   - name: dashboard       # oversight overview: stats + 30-day chart (view_all/admin)
 
 paths:
@@ -1143,48 +1142,6 @@ paths:
                         count: { type: integer, description: "open + closed" }
         '403': { $ref: '#/components/responses/Forbidden' }
 
-  # ── Directory (communication feature group) ─────────────────────────────────
-  # Deliberate exception to the Gate-2 subtree model everywhere else in this
-  # file: a directory's job is letting any employee find any colleague, so
-  # this is company-wide, not subtree-scoped. Still requireAuth + role check
-  # (the `user` role — external submitters — gets 403).
-  /directory:
-    get:
-      tags: [directory]
-      summary: Company-wide staff directory (admin + employee accounts only).
-      parameters:
-        - { $ref: '#/components/parameters/page' }
-        - { $ref: '#/components/parameters/pageSize' }
-        - { name: departmentId, in: query, required: false, schema: { type: integer } }
-        - { name: branchId, in: query, required: false, schema: { type: integer } }
-        - { name: q, in: query, required: false, schema: { type: string }, description: name substring }
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  directory:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id: { type: integer }
-                        name: { type: string }
-                        phone: { type: string, nullable: true }
-                        email: { type: string, nullable: true }
-                        isYou: { type: boolean }
-                        departmentName: { $ref: '#/components/schemas/LocalizedText' }
-                        branchName: { $ref: '#/components/schemas/LocalizedText', nullable: true }
-                        levelName: { $ref: '#/components/schemas/LocalizedText', nullable: true }
-                  page: { type: integer }
-                  pageSize: { type: integer }
-                  total: { type: integer }
-        '400': { description: Invalid query params }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
   # ── Knowledge Base (communication feature group) ────────────────────────────
   # Read: company-wide, any admin/employee account (mobile employees have no
   # capabilities at all). Write: view_all or admin, same gate the console's
@@ -1398,128 +1355,6 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  # ── Training & Onboarding (hr_skills feature group) ─────────────────────────
-  # Same read/write split as Knowledge Base; completion is self-service like
-  # Events' RSVP — presence in training_completion = "finished it."
-  /training:
-    get:
-      tags: [training]
-      summary: All of this company's training modules. Includes completionCount and the caller's own isComplete.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  modules:
-                    type: array
-                    items: { $ref: '#/components/schemas/TrainingModule' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-    post:
-      tags: [training]
-      summary: Create a training module (view_all or admin).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [title, body]
-              properties:
-                title: { $ref: '#/components/schemas/LocalizedText' }
-                body: { $ref: '#/components/schemas/LocalizedText' }
-                attachmentFileId:
-                  type: string
-                  format: uuid
-                  nullable: true
-                  description: Optional — id of a parentless upload from POST /files, made by this caller.
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  module: { $ref: '#/components/schemas/TrainingModule' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/Validation' }
-
-  /training/{id}:
-    get:
-      tags: [training]
-      summary: One module, including the list of employees who've completed it.
-      parameters: [ { $ref: '#/components/parameters/id' } ]
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  module: { $ref: '#/components/schemas/TrainingModule' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    patch:
-      tags: [training]
-      summary: Edit a training module's title/body/attachment (view_all or admin).
-      parameters: [ { $ref: '#/components/parameters/id' } ]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                title: { $ref: '#/components/schemas/LocalizedText' }
-                body: { $ref: '#/components/schemas/LocalizedText' }
-                attachmentFileId:
-                  type: string
-                  format: uuid
-                  nullable: true
-                  description: Omit to keep the current attachment, null to remove it, a new upload id to replace it.
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  module: { $ref: '#/components/schemas/TrainingModule' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/Validation' }
-    delete:
-      tags: [training]
-      summary: Delete a training module (view_all or admin).
-      parameters: [ { $ref: '#/components/parameters/id' } ]
-      responses:
-        '204': { description: Deleted }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /training/{id}/complete:
-    post:
-      tags: [training]
-      summary: Self-service — mark the caller as having completed this module (idempotent).
-      parameters: [ { $ref: '#/components/parameters/id' } ]
-      responses:
-        '204': { description: OK }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      tags: [training]
-      summary: Self-service — un-mark the caller's own completion (idempotent).
-      parameters: [ { $ref: '#/components/parameters/id' } ]
-      responses:
-        '204': { description: OK }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
   # ── Notifications ────────────────────────────────────────────────────────────
   /notifications:
     get:
@@ -1546,9 +1381,8 @@ paths:
       tags: [files]
       summary: >-
         Upload (multipart; requestId XOR taskId XOR neither for a parentless
-        upload — a user's pending request photo, the Owner's onboarding logo,
-        or a training module attachment from an employee who can write
-        training). Allowlist jpg/png/pdf, ≤5MB, magic-byte checked.
+        upload — a user's pending request photo, or the Owner's onboarding
+        logo). Allowlist jpg/png/pdf, ≤5MB, magic-byte checked.
       requestBody:
         content:
           multipart/form-data:
@@ -1573,6 +1407,38 @@ paths:
       responses:
         '200': { description: File stream }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  # ── Translate (bilingual auto-fill assist) ──────────────────────────────────
+  # Server-side proxy to Gemini (CLAUDE.md §13, 2026-08-21 exception), same
+  # shape as the onboarding wizard's Nominatim geocode proxy. No write path of
+  # its own — whichever endpoint actually saves the field still enforces I5/I8.
+  /translate:
+    post:
+      tags: [translate]
+      summary: Suggest the other side of a bilingual {en,ar} field pair from the text given. Any admin/employee account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, target]
+              properties:
+                text: { type: string, maxLength: 2000, description: The text already typed in the source language. }
+                target: { type: string, enum: [en, ar], description: The language to translate into. }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  translation: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+        '502': { description: The translation vendor errored or timed out }
+        '503': { description: Translation is not configured on this deployment }
 
   /timeclock/shifts/active:
     get:
@@ -2014,28 +1880,6 @@ components:
         attendeeCount: { type: integer }
         attendeeNames: { type: array, items: { type: string }, description: only present on GET /events/{id} }
         isGoing: { type: boolean }
-
-    TrainingModule:
-      type: object
-      properties:
-        id: { type: integer }
-        title: { $ref: '#/components/schemas/LocalizedText' }
-        body: { $ref: '#/components/schemas/LocalizedText' }
-        createdBy: { type: integer }
-        createdByName: { type: string }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-        completionCount: { type: integer }
-        completedByNames: { type: array, items: { type: string }, description: only present on GET /training/{id} }
-        isComplete: { type: boolean }
-        attachment:
-          nullable: true
-          type: object
-          properties:
-            id: { type: string, format: uuid }
-            originalFilename: { type: string }
-            mimeType: { type: string }
-            sizeBytes: { type: integer }
 
     EmployeeLevel:
       type: object
