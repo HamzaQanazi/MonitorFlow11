@@ -13,32 +13,39 @@ import './AddServiceWizard.css'
 // you submit can pass client-side and fail server-side for a different reason
 // than "you left something blank".
 //
+// Simplification pass (on top of the original UX pass below): field/status/
+// transition machine keys are no longer typed by hand — they're slugified
+// from the English label client-side, the same way services.js already
+// derives a service's own `key` from its name, with a collision suffix loop.
+// Step 4 no longer exposes raw statuses+transitions editors: the admin types
+// steps in the order a request moves through; the first is always is_initial,
+// the last is always is_terminal, and one transition per consecutive pair is
+// derived automatically. An optional "can be rejected/cancelled" toggle adds
+// one extra terminal step reachable from every non-final step, covering the
+// one branch shape most services actually need without exposing a general
+// from/to transition builder. Every derived transition defaults to a
+// `view_all`-gated oversight action (label reused from its destination
+// status, no note required, `notify: ['created_by']`, and the completion
+// form required only on the transition into the final step) — the only
+// per-transition choice left is one checkbox: let the assignee do this step
+// instead. This deliberately drops the ability to build branching/looping
+// workflows (holds, multiple distinct rejection outcomes, requester-gated
+// confirm/dispute steps) or pick a specific non-view_all oversight
+// capability through this wizard — CLAUDE.md's engine still supports all of
+// that, it's just no longer reachable from this simplified builder.
+//
 // UX pass: client-side per-step validation blocks "Next" instead of letting
-// you sail through 5 steps blank and hit a wall of 13 raw validator strings
-// at the end; a 422's errors are classified back to the step (and row, where
+// you sail through 5 steps blank and hit a wall of raw validator strings at
+// the end; a 422's errors are classified back to the step (and row, where
 // the message names one) they came from instead of dumped as one blob on
 // Review; every row input gets a persistent label instead of a placeholder
-// that vanishes once typed; capability/actor/notify controls show friendly
-// text instead of raw snake_case keys.
+// that vanishes once typed.
 
 const FIELD_TYPES = ['text', 'multiline', 'number', 'date', 'dropdown', 'radio', 'checkbox', 'photo', 'location'] as const
 type FieldType = (typeof FIELD_TYPES)[number]
 const OPTION_TYPES = new Set<FieldType>(['dropdown', 'radio'])
 const BOUNDED_TYPES = new Set<FieldType>(['number', 'text', 'multiline'])
 const PRIORITIES = ['low', 'medium', 'high'] as const
-const CAPABILITIES = [
-  'view_all',
-  'assign',
-  'set_priority',
-  'override',
-  'manage_employees',
-  'export',
-  'manage_events',
-  'manage_knowledge_base',
-  'manage_training',
-] as const
-const ACTORS = ['requester', 'assignee'] as const
-const NOTIFY_TARGETS = ['created_by', 'assigned_to', 'assignee_manager'] as const
 
 const STEP_COUNT = 5
 
@@ -55,12 +62,11 @@ interface OptionRow {
   labelEn: string
   labelAr: string
 }
-// `rid` is a stable React list key, separate from `id`/`key` (the actual
-// business identifiers the server validates) — the two are unrelated and
-// conflating them made every row start with a colliding empty React key.
+// `rid` is a stable React list key AND the stable identity a derived
+// machine key/edge id hangs off of — unlike the id/key itself, it never
+// changes when a label is edited or rows are reordered.
 interface FieldRow {
   rid: string
-  id: string
   labelEn: string
   labelAr: string
   type: FieldType
@@ -71,26 +77,9 @@ interface FieldRow {
 }
 interface StatusRow {
   rid: string
-  key: string
   labelEn: string
   labelAr: string
-  isInitial: boolean
-  isTerminal: boolean
   slaMinutes: string
-}
-interface TransitionRow {
-  rid: string
-  key: string
-  from: string
-  to: string
-  labelEn: string
-  labelAr: string
-  gate: 'capability' | 'actor'
-  capability: string
-  actor: string
-  requiresCompletionForm: boolean
-  requiresNote: boolean
-  notify: string[]
 }
 
 let ridSeq = 0
@@ -99,26 +88,36 @@ function newRid() {
   return `r${ridSeq}`
 }
 function newFieldRow(): FieldRow {
-  return { rid: newRid(), id: '', labelEn: '', labelAr: '', type: 'text', required: true, options: [], min: '', max: '' }
+  return { rid: newRid(), labelEn: '', labelAr: '', type: 'text', required: true, options: [], min: '', max: '' }
 }
 function newStatusRow(): StatusRow {
-  return { rid: newRid(), key: '', labelEn: '', labelAr: '', isInitial: false, isTerminal: false, slaMinutes: '' }
+  return { rid: newRid(), labelEn: '', labelAr: '', slaMinutes: '' }
 }
-function newTransitionRow(): TransitionRow {
-  return {
-    rid: newRid(),
-    key: '',
-    from: '',
-    to: '',
-    labelEn: '',
-    labelAr: '',
-    gate: 'capability',
-    capability: 'view_all',
-    actor: 'requester',
-    requiresCompletionForm: false,
-    requiresNote: false,
-    notify: [],
-  }
+
+// Mirrors services.js's own `slugify()` (used for the service's `key`) so a
+// field id / status key derived here is built exactly the same way the
+// server already builds one — lowercase, non-alphanumerics collapsed to
+// underscores, trimmed.
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+// Turns a list of English labels into unique machine keys, in order —
+// collisions get a `_2`, `_3`, … suffix, same shape as services.js's
+// key-uniqueness loop. An empty/unslugifiable label falls back to `fallback`
+// (still deduped against its neighbors).
+function deriveIds(labels: string[], fallback: string): string[] {
+  const seen = new Map<string, number>()
+  return labels.map((label) => {
+    const base = slugify(label) || fallback
+    const count = seen.get(base) ?? 0
+    seen.set(base, count + 1)
+    return count === 0 ? base : `${base}_${count + 1}`
+  })
 }
 
 // Client-side mirrors of the server's requirements (formSchema.js /
@@ -129,28 +128,134 @@ function optionValid(o: OptionRow) {
   return !!(o.value.trim() && o.labelEn.trim() && o.labelAr.trim())
 }
 function fieldRowValid(r: FieldRow) {
-  if (!r.id.trim() || !r.labelEn.trim() || !r.labelAr.trim()) return false
+  if (!r.labelEn.trim() || !r.labelAr.trim()) return false
   if (OPTION_TYPES.has(r.type)) return r.options.length > 0 && r.options.every(optionValid)
   return true
 }
 function statusRowValid(r: StatusRow) {
-  return !!(r.key.trim() && r.labelEn.trim() && r.labelAr.trim())
+  return !!(r.labelEn.trim() && r.labelAr.trim())
 }
-function transitionRowValid(r: TransitionRow) {
-  return !!(r.key.trim() && r.from && r.to && r.labelEn.trim() && r.labelAr.trim())
+
+interface Edge {
+  id: string
+  fromKeyIndex: number // index into the derived status-key array, or -1 for the cancel step
+  toKeyIndex: number
+  fromLabelEn: string
+  toLabelEn: string
+  labelEn: string
+  labelAr: string
+  isFirst: boolean
+  requiresCompletion: boolean
+}
+
+// Derives the workflow's statuses + the candidate transition edges from the
+// ordered step list. `edges` still needs edgesToTransitions() (below) to
+// become the actual POST payload — kept separate so the UI can render the
+// edge list (for the one per-edge checkbox) without re-deriving it.
+function buildFlow(statuses: StatusRow[], allowCancel: boolean, cancelLabelEn: string, cancelLabelAr: string) {
+  const n = statuses.length
+  const labels = statuses.map((s) => s.labelEn)
+  if (allowCancel) labels.push(cancelLabelEn || 'Cancelled')
+  const keys = deriveIds(labels, 'status')
+  const statusKeys = keys.slice(0, n)
+  const cancelKey = allowCancel ? keys[n] : null
+
+  const statusSchemas = statuses.map((s, i) => ({
+    key: statusKeys[i],
+    label: { en: s.labelEn, ar: s.labelAr },
+    is_initial: i === 0,
+    is_terminal: i === n - 1,
+    sla_minutes: s.slaMinutes === '' ? null : Number(s.slaMinutes),
+  }))
+  if (allowCancel && cancelKey) {
+    statusSchemas.push({
+      key: cancelKey,
+      label: { en: cancelLabelEn.trim() || 'Cancelled', ar: cancelLabelAr.trim() || 'ملغى' },
+      is_initial: false,
+      is_terminal: true,
+      sla_minutes: null,
+    })
+  }
+
+  const edges: Edge[] = []
+  for (let i = 0; i < n - 1; i++) {
+    edges.push({
+      id: `${statuses[i].rid}->${statuses[i + 1].rid}`,
+      fromKeyIndex: i,
+      toKeyIndex: i + 1,
+      fromLabelEn: statuses[i].labelEn,
+      toLabelEn: statuses[i + 1].labelEn,
+      labelEn: statuses[i + 1].labelEn,
+      labelAr: statuses[i + 1].labelAr,
+      isFirst: i === 0,
+      requiresCompletion: i === n - 2,
+    })
+  }
+  if (allowCancel && cancelKey) {
+    for (let i = 0; i < n - 1; i++) {
+      edges.push({
+        id: `${statuses[i].rid}->cancel`,
+        fromKeyIndex: i,
+        toKeyIndex: -1,
+        fromLabelEn: statuses[i].labelEn,
+        toLabelEn: cancelLabelEn.trim() || 'Cancelled',
+        labelEn: cancelLabelEn.trim() || 'Cancelled',
+        labelAr: cancelLabelAr.trim() || 'ملغى',
+        isFirst: false,
+        requiresCompletion: false,
+      })
+    }
+  }
+
+  return { statusKeys, cancelKey, statusSchemas, edges }
+}
+
+// Every derived transition is view_all-gated oversight by default — the one
+// override is the per-edge "assignee handles this" checkbox. When auto-assign
+// is on, the very first edge is forced to `required_capability: 'assign'`
+// instead (that's the exact transition lib/autoAssign.js looks for) and its
+// checkbox is hidden, so turning auto-assign on can never silently do nothing.
+function edgesToTransitions(
+  edges: Edge[],
+  statusKeys: string[],
+  cancelKey: string | null,
+  autoAssign: boolean,
+  assigneeGated: Record<string, boolean>
+) {
+  const keyOf = (idx: number) => (idx === -1 ? cancelKey! : statusKeys[idx])
+  return edges.map((e) => {
+    const fromKey = keyOf(e.fromKeyIndex)
+    const toKey = keyOf(e.toKeyIndex)
+    const forcedAssign = autoAssign && e.isFirst
+    const gated = !forcedAssign && !!assigneeGated[e.id]
+    return {
+      key: `${fromKey}_to_${toKey}`,
+      from: fromKey,
+      to: toKey,
+      label: { en: e.labelEn, ar: e.labelAr },
+      required_capability: gated ? null : forcedAssign ? 'assign' : 'view_all',
+      actor: gated ? 'assignee' : null,
+      required_form_key: e.requiresCompletion ? 'completion' : null,
+      requires_note: false,
+      notify: ['created_by'],
+    }
+  })
 }
 
 // Classifies the server's flat error-string array back to the step (and,
 // where the message names one, the row index within that step) it came
 // from — every message formSchema.js/workflowSchema.js/services.js can
 // produce has a deterministic prefix (verified against the backend source),
-// so this is a plain prefix match, not string-sniffing guesswork.
+// so this is a plain prefix match, not string-sniffing guesswork. Statuses
+// still map back to a specific Step-4 row; transitions are derived (not
+// hand-built rows anymore) so their errors surface as step-level text only —
+// in practice unreachable, since the derivation can't produce a shape the
+// validator rejects.
 interface ClassifiedErrors {
   byStep: [string[], string[], string[], string[], string[]]
   requestFieldRows: Set<number>
   completionFieldRows: Set<number>
   statusRows: Set<number>
-  transitionRows: Set<number>
 }
 function classifyErrors(errors: string[]): ClassifiedErrors {
   const result: ClassifiedErrors = {
@@ -158,7 +263,6 @@ function classifyErrors(errors: string[]): ClassifiedErrors {
     requestFieldRows: new Set(),
     completionFieldRows: new Set(),
     statusRows: new Set(),
-    transitionRows: new Set(),
   }
   for (const msg of errors) {
     let m: RegExpMatchArray | null
@@ -171,9 +275,8 @@ function classifyErrors(errors: string[]): ClassifiedErrors {
     } else if ((m = msg.match(/^statuses\[(\d+)\]/))) {
       result.byStep[3].push(msg)
       result.statusRows.add(Number(m[1]))
-    } else if ((m = msg.match(/^transitions\[(\d+)\]/))) {
+    } else if (/^transitions\[\d+\]/.test(msg)) {
       result.byStep[3].push(msg)
-      result.transitionRows.add(Number(m[1]))
     } else if (
       msg.startsWith('workflow must have') ||
       msg.startsWith('statuses must be') ||
@@ -209,7 +312,6 @@ export default function AddServiceWizard() {
     requestFields: new Set<number>(),
     completionFields: new Set<number>(),
     statuses: new Set<number>(),
-    transitions: new Set<number>(),
   })
   const [created, setCreated] = useState<{ serviceTypeId: number; key: string } | null>(null)
 
@@ -226,8 +328,11 @@ export default function AddServiceWizard() {
   const [requestFields, setRequestFields] = useState<FieldRow[]>([newFieldRow()])
   const [completionFields, setCompletionFields] = useState<FieldRow[]>([newFieldRow()])
   // Step 4
-  const [statuses, setStatuses] = useState<StatusRow[]>([])
-  const [transitions, setTransitions] = useState<TransitionRow[]>([])
+  const [statuses, setStatuses] = useState<StatusRow[]>([newStatusRow(), newStatusRow()])
+  const [allowCancel, setAllowCancel] = useState(false)
+  const [cancelLabelEn, setCancelLabelEn] = useState('Cancelled')
+  const [cancelLabelAr, setCancelLabelAr] = useState('ملغى')
+  const [assigneeGated, setAssigneeGated] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     Promise.all([
@@ -241,6 +346,19 @@ export default function AddServiceWizard() {
       .catch(() => setLoadError(true))
   }, [])
 
+  const { statusKeys, cancelKey, statusSchemas, edges } = buildFlow(statuses, allowCancel, cancelLabelEn, cancelLabelAr)
+  const transitionSchemas = edgesToTransitions(edges, statusKeys, cancelKey, autoAssign, assigneeGated)
+
+  function moveStatus(i: number, dir: -1 | 1) {
+    setStatuses((prev) => {
+      const j = i + dir
+      if (j < 0 || j >= prev.length) return prev
+      const next = [...prev]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return next
+    })
+  }
+
   function stepValid(s: number): boolean {
     switch (s) {
       case 0:
@@ -251,12 +369,9 @@ export default function AddServiceWizard() {
         return completionFields.length > 0 && completionFields.every(fieldRowValid)
       case 3:
         return (
-          statuses.length > 0 &&
+          statuses.length >= 2 &&
           statuses.every(statusRowValid) &&
-          statuses.filter((st) => st.isInitial).length === 1 &&
-          statuses.some((st) => st.isTerminal) &&
-          transitions.length > 0 &&
-          transitions.every(transitionRowValid)
+          (!allowCancel || (cancelLabelEn.trim() !== '' && cancelLabelAr.trim() !== ''))
         )
       default:
         return true
@@ -267,7 +382,7 @@ export default function AddServiceWizard() {
     setBusy(true)
     setSaveError('')
     setStepErrors([[], [], [], [], []])
-    setErrorRows({ requestFields: new Set(), completionFields: new Set(), statuses: new Set(), transitions: new Set() })
+    setErrorRows({ requestFields: new Set(), completionFields: new Set(), statuses: new Set() })
     try {
       const res = await apiFetch<{ serviceTypeId: number; key: string }>('/services', {
         method: 'POST',
@@ -279,10 +394,10 @@ export default function AddServiceWizard() {
           acceptsEmployeeSubmitters,
           autoAssign,
           ownerId: Number(ownerId),
-          requestFields: requestFields.map(toFieldSchema),
-          completionFields: completionFields.map(toFieldSchema),
-          statuses: statuses.map(toStatusSchema),
-          transitions: transitions.map(toTransitionSchema),
+          requestFields: fieldsToSchema(requestFields),
+          completionFields: fieldsToSchema(completionFields),
+          statuses: statusSchemas,
+          transitions: transitionSchemas,
         },
       })
       setCreated(res)
@@ -296,7 +411,6 @@ export default function AddServiceWizard() {
             requestFields: classified.requestFieldRows,
             completionFields: classified.completionFieldRows,
             statuses: classified.statusRows,
-            transitions: classified.transitionRows,
           })
           setStep(firstErrorStep(classified))
         } else {
@@ -471,39 +585,111 @@ export default function AddServiceWizard() {
               </div>
               <p className="ob-hint">{t('svc_statuses_hint')}</p>
               {statuses.map((s, i) => (
-                <StatusEditor
-                  key={s.rid}
-                  row={s}
-                  hasError={errorRows.statuses.has(i)}
-                  onChange={(next) => setStatuses((prev) => prev.map((r, j) => (j === i ? next : r)))}
-                  onRemove={() => setStatuses((prev) => prev.filter((_, j) => j !== i))}
-                  t={t}
-                />
+                <div key={s.rid} className={`svc-row${errorRows.statuses.has(i) ? ' has-error' : ''}`}>
+                  <div className="svc-row-grid">
+                    <MiniField label={t('svc_field_label_en')}>
+                      <input
+                        value={s.labelEn}
+                        onChange={(e) =>
+                          setStatuses((prev) => prev.map((r, j) => (j === i ? { ...r, labelEn: e.target.value } : r)))
+                        }
+                      />
+                    </MiniField>
+                    <MiniField label={t('svc_field_label_ar')}>
+                      <input
+                        dir="rtl"
+                        value={s.labelAr}
+                        onChange={(e) =>
+                          setStatuses((prev) => prev.map((r, j) => (j === i ? { ...r, labelAr: e.target.value } : r)))
+                        }
+                      />
+                    </MiniField>
+                    <MiniField label={t('svc_sla_minutes')}>
+                      <input
+                        type="number"
+                        value={s.slaMinutes}
+                        onChange={(e) =>
+                          setStatuses((prev) => prev.map((r, j) => (j === i ? { ...r, slaMinutes: e.target.value } : r)))
+                        }
+                      />
+                    </MiniField>
+                    <div className="svc-chain-controls">
+                      <button
+                        type="button"
+                        className="action-btn"
+                        disabled={i === 0}
+                        aria-label={t('svc_move_up')}
+                        onClick={() => moveStatus(i, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="action-btn"
+                        disabled={i === statuses.length - 1}
+                        aria-label={t('svc_move_down')}
+                        onClick={() => moveStatus(i, 1)}
+                      >
+                        ↓
+                      </button>
+                      {statuses.length > 2 && (
+                        <button
+                          type="button"
+                          className="action-btn is-danger"
+                          onClick={() => setStatuses((prev) => prev.filter((_, j) => j !== i))}
+                        >
+                          {t('svc_remove')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {(i === 0 || i === statuses.length - 1) && (
+                    <p className="svc-chain-badge">{i === 0 ? t('svc_badge_initial') : t('svc_badge_terminal')}</p>
+                  )}
+                </div>
               ))}
             </section>
+
             <section className="svc-section">
-              <div className="svc-section-head">
-                <h3>{t('svc_transitions_h')}</h3>
-                <button
-                  type="button"
-                  className="action-btn"
-                  onClick={() => setTransitions((prev) => [...prev, newTransitionRow()])}
-                  disabled={statuses.length < 1}
-                >
-                  {t('svc_add_transition')}
-                </button>
-              </div>
-              <p className="ob-hint">{t('svc_transitions_hint')}</p>
-              {transitions.map((tr, i) => (
-                <TransitionEditor
-                  key={tr.rid}
-                  row={tr}
-                  statuses={statuses}
-                  hasError={errorRows.transitions.has(i)}
-                  onChange={(next) => setTransitions((prev) => prev.map((r, j) => (j === i ? next : r)))}
-                  onRemove={() => setTransitions((prev) => prev.filter((_, j) => j !== i))}
-                  t={t}
-                />
+              <label className="svc-check">
+                <input type="checkbox" checked={allowCancel} onChange={(e) => setAllowCancel(e.target.checked)} />
+                <span>{t('svc_allow_cancel')}</span>
+              </label>
+              {allowCancel && (
+                <div className="svc-row-grid">
+                  <MiniField label={t('svc_field_label_en')}>
+                    <input value={cancelLabelEn} onChange={(e) => setCancelLabelEn(e.target.value)} />
+                  </MiniField>
+                  <MiniField label={t('svc_field_label_ar')}>
+                    <input dir="rtl" value={cancelLabelAr} onChange={(e) => setCancelLabelAr(e.target.value)} />
+                  </MiniField>
+                </div>
+              )}
+            </section>
+
+            <section className="svc-section">
+              <h3>{t('svc_flow_preview_h')}</h3>
+              <p className="ob-hint">{t('svc_flow_preview_hint')}</p>
+              {edges.map((e) => (
+                <div key={e.id} className="svc-row-grid svc-edge-row">
+                  <span className="svc-edge-label">
+                    {e.fromLabelEn || t('svc_untitled')} → {e.toLabelEn || t('svc_untitled')}
+                  </span>
+                  {e.isFirst && autoAssign ? (
+                    <p className="ob-hint">{t('svc_auto_assign_note')}</p>
+                  ) : (
+                    <label className="svc-check">
+                      <input
+                        type="checkbox"
+                        checked={!!assigneeGated[e.id]}
+                        onChange={(ev) =>
+                          setAssigneeGated((prev) => ({ ...prev, [e.id]: ev.target.checked }))
+                        }
+                      />
+                      <span>{t('svc_assignee_handles')}</span>
+                    </label>
+                  )}
+                </div>
               ))}
             </section>
           </>
@@ -513,8 +699,8 @@ export default function AddServiceWizard() {
           <div className="svc-review">
             <h3>{nameEn || t('svc_untitled')}</h3>
             <p>
-              {requestFields.length + completionFields.length} {t('svc_review_fields')} · {statuses.length}{' '}
-              {t('svc_review_statuses')} · {transitions.length} {t('svc_review_transitions')}
+              {requestFields.length + completionFields.length} {t('svc_review_fields')} · {statusSchemas.length}{' '}
+              {t('svc_review_statuses')} · {transitionSchemas.length} {t('svc_review_transitions')}
             </p>
           </div>
         )}
@@ -535,9 +721,13 @@ export default function AddServiceWizard() {
   )
 }
 
-function toFieldSchema(row: FieldRow) {
+function fieldsToSchema(rows: FieldRow[]) {
+  const ids = deriveIds(rows.map((r) => r.labelEn), 'field')
+  return rows.map((row, i) => toFieldSchema(row, ids[i]))
+}
+function toFieldSchema(row: FieldRow, id: string) {
   const base: Record<string, unknown> = {
-    id: row.id.trim(),
+    id,
     label: { en: row.labelEn, ar: row.labelAr },
     type: row.type,
     required: row.required,
@@ -550,28 +740,6 @@ function toFieldSchema(row: FieldRow) {
     if (row.max !== '') base.max = Number(row.max)
   }
   return base
-}
-function toStatusSchema(row: StatusRow) {
-  return {
-    key: row.key.trim(),
-    label: { en: row.labelEn, ar: row.labelAr },
-    is_initial: row.isInitial,
-    is_terminal: row.isTerminal,
-    sla_minutes: row.slaMinutes === '' ? null : Number(row.slaMinutes),
-  }
-}
-function toTransitionSchema(row: TransitionRow) {
-  return {
-    key: row.key.trim(),
-    from: row.from,
-    to: row.to,
-    label: { en: row.labelEn, ar: row.labelAr },
-    required_capability: row.gate === 'capability' ? row.capability : null,
-    actor: row.gate === 'actor' ? row.actor : null,
-    required_form_key: row.requiresCompletionForm ? 'completion' : null,
-    requires_note: row.requiresNote,
-    notify: row.notify,
-  }
 }
 
 // A labeled row cell — the persistent-label equivalent of Step 1's
@@ -612,9 +780,6 @@ function FieldSchemaEditor({
       {rows.map((row, i) => (
         <div key={row.rid} className={`svc-row${errorRows.has(i) ? ' has-error' : ''}`}>
           <div className="svc-row-grid">
-            <MiniField label={t('svc_field_id')}>
-              <input value={row.id} onChange={(e) => update(i, { id: e.target.value })} />
-            </MiniField>
             <MiniField label={t('svc_field_label_en')}>
               <input value={row.labelEn} onChange={(e) => update(i, { labelEn: e.target.value })} />
             </MiniField>
@@ -700,177 +865,5 @@ function FieldSchemaEditor({
         </div>
       ))}
     </section>
-  )
-}
-
-function StatusEditor({
-  row,
-  hasError,
-  onChange,
-  onRemove,
-  t,
-}: {
-  row: StatusRow
-  hasError: boolean
-  onChange: (next: StatusRow) => void
-  onRemove: () => void
-  t: (k: string) => string
-}) {
-  return (
-    <div className={`svc-row${hasError ? ' has-error' : ''}`}>
-      <div className="svc-row-grid">
-        <MiniField label={t('svc_status_key')}>
-          <input value={row.key} onChange={(e) => onChange({ ...row, key: e.target.value })} />
-        </MiniField>
-        <MiniField label={t('svc_field_label_en')}>
-          <input value={row.labelEn} onChange={(e) => onChange({ ...row, labelEn: e.target.value })} />
-        </MiniField>
-        <MiniField label={t('svc_field_label_ar')}>
-          <input dir="rtl" value={row.labelAr} onChange={(e) => onChange({ ...row, labelAr: e.target.value })} />
-        </MiniField>
-        <label className="svc-check">
-          <input type="checkbox" checked={row.isInitial} onChange={(e) => onChange({ ...row, isInitial: e.target.checked })} />
-          <span>{t('svc_is_initial')}</span>
-        </label>
-        <label className="svc-check">
-          <input type="checkbox" checked={row.isTerminal} onChange={(e) => onChange({ ...row, isTerminal: e.target.checked })} />
-          <span>{t('svc_is_terminal')}</span>
-        </label>
-        <MiniField label={t('svc_sla_minutes')}>
-          <input type="number" value={row.slaMinutes} onChange={(e) => onChange({ ...row, slaMinutes: e.target.value })} />
-        </MiniField>
-        <button type="button" className="action-btn is-danger" onClick={onRemove}>
-          {t('svc_remove')}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function TransitionEditor({
-  row,
-  statuses,
-  hasError,
-  onChange,
-  onRemove,
-  t,
-}: {
-  row: TransitionRow
-  statuses: StatusRow[]
-  hasError: boolean
-  onChange: (next: TransitionRow) => void
-  onRemove: () => void
-  t: (k: string) => string
-}) {
-  return (
-    <div className={`svc-row${hasError ? ' has-error' : ''}`}>
-      <div className="svc-row-grid">
-        <MiniField label={t('svc_transition_key')}>
-          <input value={row.key} onChange={(e) => onChange({ ...row, key: e.target.value })} />
-        </MiniField>
-        <MiniField label={t('svc_from')}>
-          <select className="req-select" value={row.from} onChange={(e) => onChange({ ...row, from: e.target.value })}>
-            <option value="">{t('ob_select')}</option>
-            {statuses.map((s) => (
-              <option key={s.rid} value={s.key}>
-                {s.key}
-              </option>
-            ))}
-          </select>
-        </MiniField>
-        <MiniField label={t('svc_to')}>
-          <select className="req-select" value={row.to} onChange={(e) => onChange({ ...row, to: e.target.value })}>
-            <option value="">{t('ob_select')}</option>
-            {statuses.map((s) => (
-              <option key={s.rid} value={s.key}>
-                {s.key}
-              </option>
-            ))}
-          </select>
-        </MiniField>
-        <MiniField label={t('svc_field_label_en')}>
-          <input value={row.labelEn} onChange={(e) => onChange({ ...row, labelEn: e.target.value })} />
-        </MiniField>
-        <MiniField label={t('svc_field_label_ar')}>
-          <input dir="rtl" value={row.labelAr} onChange={(e) => onChange({ ...row, labelAr: e.target.value })} />
-        </MiniField>
-        <button type="button" className="action-btn is-danger" onClick={onRemove}>
-          {t('svc_remove')}
-        </button>
-      </div>
-      <div className="svc-row-grid">
-        <label className="svc-check">
-          <input
-            type="radio"
-            name={`gate-${row.rid}`}
-            checked={row.gate === 'capability'}
-            onChange={() => onChange({ ...row, gate: 'capability' })}
-          />
-          <span>{t('svc_gate_capability')}</span>
-        </label>
-        <select
-          className="req-select"
-          disabled={row.gate !== 'capability'}
-          value={row.capability}
-          onChange={(e) => onChange({ ...row, capability: e.target.value })}
-        >
-          {CAPABILITIES.map((c) => (
-            <option key={c} value={c}>
-              {t(`cap_${c}`)}
-            </option>
-          ))}
-        </select>
-        <label className="svc-check">
-          <input
-            type="radio"
-            name={`gate-${row.rid}`}
-            checked={row.gate === 'actor'}
-            onChange={() => onChange({ ...row, gate: 'actor' })}
-          />
-          <span>{t('svc_gate_actor')}</span>
-        </label>
-        <select className="req-select" disabled={row.gate !== 'actor'} value={row.actor} onChange={(e) => onChange({ ...row, actor: e.target.value })}>
-          {ACTORS.map((a) => (
-            <option key={a} value={a}>
-              {t(`actor_${a}`)}
-            </option>
-          ))}
-        </select>
-      </div>
-      <p className="ob-hint">{t('svc_gate_hint')}</p>
-      <div className="svc-row-grid">
-        <label className="svc-check">
-          <input
-            type="checkbox"
-            checked={row.requiresCompletionForm}
-            onChange={(e) => onChange({ ...row, requiresCompletionForm: e.target.checked })}
-          />
-          <span>{t('svc_requires_completion_form')}</span>
-        </label>
-        <label className="svc-check">
-          <input type="checkbox" checked={row.requiresNote} onChange={(e) => onChange({ ...row, requiresNote: e.target.checked })} />
-          <span>{t('svc_requires_note')}</span>
-        </label>
-      </div>
-      <p className="ob-hint">{t('svc_transition_flags_hint')}</p>
-      <div className="svc-row-grid">
-        {NOTIFY_TARGETS.map((target) => (
-          <label key={target} className="svc-check">
-            <input
-              type="checkbox"
-              checked={row.notify.includes(target)}
-              onChange={(e) =>
-                onChange({
-                  ...row,
-                  notify: e.target.checked ? [...row.notify, target] : row.notify.filter((n) => n !== target),
-                })
-              }
-            />
-            <span>{t(`notify_${target}`)}</span>
-          </label>
-        ))}
-      </div>
-      <p className="ob-hint">{t('svc_notify_hint')}</p>
-    </div>
   )
 }

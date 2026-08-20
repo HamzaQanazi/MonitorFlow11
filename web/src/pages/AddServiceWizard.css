@@ -134,3 +134,33 @@
   padding-block-start: 16px;
   border-block-start: 1px solid var(--border);
 }
+
+.svc-chain-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.svc-chain-badge {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber-600);
+}
+
+.svc-edge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.svc-edge-row .ob-hint {
+  margin: 0;
+}
+
+.svc-edge-label {
+  font-size: 14px;
+  font-weight: 600;
+}
