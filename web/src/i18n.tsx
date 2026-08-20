@@ -901,6 +901,86 @@ const dict: Record<string, Loc> = {
   field_type_checkbox: { en: 'Checkbox', ar: 'مربع اختيار' },
   field_type_photo: { en: 'Photo', ar: 'صورة' },
   field_type_location: { en: 'Location', ar: 'الموقع' },
+
+  // landing page (public marketing page, /welcome — not part of the console)
+  landing_eyebrow: { en: 'Workforce operations platform', ar: 'منصة عمليات القوى العاملة' },
+  landing_hero_title: {
+    en: 'One console for your team’s requests, schedules, and field work.',
+    ar: 'لوحة واحدة لطلبات فريقك وجداوله وعمله الميداني.',
+  },
+  landing_hero_sub: {
+    en: 'MonitorFlow provisions your company with an Owner account and a one-minute setup wizard — no configuration files, no IT project.',
+    ar: 'يزوّد مونيتر فلو شركتك بحساب مالك ومعالج إعداد يستغرق دقيقة واحدة — دون ملفات إعداد أو مشروع تقني.',
+  },
+  landing_hero_cta: { en: 'Sign in to console', ar: 'تسجيل الدخول إلى وحدة الإشراف' },
+  landing_hero_note: {
+    en: 'Console accounts are provisioned at purchase — there’s no self-registration here.',
+    ar: 'تُنشأ حسابات وحدة الإشراف عند الشراء — لا يوجد تسجيل ذاتي هنا.',
+  },
+
+  landing_how_title: { en: 'How it comes online', ar: 'كيف يبدأ العمل' },
+  landing_how_1_title: { en: 'You get an Owner account', ar: 'تحصل على حساب مالك' },
+  landing_how_1_body: {
+    en: 'Provisioned at purchase — one login, ready on day one.',
+    ar: 'يُنشأ عند الشراء — بيانات دخول واحدة، جاهزة من اليوم الأول.',
+  },
+  landing_how_2_title: { en: 'Run the setup wizard', ar: 'شغّل معالج الإعداد' },
+  landing_how_2_body: {
+    en: 'Company info, branches, and the feature modules you want — about a minute.',
+    ar: 'معلومات الشركة والفروع والميزات التي تريدها — بحدود دقيقة واحدة.',
+  },
+  landing_how_3_title: { en: 'Your team is live', ar: 'فريقك جاهز للعمل' },
+  landing_how_3_body: {
+    en: 'Add employees and the console and mobile apps are ready to use.',
+    ar: 'أضف الموظفين، وتصبح وحدة الإشراف وتطبيقات الجوال جاهزة للاستخدام.',
+  },
+
+  landing_features_title: { en: 'Feature modules', ar: 'الميزات' },
+  landing_features_sub: {
+    en: 'Turn on only what your team needs — the same modules for every industry.',
+    ar: 'فعّل ما يحتاجه فريقك فقط — الميزات ذاتها لكل مجال عمل.',
+  },
+  landing_feat_timeclock_desc: { en: 'Clock in/out, breaks, timesheet approval.', ar: 'تسجيل الحضور والانصراف والاستراحات واعتماد الجداول.' },
+  landing_feat_schedule_desc: { en: 'Shift templates and the weekly roster.', ar: 'قوالب الورديات والجدول الأسبوعي.' },
+  landing_feat_checklists_desc: { en: 'Recurring checklists and submission stats.', ar: 'قوائم متكررة وإحصاءات الإرسال.' },
+  landing_feat_directory_desc: { en: 'A company-wide staff directory.', ar: 'دليل موظفين على مستوى الشركة.' },
+  landing_feat_kb_desc: { en: 'Shared articles for how things get done.', ar: 'مقالات مشتركة لطريقة إنجاز العمل.' },
+  landing_feat_events_desc: { en: 'A company calendar with RSVP.', ar: 'تقويم للشركة مع تأكيد الحضور.' },
+  landing_feat_training_desc: { en: 'Onboarding modules staff complete themselves.', ar: 'وحدات تأهيل يُكملها الموظفون بأنفسهم.' },
+
+  landing_engine_title: { en: 'Built on one configurable engine', ar: 'مبني على محرك واحد قابل للتهيئة' },
+  landing_engine_sub: {
+    en: 'Nothing is hardcoded per industry — every service, form, and workflow is data, not code.',
+    ar: 'لا شيء مخصّص لمجال عمل بعينه — كل خدمة ونموذج وسير عمل هو بيانات، لا برمجة.',
+  },
+  landing_engine_1_title: { en: 'Dynamic forms', ar: 'نماذج ديناميكية' },
+  landing_engine_1_body: { en: 'Any request or completion form renders from a stored schema.', ar: 'يُعرض أي نموذج طلب أو إنجاز من مخطط مُخزَّن.' },
+  landing_engine_2_title: { en: 'Dynamic workflows', ar: 'سير عمل ديناميكي' },
+  landing_engine_2_body: { en: 'Statuses and transitions are configured, not coded, per service.', ar: 'تُهيَّأ الحالات والانتقالات، ولا تُبرمَج، لكل خدمة.' },
+  landing_engine_3_title: { en: 'Two-gate permissions', ar: 'صلاحيات بوابتين' },
+  landing_engine_3_body: { en: 'What an employee can do, and who they can do it to — both checked, every time.', ar: 'ما يستطيع الموظف فعله، ولمن يستطيع فعله — كلاهما يُتحقّق منه في كل مرة.' },
+
+  landing_bilingual_title: { en: 'Arabic and English, both first-class', ar: 'العربية والإنجليزية، كلتاهما بالدرجة الأولى' },
+  landing_bilingual_body: {
+    en: 'Every screen works right-to-left and left-to-right — try it.',
+    ar: 'تعمل كل شاشة من اليمين إلى اليسار ومن اليسار إلى اليمين — جرّب ذلك.',
+  },
+  landing_bilingual_toggle: { en: 'Switch to Arabic', ar: 'التبديل إلى الإنجليزية' },
+
+  landing_footer_cta_title: { en: 'Already have an account?', ar: 'هل لديك حساب بالفعل؟' },
+  landing_footer_cta_body: { en: 'Sign in to your company’s console.', ar: 'سجّل الدخول إلى وحدة إشراف شركتك.' },
+
+  // landing page — plans (mirrors backend/src/lib/onboardingOptions.js's
+  // PLANS/FEATURE_GROUPS; record-only, no real prices — §13 bans billing).
+  landing_plans_title: { en: 'Pick a starting point', ar: 'اختر نقطة بداية' },
+  landing_plans_sub: {
+    en: 'Set during onboarding, and changeable later by contacting support.',
+    ar: 'يُحدَّد أثناء الإعداد، ويمكن تغييره لاحقًا بالتواصل مع الدعم.',
+  },
+  landing_plan_starter: { en: 'Starter', ar: 'أساسي' },
+  landing_plan_growth: { en: 'Growth', ar: 'نمو' },
+  landing_plan_enterprise: { en: 'Enterprise', ar: 'مؤسسات' },
+  landing_group_hr_skills: { en: 'HR & Skills', ar: 'الموارد البشرية والمهارات' },
 }
 
 type Ctx = {

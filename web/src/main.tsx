@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import { I18nProvider } from './i18n'
 import RequireAuth from './components/RequireAuth'
 import LoginPage from './pages/LoginPage'
+import LandingPage from './pages/LandingPage'
 import OnboardingWizard from './pages/OnboardingWizard'
 import DashboardShell from './pages/DashboardShell'
 import DashboardPage from './pages/DashboardPage'
@@ -113,6 +114,7 @@ createRoot(document.getElementById('root')!).render(
       <I18nProvider>
       <AuthProvider>
         <Routes>
+          <Route path="/welcome" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route
             path="/"
