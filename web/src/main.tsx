@@ -17,10 +17,8 @@ import ReportsPage from './pages/ReportsPage'
 import TimeClockPage from './pages/TimeClockPage'
 import SchedulePage from './pages/SchedulePage'
 import ChecklistsPage from './pages/ChecklistsPage'
-import DirectoryPage from './pages/DirectoryPage'
 import KnowledgeBasePage from './pages/KnowledgeBasePage'
 import EventsPage from './pages/EventsPage'
-import TrainingPage from './pages/TrainingPage'
 import LevelsPage from './pages/LevelsPage'
 import AuditPage from './pages/AuditPage'
 import AddServiceWizard from './pages/AddServiceWizard'
@@ -34,24 +32,23 @@ import AddServiceWizard from './pages/AddServiceWizard'
 // Dashboard and Employees. Everywhere else stays capability-only.
 // `need` takes an array where the backend also accepts more than one
 // capability (requireCapabilityOrAdmin('view_all', 'manage_X')) — the module
-// pages (knowledge base, events, training) so a level holding only that
-// module's capability, not view_all, can still reach its own page.
+// pages (knowledge base, events) so a level holding only that module's
+// capability, not view_all, can still reach its own page.
 type Capability =
-  | 'view_all' | 'manage_employees' | 'manage_knowledge_base' | 'manage_events' | 'manage_training'
+  | 'view_all' | 'manage_employees' | 'manage_knowledge_base' | 'manage_events'
 
 // The first console route each capability grants, most-general first, paired
 // with the feature key that route also needs (null = not feature-gated) —
 // used to send a denied user somewhere they CAN reach instead of bouncing
 // them back to a page they just failed (which would loop for anyone without
-// view_all, e.g. a level holding only manage_training). A candidate whose
-// feature isn't enabled for this company is skipped too, or the loop would
-// just move from "denied by capability" to "denied by feature" instead.
+// view_all, e.g. a level holding only manage_knowledge_base). A candidate
+// whose feature isn't enabled for this company is skipped too, or the loop
+// would just move from "denied by capability" to "denied by feature" instead.
 const HOME_BY_CAPABILITY: [Capability, string, string | null][] = [
   ['view_all', '/', null],
   ['manage_employees', '/employees', null],
   ['manage_knowledge_base', '/knowledge-base', 'knowledge_base'],
   ['manage_events', '/events', 'events'],
-  ['manage_training', '/training', 'training_onboarding'],
 ]
 
 function homeFor(user: { role: string; capabilities: string[]; companyFeatures: string[] }): string {
@@ -62,12 +59,12 @@ function homeFor(user: { role: string; capabilities: string[]; companyFeatures: 
   return hit ? hit[1] : '/'
 }
 
-// Module routes (knowledge base, events, training, time clock, schedule,
-// checklists, directory) also need the onboarding wizard's step-4 feature
-// pick — independent of Gate 1 (need). The server enforces this too
-// (requireFeature, middleware/auth.js); this only keeps the UI from
-// rendering pages that would only show a 403.
-type Feature = 'time_clock' | 'schedule' | 'forms_checklists' | 'directory' | 'knowledge_base' | 'events' | 'training_onboarding'
+// Module routes (knowledge base, events, time clock, schedule, checklists)
+// also need the onboarding wizard's step-4 feature pick — independent of
+// Gate 1 (need). The server enforces this too (requireFeature,
+// middleware/auth.js); this only keeps the UI from rendering pages that
+// would only show a 403.
+type Feature = 'time_clock' | 'schedule' | 'forms_checklists' | 'knowledge_base' | 'events'
 
 // eslint-disable-next-line react-refresh/only-export-components -- entrypoint file, fast refresh doesn't apply
 function Guard({
@@ -135,10 +132,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="timeclock" element={<Guard need="view_all" orAdmin feature="time_clock"><TimeClockPage /></Guard>} />
             <Route path="schedule" element={<Guard need="view_all" orAdmin feature="schedule"><SchedulePage /></Guard>} />
             <Route path="checklists" element={<Guard need="view_all" orAdmin feature="forms_checklists"><ChecklistsPage /></Guard>} />
-            <Route path="directory" element={<Guard need="view_all" orAdmin feature="directory"><DirectoryPage /></Guard>} />
             <Route path="knowledge-base" element={<Guard need={['view_all', 'manage_knowledge_base']} orAdmin feature="knowledge_base"><KnowledgeBasePage /></Guard>} />
             <Route path="events" element={<Guard need={['view_all', 'manage_events']} orAdmin feature="events"><EventsPage /></Guard>} />
-            <Route path="training" element={<Guard need={['view_all', 'manage_training']} orAdmin feature="training_onboarding"><TrainingPage /></Guard>} />
             <Route path="levels" element={<Guard need="admin"><LevelsPage /></Guard>} />
             <Route path="audit" element={<Guard need="admin"><AuditPage /></Guard>} />
             <Route path="services/new" element={<Guard need="admin"><AddServiceWizard /></Guard>} />

@@ -16,10 +16,8 @@ import '../theme.dart';
 import '../widgets/state_chips.dart';
 import '../widgets/states.dart';
 import 'checklists_screen.dart';
-import 'directory_screen.dart';
 import 'events_screen.dart';
 import 'knowledge_base_screen.dart';
-import 'training_screen.dart';
 import 'schedule_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_map_view.dart';
@@ -174,18 +172,12 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             if (features.contains('forms_checklists'))
               item(Icons.checklist_outlined, i18n.tr('cl_title'),
                   const ChecklistsScreen()),
-            if (features.contains('directory'))
-              item(Icons.people_outline, i18n.tr('dir_title'),
-                  const DirectoryScreen()),
             if (features.contains('knowledge_base'))
               item(Icons.menu_book_outlined, i18n.tr('kb_title'),
                   const KnowledgeBaseScreen()),
             if (features.contains('events'))
               item(Icons.event_outlined, i18n.tr('ev_title'),
                   const EventsScreen()),
-            if (features.contains('training_onboarding'))
-              item(Icons.school_outlined, i18n.tr('tr_title'),
-                  const TrainingScreen()),
             const Divider(),
             item(Icons.person_outline, i18n.tr('profile'),
                 const ProfileScreen()),

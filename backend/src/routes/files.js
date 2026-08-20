@@ -73,16 +73,9 @@ async function createFile(req, res, next) {
       if (!rows.length || rows[0].employee_id !== req.user.id) {
         return res.status(404).json({ error: 'Not found' });
       }
-    } else if (
-      req.user.role !== 'user' &&
-      req.user.role !== 'admin' &&
-      // Same write gate as POST/PATCH /training (canWrite there): an employee
-      // authoring training content needs a parentless slot to attach a file
-      // to, same two-step contract as everything else in this file.
-      !(req.user.role === 'employee' && (req.user.capabilities?.has('manage_training') || req.user.capabilities?.has('view_all')))
-    ) {
-      // Parentless uploads: a user's pending request photo, the Owner's
-      // company logo (onboarding step 5), or a training module's attachment.
+    } else if (req.user.role !== 'user' && req.user.role !== 'admin') {
+      // Parentless uploads: a user's pending request photo, or the Owner's
+      // company logo (onboarding step 5).
       return res.status(403).json({ error: 'Forbidden' });
     }
 
@@ -118,9 +111,7 @@ async function createFile(req, res, next) {
 }
 
 // GET /files/{id} — Section 6 download row: user if they own the parent
-// request, employee if assigned to that request's task, monitor any, or (a
-// training attachment) any admin/employee at the owning company — same
-// company-wide read scope as GET /training itself, not Gate 2 subtree.
+// request, employee if assigned to that request's task, monitor any.
 // Everything else is 404 (must-pass #17).
 router.get('/:id', async (req, res, next) => {
   try {
@@ -129,27 +120,23 @@ router.get('/:id', async (req, res, next) => {
       `SELECT f.original_filename, f.mime_type, f.storage_path, f.uploaded_by,
               f.request_id, f.task_id,
               r.user_id AS owner_id, pt.employee_id AS assignee_id,
-              st.owner_id AS service_owner_id,
-              tm.company_id AS training_company_id
+              st.owner_id AS service_owner_id
        FROM file_attachment f
        LEFT JOIN task ft ON ft.id = f.task_id
        LEFT JOIN request r ON r.id = COALESCE(f.request_id, ft.request_id)
        LEFT JOIN task pt ON pt.request_id = r.id
        LEFT JOIN service_type st ON st.id = r.service_type_id
-       LEFT JOIN training_module tm ON tm.attachment_file_id = f.id
        WHERE f.id = $1`,
       [req.params.id]
     );
     const f = rows[0];
     // A pending upload (no parent yet) is visible to its uploader only —
-    // it isn't part of any request/module until something links it.
-    const pending = f && f.request_id === null && f.task_id === null && f.training_company_id === null;
+    // it isn't part of any request until something links it.
+    const pending = f && f.request_id === null && f.task_id === null;
     let allowed = false;
     if (f) {
       if (pending) {
         allowed = f.uploaded_by === req.user.id;
-      } else if (f.training_company_id !== null) {
-        allowed = req.user.role !== 'user' && req.user.company_id === f.training_company_id;
       } else if (req.user.role === 'user') {
         allowed = f.owner_id === req.user.id;
       } else if (isOversight(req.user)) {

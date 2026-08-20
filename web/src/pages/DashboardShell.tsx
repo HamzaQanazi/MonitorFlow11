@@ -25,10 +25,8 @@ const oversightNav: { to: string; labelKey: string; end: boolean; need: string[]
   { to: '/timeclock', labelKey: 'nav_timeclock', end: false, need: ['view_all'], feature: 'time_clock', group: 'operations' },
   { to: '/schedule', labelKey: 'nav_schedule', end: false, need: ['view_all'], feature: 'schedule', group: 'operations' },
   { to: '/checklists', labelKey: 'nav_checklists', end: false, need: ['view_all'], feature: 'forms_checklists', group: 'operations' },
-  { to: '/directory', labelKey: 'nav_directory', end: false, need: ['view_all'], feature: 'directory', group: 'communication' },
   { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, need: ['view_all', 'manage_knowledge_base'], feature: 'knowledge_base', group: 'communication' },
   { to: '/events', labelKey: 'nav_events', end: false, need: ['view_all', 'manage_events'], feature: 'events', group: 'communication' },
-  { to: '/training', labelKey: 'nav_training', end: false, need: ['view_all', 'manage_training'], feature: 'training_onboarding', group: 'communication' },
 ]
 // Owner (admin role) surface. Dashboard + Employees admit the admin via the
 // backend's requireCapabilityOrAdmin (I2: admins hold no capabilities, so this
@@ -43,10 +41,8 @@ const adminNav: { to: string; labelKey: string; end: boolean; feature?: string; 
   { to: '/timeclock', labelKey: 'nav_timeclock', end: false, feature: 'time_clock', group: 'operations' },
   { to: '/schedule', labelKey: 'nav_schedule', end: false, feature: 'schedule', group: 'operations' },
   { to: '/checklists', labelKey: 'nav_checklists', end: false, feature: 'forms_checklists', group: 'operations' },
-  { to: '/directory', labelKey: 'nav_directory', end: false, feature: 'directory', group: 'communication' },
   { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, feature: 'knowledge_base', group: 'communication' },
   { to: '/events', labelKey: 'nav_events', end: false, feature: 'events', group: 'communication' },
-  { to: '/training', labelKey: 'nav_training', end: false, feature: 'training_onboarding', group: 'communication' },
   { to: '/services/new', labelKey: 'nav_add_service', end: false, group: 'setup' },
   { to: '/audit', labelKey: 'nav_audit', end: false, group: 'setup' },
 ]

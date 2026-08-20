@@ -18,10 +18,9 @@ const onboardingRoutes = require('./routes/onboarding');
 const timeClockRoutes = require('./routes/timeclock');
 const scheduleRoutes = require('./routes/schedule');
 const checklistsRoutes = require('./routes/checklists');
-const directoryRoutes = require('./routes/directory');
 const knowledgeBaseRoutes = require('./routes/knowledgeBase');
 const eventRoutes = require('./routes/events');
-const trainingRoutes = require('./routes/training');
+const translateRoutes = require('./routes/translate');
 
 const app = express();
 
@@ -77,10 +76,9 @@ app.use('/api/v1', onboardingRoutes);
 app.use('/api/v1/timeclock', timeClockRoutes);
 app.use('/api/v1/schedule', scheduleRoutes);
 app.use('/api/v1/checklists', checklistsRoutes);
-app.use('/api/v1/directory', directoryRoutes);
 app.use('/api/v1/knowledge-base', knowledgeBaseRoutes);
 app.use('/api/v1/events', eventRoutes);
-app.use('/api/v1/training', trainingRoutes);
+app.use('/api/v1/translate', translateRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 

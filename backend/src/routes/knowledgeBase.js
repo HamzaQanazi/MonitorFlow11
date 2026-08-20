@@ -1,6 +1,6 @@
 // Knowledge Base (communication feature group, onboarding wizard). Flat list
 // of company articles — no categories, no drafts, no versioning. Read is
-// company-wide like /directory (any admin/employee, not gated by a
+// company-wide (any admin/employee, not gated by a
 // capability — an employee reading the KB on mobile has no capabilities at
 // all); writes need admin, view_all, or the narrower manage_knowledge_base
 // (Levels & Capabilities) — a level can author articles without also

@@ -10,10 +10,8 @@ const MODULES = [
   { nameKey: 'nav_timeclock', descKey: 'landing_feat_timeclock_desc' },
   { nameKey: 'nav_schedule', descKey: 'landing_feat_schedule_desc' },
   { nameKey: 'nav_checklists', descKey: 'landing_feat_checklists_desc' },
-  { nameKey: 'nav_directory', descKey: 'landing_feat_directory_desc' },
   { nameKey: 'nav_knowledge_base', descKey: 'landing_feat_kb_desc' },
   { nameKey: 'nav_events', descKey: 'landing_feat_events_desc' },
-  { nameKey: 'nav_training', descKey: 'landing_feat_training_desc' },
 ] as const
 
 const ENGINE_POINTS = [
@@ -87,7 +85,7 @@ export default function LandingPage() {
         <h2>{t('landing_features_title')}</h2>
         <p className="landing-section-sub">{t('landing_features_sub')}</p>
         <div className="landing-shot-frame landing-shot-frame-sm">
-          <img className="landing-shot-img" src="/screenshots/directory.jpg" alt="" />
+          <img className="landing-shot-img" src="/screenshots/dashboard.jpg" alt="" />
         </div>
         <ul className="landing-features">
           {MODULES.map((m) => (

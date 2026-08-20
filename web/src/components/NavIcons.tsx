@@ -79,13 +79,6 @@ const PATHS: Record<string, React.ReactNode> = {
       <polyline points="8.5,13 11,15.5 15.5,10" />
     </>
   ),
-  directory: (
-    <>
-      <rect x="5" y="3.5" width="14" height="17" rx="1.5" />
-      <circle cx="12" cy="10" r="2.3" />
-      <path d="M8.3 16.5c0-2 1.6-3.2 3.7-3.2s3.7 1.2 3.7 3.2" />
-    </>
-  ),
   knowledge_base: (
     <>
       <path d="M12 6.5c-1.8-1.3-4.2-1.8-6.5-1.3v12.5c2.3-.5 4.7 0 6.5 1.3 1.8-1.3 4.2-1.8 6.5-1.3V5.2c-2.3-.5-4.7 0-6.5 1.3Z" />
@@ -96,13 +89,6 @@ const PATHS: Record<string, React.ReactNode> = {
     <>
       <line x1="6" y1="3" x2="6" y2="21" />
       <path d="M6 4.5c3-1.3 5 1.3 8 0v9c-3 1.3-5-1.3-8 0Z" />
-    </>
-  ),
-  training: (
-    <>
-      <path d="M12 5 2.5 9.5 12 14l9.5-4.5Z" />
-      <path d="M6.5 11.5v4.5c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5v-4.5" />
-      <line x1="21.5" y1="9.5" x2="21.5" y2="15.5" />
     </>
   ),
   add_service: (

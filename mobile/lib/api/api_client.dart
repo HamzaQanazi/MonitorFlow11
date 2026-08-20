@@ -102,8 +102,7 @@ class ApiClient {
   }
 
   /// Raw bytes (GET /files/{id}) — the one endpoint that doesn't return JSON,
-  /// so it bypasses _send/_decode. Used for previewing a training module's
-  /// attachment; same auth header, same 401/404 handling.
+  /// so it bypasses _send/_decode. Same auth header, same 401/404 handling.
   Future<List<int>> getBytes(String path) async {
     final uri = Uri.parse('$baseUrl$path');
     final request = http.Request('GET', uri);

@@ -35,14 +35,13 @@ export interface AuthUser {
 // Guard usage) — kept in sync with it by hand since this list is small and
 // changes rarely. A level holding only e.g. manage_knowledge_base (no
 // view_all) still needs to log in to reach its one page (capabilities.js:
-// manage_events/manage_knowledge_base/manage_training exist specifically so a
-// level can author one module without also holding view_all's oversight).
+// manage_events/manage_knowledge_base exist specifically so a level can
+// author one module without also holding view_all's oversight).
 const CONSOLE_CAPABILITIES = [
   'view_all',
   'manage_employees',
   'manage_knowledge_base',
   'manage_events',
-  'manage_training',
 ]
 
 // Who may use the web console: the admin, or an oversight/module-author

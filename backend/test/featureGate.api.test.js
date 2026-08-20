@@ -17,12 +17,12 @@ before(async () => {
 after(() => stopServer());
 
 test('a module not in the company\'s onboarding feature picks refuses everyone, including a fully-capable employee and the admin', async () => {
-  // Directory has no capability requirement at all (any authenticated
-  // employee/admin can read it) — isolates the feature gate as the ONLY
-  // thing that can be refusing this request.
-  const asRoot = await api('GET', '/directory', { token: tokens.root });
+  // Knowledge Base's read side has no capability requirement at all (any
+  // authenticated employee/admin can read it) — isolates the feature gate as
+  // the ONLY thing that can be refusing this request.
+  const asRoot = await api('GET', '/knowledge-base', { token: tokens.root });
   assert.equal(asRoot.status, 403, JSON.stringify(asRoot.body));
-  const asAdmin = await api('GET', '/directory', { token: tokens.admin });
+  const asAdmin = await api('GET', '/knowledge-base', { token: tokens.admin });
   assert.equal(asAdmin.status, 403, JSON.stringify(asAdmin.body));
 });
 
