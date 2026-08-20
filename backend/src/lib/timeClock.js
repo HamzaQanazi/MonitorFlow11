@@ -16,21 +16,38 @@ function validateManualShift({ clockInAt, clockOutAt }) {
   return Object.keys(errors).length ? errors : null;
 }
 
-// Clock-in requires a one-shot device location fix (mandatory, I10-scoped —
-// see 026_time_shift_location.sql's header: this only checks a fix was
-// present, the coordinate itself is discarded, never persisted). Same
-// lat/lng bounds as the dynamic form engine's `location` field type
+// Same lat/lng bounds as the dynamic form engine's `location` field type
 // (validateFormResponse.js) for one consistent contract.
-function validateClockInLocation(location) {
-  if (location === undefined || location === null || typeof location !== 'object') {
-    return { location: 'A device location is required to clock in' };
-  }
+function isValidLatLng(location) {
+  if (!location || typeof location !== 'object') return false;
   const keysOk = Object.keys(location).length === 2 && 'lat' in location && 'lng' in location;
   const latOk = keysOk && typeof location.lat === 'number' && Number.isFinite(location.lat)
     && location.lat >= -90 && location.lat <= 90;
   const lngOk = keysOk && typeof location.lng === 'number' && Number.isFinite(location.lng)
     && location.lng >= -180 && location.lng <= 180;
-  if (!latOk || !lngOk) {
+  return latOk && lngOk;
+}
+
+// Clock-in requires a one-shot device location fix (mandatory, I10-scoped —
+// see 026_time_shift_location.sql's header). The coordinate itself is now
+// also stored (028_time_shift_clock_coordinates.sql) for the manager view.
+function validateClockInLocation(location) {
+  if (location === undefined || location === null || typeof location !== 'object') {
+    return { location: 'A device location is required to clock in' };
+  }
+  if (!isValidLatLng(location)) {
+    return { location: 'location must be {lat, lng} with lat in [-90,90] and lng in [-180,180]' };
+  }
+  return null;
+}
+
+// Clock-out's location is best-effort (028_time_shift_clock_coordinates.sql):
+// unlike clock-in, a missing/failed device fix never blocks the action — a
+// field employee without a signal can still clock out. Only the shape gets
+// checked when a location IS provided; absent/null just means "not captured".
+function validateOptionalLocation(location) {
+  if (location === undefined || location === null) return null;
+  if (!isValidLatLng(location)) {
     return { location: 'location must be {lat, lng} with lat in [-90,90] and lng in [-180,180]' };
   }
   return null;
@@ -114,4 +131,11 @@ function computeTimesheetDay({ shifts, defaultShift, now = new Date() }) {
   };
 }
 
-module.exports = { validateManualShift, validateClockInLocation, computeAttendance, computeTimesheetDay, round2 };
+module.exports = {
+  validateManualShift,
+  validateClockInLocation,
+  validateOptionalLocation,
+  computeAttendance,
+  computeTimesheetDay,
+  round2,
+};

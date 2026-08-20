@@ -116,6 +116,32 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
     }
   }
 
+  // Clock-out's location is best-effort — unlike clock-in, a field employee
+  // without a signal (or who denies permission) can still clock out; the
+  // coordinate is simply omitted. A short timeout keeps a slow/failed fix
+  // from blocking the action itself.
+  Future<void> _clockOut() async {
+    Map<String, double>? location;
+    try {
+      if (await Geolocator.isLocationServiceEnabled()) {
+        var permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        if (permission != LocationPermission.denied && permission != LocationPermission.deniedForever) {
+          final pos = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(timeLimit: Duration(seconds: 5)),
+          );
+          location = {'lat': pos.latitude, 'lng': pos.longitude};
+        }
+      }
+    } catch (_) {
+      // Best-effort — any failure just means no location on this clock-out.
+    }
+    if (!mounted) return;
+    await _act('/timeclock/clock-out', body: location != null ? {'location': location} : null);
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
@@ -186,9 +212,7 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
               ),
             const SizedBox(height: 12),
             ElevatedButton.icon(
-              onPressed: _acting || shift.isOnBreak
-                  ? null
-                  : () => _act('/timeclock/clock-out'),
+              onPressed: _acting || shift.isOnBreak ? null : _clockOut,
               icon: const Icon(Icons.logout),
               label: Text(i18n.tr('tc_clock_out')),
             ),

@@ -1590,7 +1590,7 @@ paths:
   /timeclock/clock-in:
     post:
       tags: [timeclock]
-      summary: Start a shift. Requires a one-shot device location fix (validated then discarded — only whether one was captured is stored, I10). 409 if already clocked in (DB-enforced, one active shift per employee).
+      summary: Start a shift. Requires a one-shot device location fix. The coordinate is stored for the manager view (028_time_shift_clock_coordinates.sql, a deliberate I10 re-scope) alongside whether one was captured. 409 if already clocked in (DB-enforced, one active shift per employee).
       requestBody:
         required: true
         content:
@@ -1613,10 +1613,25 @@ paths:
   /timeclock/clock-out:
     post:
       tags: [timeclock]
-      summary: End the caller's active shift. 409 if not clocked in, or an active break isn't ended first.
+      summary: End the caller's active shift. 409 if not clocked in, or an active break isn't ended first. `location` is optional and best-effort (unlike clock-in) — a field employee without a device fix can still clock out; the coordinate is simply null.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                location:
+                  type: object
+                  nullable: true
+                  required: [lat, lng]
+                  properties:
+                    lat: { type: number, minimum: -90, maximum: 90 }
+                    lng: { type: number, minimum: -180, maximum: 180 }
       responses:
         '200': { description: Clocked out, content: { application/json: { schema: { type: object, properties: { shift: { $ref: '#/components/schemas/TimeShift' } } } } } }
         '409': { description: Not clocked in, or an active break is still open }
+        '422': { description: location was provided but out-of-range/malformed }
 
   /timeclock/breaks/start:
     post:
@@ -2248,7 +2263,21 @@ components:
         status: { type: string, enum: [active, completed] }
         approvalStatus: { type: string, enum: [pending, approved, edited] }
         note: { type: string, nullable: true }
-        locationCaptured: { type: boolean, description: Whether a device location fix was captured at clock-in. The coordinate itself is never stored (I10) — false for manual/edited entries, which have no live clock-in moment. }
+        locationCaptured: { type: boolean, description: Whether a device location fix was captured at clock-in — false for manual/edited entries, which have no live clock-in moment. }
+        clockInLocation:
+          type: object
+          nullable: true
+          description: "Coordinate captured at clock-in (028_time_shift_clock_coordinates.sql, deliberate I10 re-scope — manager-visible single point, not a history). Null for manual/edited entries."
+          properties:
+            lat: { type: number, minimum: -90, maximum: 90 }
+            lng: { type: number, minimum: -180, maximum: 180 }
+        clockOutLocation:
+          type: object
+          nullable: true
+          description: "Coordinate captured at clock-out. Best-effort, unlike clock-in — null whenever no device fix was available, not an error."
+          properties:
+            lat: { type: number, minimum: -90, maximum: 90 }
+            lng: { type: number, minimum: -180, maximum: 180 }
         breaks:
           type: array
           items:
@@ -2278,6 +2307,20 @@ components:
         shiftId: { type: integer, nullable: true }
         clockInAt: { type: string, format: date-time, nullable: true }
         clockOutAt: { type: string, format: date-time, nullable: true }
+        clockInLocation:
+          type: object
+          nullable: true
+          description: "See TimeShift.clockInLocation."
+          properties:
+            lat: { type: number, minimum: -90, maximum: 90 }
+            lng: { type: number, minimum: -180, maximum: 180 }
+        clockOutLocation:
+          type: object
+          nullable: true
+          description: "See TimeShift.clockOutLocation (best-effort)."
+          properties:
+            lat: { type: number, minimum: -90, maximum: 90 }
+            lng: { type: number, minimum: -180, maximum: 180 }
         breakStartAt: { type: string, format: date-time, nullable: true, description: "first break of the shift only" }
         breakEndAt: { type: string, format: date-time, nullable: true }
         breakSeconds: { type: integer }
@@ -2314,6 +2357,20 @@ components:
                     id: { type: integer }
                     clockInAt: { type: string, format: date-time }
                     clockOutAt: { type: string, format: date-time, nullable: true }
+                    clockInLocation:
+                      type: object
+                      nullable: true
+                      description: "See TimeShift.clockInLocation."
+                      properties:
+                        lat: { type: number, minimum: -90, maximum: 90 }
+                        lng: { type: number, minimum: -180, maximum: 180 }
+                    clockOutLocation:
+                      type: object
+                      nullable: true
+                      description: "See TimeShift.clockOutLocation (best-effort)."
+                      properties:
+                        lat: { type: number, minimum: -90, maximum: 90 }
+                        lng: { type: number, minimum: -180, maximum: 180 }
                     approvalStatus: { type: string, enum: [pending, approved, edited] }
                     source: { type: string, enum: [clock, manual] }
         weeklyTotalHours: { type: number }

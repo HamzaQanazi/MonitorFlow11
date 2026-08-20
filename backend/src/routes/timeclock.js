@@ -8,7 +8,14 @@ const { requireAuth, requireRole, requireCapabilityOrAdmin, requireFeature } = r
 const { withTx, logAudit } = require('../lib/audit');
 const { subtreeIds, ownerInScope } = require('../lib/scope');
 const { csvCell } = require('../lib/csv');
-const { validateManualShift, validateClockInLocation, computeAttendance, computeTimesheetDay, round2 } = require('../lib/timeClock');
+const {
+  validateManualShift,
+  validateClockInLocation,
+  validateOptionalLocation,
+  computeAttendance,
+  computeTimesheetDay,
+  round2,
+} = require('../lib/timeClock');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -19,11 +26,16 @@ router.use(requireFeature('time_clock'));
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function latLngOrNull(lat, lng) {
+  return lat != null && lng != null ? { lat, lng } : null;
+}
+
 async function loadShiftDetail(shiftId, db = pool) {
   const [shiftRes, breaksRes, entriesRes] = await Promise.all([
     db.query(
       `SELECT id, employee_id, clock_in_at, clock_out_at, source, status,
-              approval_status, note, approved_by, approved_at, created_at, location_captured
+              approval_status, note, approved_by, approved_at, created_at, location_captured,
+              clock_in_lat, clock_in_lng, clock_out_lat, clock_out_lng
        FROM time_shift WHERE id = $1`,
       [shiftId]
     ),
@@ -54,6 +66,12 @@ async function loadShiftDetail(shiftId, db = pool) {
     approvedAt: s.approved_at,
     createdAt: s.created_at,
     locationCaptured: s.location_captured,
+    // Manager-visible clock-in/clock-out coordinates (deliberate re-scope,
+    // 028_time_shift_clock_coordinates.sql) — a single point each, not a
+    // trail. clock-in is always present (mandatory fix); clock-out is
+    // best-effort and null when no fix was captured.
+    clockInLocation: latLngOrNull(s.clock_in_lat, s.clock_in_lng),
+    clockOutLocation: latLngOrNull(s.clock_out_lat, s.clock_out_lng),
     breaks: breaksRes.rows.map((b) => ({ id: b.id, breakStartAt: b.break_start_at, breakEndAt: b.break_end_at })),
     entries: entriesRes.rows.map((e) => ({
       id: e.id,
@@ -98,19 +116,20 @@ router.get('/shifts/active', requireRole('employee'), async (req, res, next) => 
 });
 
 // POST /timeclock/clock-in — { location: { lat, lng } } is mandatory (a
-// one-shot device fix proving presence). The coordinate itself is validated
-// then discarded: only whether it was captured gets stored (I10 — no
-// location history).
+// one-shot device fix proving presence). The coordinate is stored for the
+// manager view (028_time_shift_clock_coordinates.sql) alongside the
+// location_captured flag — still a single point, not a history.
 router.post('/clock-in', requireRole('employee'), async (req, res, next) => {
   try {
-    const errors = validateClockInLocation((req.body || {}).location);
+    const location = (req.body || {}).location;
+    const errors = validateClockInLocation(location);
     if (errors) return res.status(422).json({ errors });
 
     const { rows } = await pool.query(
-      `INSERT INTO time_shift (employee_id, company_id, clock_in_at, source, status, approval_status, location_captured)
-       VALUES ($1, $2, now(), 'clock', 'active', 'approved', true)
+      `INSERT INTO time_shift (employee_id, company_id, clock_in_at, source, status, approval_status, location_captured, clock_in_lat, clock_in_lng)
+       VALUES ($1, $2, now(), 'clock', 'active', 'approved', true, $3, $4)
        RETURNING id`,
-      [req.user.id, req.user.company_id]
+      [req.user.id, req.user.company_id, location.lat, location.lng]
     );
     res.status(201).json({ shift: serialize(await loadShiftDetail(rows[0].id)) });
   } catch (err) {
@@ -119,9 +138,16 @@ router.post('/clock-in', requireRole('employee'), async (req, res, next) => {
   }
 });
 
-// POST /timeclock/clock-out
+// POST /timeclock/clock-out — { location: { lat, lng } } is optional
+// (028_time_shift_clock_coordinates.sql): a field employee without a device
+// fix can always clock out, the coordinate just ends up null. Only the shape
+// is validated when one is provided.
 router.post('/clock-out', requireRole('employee'), async (req, res, next) => {
   try {
+    const location = (req.body || {}).location;
+    const errors = validateOptionalLocation(location);
+    if (errors) return res.status(422).json({ errors });
+
     const active = await pool.query(
       `SELECT id FROM time_shift WHERE employee_id = $1 AND status = 'active'`,
       [req.user.id]
@@ -138,8 +164,8 @@ router.post('/clock-out', requireRole('employee'), async (req, res, next) => {
     }
 
     await pool.query(
-      `UPDATE time_shift SET clock_out_at = now(), status = 'completed' WHERE id = $1`,
-      [shiftId]
+      `UPDATE time_shift SET clock_out_at = now(), status = 'completed', clock_out_lat = $2, clock_out_lng = $3 WHERE id = $1`,
+      [shiftId, location ? location.lat : null, location ? location.lng : null]
     );
     res.json({ shift: serialize(await loadShiftDetail(shiftId)) });
   } catch (err) {
@@ -284,6 +310,7 @@ router.get('/today', requireCapabilityOrAdmin('view_all'), async (req, res, next
       `SELECT u.id AS employee_id, u.name,
               st.start_time AS expected_start_time, st.end_time AS expected_end_time,
               sh.id AS shift_id, sh.clock_in_at, sh.clock_out_at, sh.status, sh.approval_status, sh.source,
+              sh.clock_in_lat, sh.clock_in_lng, sh.clock_out_lat, sh.clock_out_lng,
               COALESCE(brk.break_seconds, 0) AS break_seconds,
               fb.break_start_at, fb.break_end_at
        FROM users u
@@ -328,6 +355,8 @@ router.get('/today', requireCapabilityOrAdmin('view_all'), async (req, res, next
         shiftId: r.shift_id,
         clockInAt: r.clock_in_at,
         clockOutAt: r.clock_out_at,
+        clockInLocation: latLngOrNull(r.clock_in_lat, r.clock_in_lng),
+        clockOutLocation: latLngOrNull(r.clock_out_lat, r.clock_out_lng),
         breakStartAt: r.break_start_at,
         breakEndAt: r.break_end_at,
         breakSeconds: r.break_seconds,
@@ -362,6 +391,7 @@ async function buildTimesheets(weekStart, ids) {
     ),
     pool.query(
       `SELECT s.id, s.employee_id, s.clock_in_at, s.clock_out_at, s.approval_status, s.source,
+              s.clock_in_lat, s.clock_in_lng, s.clock_out_lat, s.clock_out_lng,
               COALESCE(b.break_seconds, 0) AS break_seconds
        FROM time_shift s
        LEFT JOIN LATERAL (
@@ -395,6 +425,8 @@ async function buildTimesheets(weekStart, ids) {
       id: s.id,
       clockInAt: s.clock_in_at,
       clockOutAt: s.clock_out_at,
+      clockInLocation: latLngOrNull(s.clock_in_lat, s.clock_in_lng),
+      clockOutLocation: latLngOrNull(s.clock_out_lat, s.clock_out_lng),
       breakSeconds: s.break_seconds,
       approvalStatus: s.approval_status,
       source: s.source,
@@ -424,6 +456,8 @@ async function buildTimesheets(weekStart, ids) {
           id: s.id,
           clockInAt: s.clockInAt,
           clockOutAt: s.clockOutAt,
+          clockInLocation: s.clockInLocation,
+          clockOutLocation: s.clockOutLocation,
           approvalStatus: s.approvalStatus,
           source: s.source,
         })),

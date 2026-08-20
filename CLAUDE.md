@@ -170,13 +170,26 @@ NO    live GPS, location history, idle time, "what are they doing right now"
 ```
 An ethical, GDPR, and product position: a buyer wants an operations tool, not a
 surveillance tool. Do not add behavioural tracking, even if asked casually.
-**The one deliberate, scoped exception:** Time Clock's `location_captured`
-flag (§6) — a mandatory one-shot device location fix at clock-in, checked
-then immediately discarded, never stored as a coordinate and never a stream.
-A presence check at a single moment the employee themselves triggers, not
-tracking. Any future feature that wants to *store* or *compare* a
-coordinate (geofencing, "was this shift on-site") is a new decision, not a
-natural extension of this one — flag it the same way before building it.
+**Two deliberate, scoped exceptions, both Time Clock:**
+- `location_captured` (§6) — a mandatory one-shot device location fix at
+  clock-in, checked then discarded if unused. A presence check at a single
+  moment the employee themselves triggers, not tracking.
+- **Re-scoped 2026-08-20 (deliberate):** clock-in and clock-out now also
+  store the coordinate itself (`clock_in_lat/lng`, `clock_out_lat/lng` —
+  `028_time_shift_clock_coordinates.sql`), visible to the shift's in-charge
+  manager (web Time Clock page, both the Today tab and the Timesheets day
+  dialog — `LocationPin`). Still a **single point per event, not a
+  stream**: no location-history table, no polling, and critically **no
+  geofencing/proximity check anywhere** — an employee is never blocked from
+  clocking in/out based on *where* they are. Clock-in's fix stays
+  **mandatory** (unchanged); clock-out's is **best-effort** — a field
+  employee with no signal or who denies permission still clocks out, the
+  coordinate is just `null`. No manager-approval/exemption workflow exists
+  for this — that idea was explicitly considered and deferred.
+
+Any *other* future feature that wants to *compare* a coordinate (e.g. "was
+this shift on-site") is still a new decision, not a natural extension of
+either exception above — flag it the same way before building it.
 
 ---
 
@@ -404,13 +417,16 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
   note, approved_by/approved_at, **location_captured** (bool, default false —
   a `clock` source shift requires the mobile app to obtain a one-shot device
   location fix before `POST /timeclock/clock-in` will accept it,
-  `lib/timeClock.js` `validateClockInLocation`; the coordinate is validated
-  then discarded — **no lat/lng column exists here, deliberately** — this
-  flag is the only trace it leaves. A `manual`/edited entry has no live
-  clock-in moment, so it's always false. This is a presence *check*, not
-  tracking: one point-in-time fixed at the moment the employee acts, never a
-  stream, never a history table — I10 stays intact). At most one `active`
-  shift per employee (DB-enforced unique index, not app locking).
+  `lib/timeClock.js` `validateClockInLocation`. A `manual`/edited entry has
+  no live clock-in moment, so it's always false), **clock_in_lat/lng,
+  clock_out_lat/lng** (nullable double precision,
+  `028_time_shift_clock_coordinates.sql` — the manager-visible coordinate
+  for each event, §2 I10's second exception. clock-in's pair is always set
+  when `location_captured` is true; clock-out's is best-effort and often
+  null). Each pair is one point fixed at the moment the employee acts, never
+  a stream, never a history table, never compared to anything — I10 stays
+  intact. At most one `active` shift per employee (DB-enforced unique
+  index, not app locking).
   **time_break** — shift_id (FK),
   break_start_at, break_end_at (nullable, at most one active per shift).
   **time_entry** — shift_id (FK), type (`note`/`photo`/`tip`), body, amount,

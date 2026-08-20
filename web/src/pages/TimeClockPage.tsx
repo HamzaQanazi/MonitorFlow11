@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError, getToken } from '../lib/api'
 import { useI18n } from '../i18n'
+import LocationPin from '../components/LocationPin'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './TimeClockPage.css'
@@ -63,12 +64,18 @@ export default function TimeClockPage() {
 
 // ---- Today ----
 
+interface LatLng {
+  lat: number
+  lng: number
+}
 interface TodayEmployee {
   employeeId: number
   name: string
   shiftId: number | null
   clockInAt: string | null
   clockOutAt: string | null
+  clockInLocation: LatLng | null
+  clockOutLocation: LatLng | null
   breakStartAt: string | null
   breakEndAt: string | null
   totalHours: number | null
@@ -240,8 +247,18 @@ function TodayView() {
                   {visible.map((e) => (
                     <tr key={e.employeeId}>
                       <td className="req-service">{e.name}</td>
-                      <td className={e.lateClockIn ? 'tc-late' : undefined}>{fmtTime(e.clockInAt)}</td>
-                      <td className={e.lateClockOut ? 'tc-late' : undefined}>{fmtTime(e.clockOutAt)}</td>
+                      <td className={e.lateClockIn ? 'tc-late' : undefined}>
+                        {fmtTime(e.clockInAt)}
+                        {e.clockInLocation && (
+                          <LocationPin location={e.clockInLocation} title={`${e.name} · ${t('tc_location_clock_in_h')}`} />
+                        )}
+                      </td>
+                      <td className={e.lateClockOut ? 'tc-late' : undefined}>
+                        {fmtTime(e.clockOutAt)}
+                        {e.clockOutLocation && (
+                          <LocationPin location={e.clockOutLocation} title={`${e.name} · ${t('tc_location_clock_out_h')}`} />
+                        )}
+                      </td>
                       <td>{fmtTime(e.breakStartAt)}</td>
                       <td>{fmtTime(e.breakEndAt)}</td>
                       <td>{fmtHours(e.totalHours, t)}</td>
@@ -279,6 +296,8 @@ interface DayShift {
   id: number
   clockInAt: string
   clockOutAt: string | null
+  clockInLocation: LatLng | null
+  clockOutLocation: LatLng | null
   approvalStatus: 'pending' | 'approved' | 'edited'
   source: 'clock' | 'manual'
 }
@@ -593,7 +612,15 @@ function DayShiftsDialog({
                 <>
                   <div className="tc-shift-info">
                     <span>
-                      {fmtTime(s.clockInAt)} – {fmtTime(s.clockOutAt)}
+                      {fmtTime(s.clockInAt)}
+                      {s.clockInLocation && (
+                        <LocationPin location={s.clockInLocation} title={`${title} · ${t('tc_location_clock_in_h')}`} />
+                      )}
+                      {' – '}
+                      {fmtTime(s.clockOutAt)}
+                      {s.clockOutLocation && (
+                        <LocationPin location={s.clockOutLocation} title={`${title} · ${t('tc_location_clock_out_h')}`} />
+                      )}
                     </span>
                     <span className="tc-muted">{t(s.source === 'manual' ? 'tc_source_manual' : 'tc_source_clock')}</span>
                     <span className={`status-pill is-${s.approvalStatus === 'pending' ? 'closed' : 'open'}`}>

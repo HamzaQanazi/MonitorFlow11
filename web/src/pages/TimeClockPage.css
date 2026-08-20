@@ -158,3 +158,38 @@
   gap: 10px;
   width: 100%;
 }
+
+.tc-location-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 22px;
+  block-size: 22px;
+  padding: 0;
+  margin-inline-start: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.tc-location-btn .map-pin {
+  width: 14px;
+  height: 14px;
+}
+
+.tc-location-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.tc-location-map {
+  height: min(50vh, 360px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.tc-location-map .leaflet-container {
+  width: 100%;
+  height: 100%;
+}
