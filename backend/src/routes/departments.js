@@ -8,6 +8,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
 const { isBilingual } = require('../lib/i18nLabel');
 const { reassignDepartmentHead } = require('../lib/departmentHead');
+const { ancestorIds } = require('../lib/scope');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -106,6 +107,18 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
     if (badMembers) errors.memberEmployeeIds = 'Invalid or inactive employee(s)';
     if (await invalidBranchId(branchId, req.user.company_id)) errors.branchId = 'Invalid branch';
     if (Object.keys(errors).length) return res.status(422).json({ errors });
+
+    // Same cycle risk as reassignDepartmentHead (2026-08-21 incident): every
+    // member is about to get manager_id = headEmployeeId, which is a cycle if
+    // any of them is currently an ancestor of the head (e.g. picking the
+    // head's own manager as a "member" by mistake).
+    const headAncestors = new Set(await ancestorIds(headEmployeeId));
+    const cyclicMember = memberEmployeeIds.find((id) => headAncestors.has(id));
+    if (cyclicMember) {
+      return res.status(422).json({
+        errors: { memberEmployeeIds: `Employee ${cyclicMember} manages the chosen head — would create a reporting cycle` },
+      });
+    }
 
     const created = await withTx(async (tx) => {
       const { rows } = await tx.query(

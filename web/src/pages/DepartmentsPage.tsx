@@ -454,10 +454,11 @@ function ReassignHeadDialog({
   onClose: () => void
   onDone: () => void
 }) {
-  const { t } = useI18n()
+  const { t, L } = useI18n()
   const [headId, setHeadId] = useState(department.headUserId ? String(department.headUserId) : '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [confirmingMove, setConfirmingMove] = useState(false)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -465,8 +466,15 @@ function ReassignHeadDialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
+  // Same silent-move risk DepartmentForm's create flow was fixed for
+  // (2026-08-21): PATCH /departments/{id}/head always runs with
+  // moveIntoDepartment: true, so picking someone from a different department
+  // pulls them out of it — this dialog never warned about that.
+  const newHead = employees.find((emp) => String(emp.id) === headId)
+  const movingFromOtherDept =
+    newHead != null && newHead.departmentId != null && newHead.departmentId !== department.id ? newHead : null
+
+  async function doReassign() {
     setBusy(true)
     setError(null)
     try {
@@ -478,7 +486,43 @@ function ReassignHeadDialog({
     } catch (err) {
       setError((err as Error).message)
       setBusy(false)
+      setConfirmingMove(false)
     }
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (movingFromOtherDept && !confirmingMove) {
+      setConfirmingMove(true)
+      return
+    }
+    doReassign()
+  }
+
+  if (confirmingMove && movingFromOtherDept) {
+    return (
+      <div className="dialog-backdrop" onClick={onClose}>
+        <div className="dialog" onClick={(e) => e.stopPropagation()}>
+          <h4>{t('dept_move_confirm_h')}</h4>
+          <p className="req-status-msg">{t('dept_move_confirm_p')}</p>
+          <ul className="dept-move-list">
+            <li>
+              {movingFromOtherDept.name} —{' '}
+              {movingFromOtherDept.departmentName ? L(movingFromOtherDept.departmentName) : ''}
+            </li>
+          </ul>
+          {error && <p className="assign-error">{error}</p>}
+          <div className="dialog-actions">
+            <button type="button" className="detail-close-text" onClick={() => setConfirmingMove(false)} disabled={busy}>
+              {t('dept_move_back')}
+            </button>
+            <button type="button" className="req-retry" onClick={doReassign} disabled={busy}>
+              {busy ? t('tc_saving') : t('dept_move_confirm_btn')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -493,6 +537,9 @@ function ReassignHeadDialog({
             {employees.map((emp) => (
               <option key={emp.id} value={emp.id}>
                 {emp.name}
+                {emp.departmentId != null && emp.departmentId !== department.id && emp.departmentName
+                  ? ` — ${t('dept_currently_in')} ${L(emp.departmentName)}`
+                  : ''}
               </option>
             ))}
           </select>

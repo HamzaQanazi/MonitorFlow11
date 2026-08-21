@@ -66,6 +66,7 @@ function publicEmployee(r) {
     branchName: r.branch_name,
     levelId: r.level_id,
     levelName: r.level_name,
+    managerId: r.manager_id,
   };
 }
 
@@ -76,12 +77,15 @@ function publicEmployee(r) {
 // company, so their "sub" CTE is every user rather than a recursive walk.
 async function loadEmployee(id, actor) {
   if (!Number.isInteger(id)) return null;
+  // path guards against a manager_id cycle in the data — see scope.js.
   const sub = actor.role === 'admin'
     ? 'WITH sub AS (SELECT id FROM users)'
     : `WITH RECURSIVE sub AS (
-         SELECT id FROM users WHERE id = $2
+         SELECT id, ARRAY[id] AS path FROM users WHERE id = $2
          UNION ALL
-         SELECT u.id FROM users u JOIN sub ON u.manager_id = sub.id
+         SELECT u.id, sub.path || u.id
+         FROM users u JOIN sub ON u.manager_id = sub.id
+         WHERE NOT u.id = ANY(sub.path)
        )`;
   const { rows } = await pool.query(
     `${sub}
@@ -172,6 +176,7 @@ router.get('/', async (req, res, next) => {
     if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) bad.push('pageSize');
     if (q.departmentId !== undefined && !Number.isInteger(Number(q.departmentId))) bad.push('departmentId');
     if (q.workerType !== undefined && !WORKER_TYPES.has(q.workerType)) bad.push('workerType');
+    if (q.isActive !== undefined && !['true', 'false'].includes(q.isActive)) bad.push('isActive');
     if (bad.length) return res.status(400).json({ error: `Invalid query params: ${bad.join(', ')}` });
 
     const where = ["u.role = 'employee'"];
@@ -187,6 +192,11 @@ router.get('/', async (req, res, next) => {
     add('u.id <> ?', req.user.id);
     if (q.departmentId !== undefined) add('u.department_id = ?', Number(q.departmentId));
     if (q.workerType !== undefined) add('u.worker_type = ?', q.workerType);
+    // Unset = both, unchanged default (other callers — e.g. ReportsPage's
+    // employee filter — rely on seeing inactive rows too, just labelled).
+    // EmployeesPage is the one caller that defaults its own UI to
+    // isActive=true, so deactivated staff don't clutter the normal view.
+    if (q.isActive !== undefined) add('u.is_active = ?', q.isActive === 'true');
     if (q.q) add('(u.name ILIKE ? OR u.email ILIKE ?)', `%${q.q}%`);
 
     params.push(pageSize, (page - 1) * pageSize);
@@ -197,7 +207,7 @@ router.get('/', async (req, res, next) => {
       `SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
               u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type, u.weekly_rest_day,
               u.department_id, d.name AS department_name, d.branch_id, b.name AS branch_name,
-              u.level_id, l.name AS level_name,
+              u.level_id, l.name AS level_name, u.manager_id,
               (SELECT COUNT(*)::int
                FROM task t
                JOIN request r ON r.id = t.request_id
@@ -260,6 +270,7 @@ router.get('/', async (req, res, next) => {
         branchName: r.branch_name,
         levelId: r.level_id,
         levelName: r.level_name,
+        managerId: r.manager_id,
         openTaskCount: r.open_task_count,
         avgResolutionMinutes: r.avg_resolution_minutes,
       })),
@@ -534,7 +545,8 @@ router.patch('/:id', async (req, res, next) => {
     const emp = await loadEmployee(Number(req.params.id), req.user);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
-    const { name, phone, birthdate, gender, workerType, departmentId, levelId, weeklyRestDay } = req.body || {};
+    const { name, phone, birthdate, gender, workerType, departmentId, levelId, weeklyRestDay, managerId } =
+      req.body || {};
     const errors = {};
     if (name !== undefined && (typeof name !== 'string' || !name.trim())) errors.name = 'Name cannot be empty';
     if (phone !== undefined && (typeof phone !== 'string' || !phone.trim())) errors.phone = 'Phone is required';
@@ -575,6 +587,34 @@ router.patch('/:id', async (req, res, next) => {
       }
     }
 
+    // Reassigning one person's manager, same Gate-2 sensitivity as
+    // reassignDepartmentHead (admin-only, same cycle risk — see the
+    // 2026-08-21 incident note there). Unlike a department reassignment this
+    // moves exactly one person, not the whole department, so it's checked
+    // against their own subtree rather than departmentHead.js's shared
+    // helper: a cycle here is the new manager currently being this
+    // employee's own descendant.
+    let applyManagerId = false;
+    let resolvedManagerId = null;
+    if (req.user.role === 'admin' && managerId !== undefined) {
+      applyManagerId = true;
+      if (managerId !== null) {
+        if (!Number.isInteger(managerId)) {
+          return res.status(422).json({ errors: { managerId: 'Invalid manager' } });
+        }
+        const { rows: mgrRows } = await pool.query(
+          "SELECT 1 FROM users WHERE id = $1 AND role = 'employee' AND is_active = TRUE",
+          [managerId]
+        );
+        if (!mgrRows.length) return res.status(422).json({ errors: { managerId: 'Invalid or inactive employee' } });
+        const descendants = await subtreeIds(emp.id);
+        if (descendants.includes(managerId)) {
+          return res.status(422).json({ errors: { managerId: 'Would create a reporting cycle' } });
+        }
+        resolvedManagerId = managerId;
+      }
+    }
+
     await withTx(async (tx) => {
       await tx.query(
         `UPDATE users SET
@@ -585,8 +625,9 @@ router.patch('/:id', async (req, res, next) => {
            worker_type = COALESCE($5, worker_type),
            department_id = COALESCE($6, department_id),
            level_id = CASE WHEN $7::boolean THEN $8 ELSE level_id END,
-           weekly_rest_day = CASE WHEN $9::boolean THEN $10 ELSE weekly_rest_day END
-         WHERE id = $11`,
+           weekly_rest_day = CASE WHEN $9::boolean THEN $10 ELSE weekly_rest_day END,
+           manager_id = CASE WHEN $11::boolean THEN $12 ELSE manager_id END
+         WHERE id = $13`,
         [
           name === undefined ? null : name.trim(),
           phone === undefined ? null : phone.trim(),
@@ -598,6 +639,8 @@ router.patch('/:id', async (req, res, next) => {
           resolvedLevelId,
           weeklyRestDay !== undefined,
           weeklyRestDay === undefined ? null : weeklyRestDay,
+          applyManagerId,
+          resolvedManagerId,
           emp.id,
         ]
       );
@@ -610,6 +653,7 @@ router.patch('/:id', async (req, res, next) => {
         ...(departmentId !== undefined ? { departmentId } : {}),
         ...(applyLevelId ? { levelId: resolvedLevelId } : {}),
         ...(weeklyRestDay !== undefined ? { weeklyRestDay } : {}),
+        ...(applyManagerId ? { managerId: resolvedManagerId } : {}),
       });
     });
     res.json({ employee: publicEmployee(await loadEmployee(emp.id, req.user)) });

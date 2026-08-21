@@ -202,3 +202,53 @@ test('hire past the plan employee cap → 409', async () => {
   });
   assert.equal(res.status, 409);
 });
+
+// PATCH /employees/{id} managerId (2026-08-21 addition — previously an
+// employee's manager could only change via a whole-department head
+// reassignment). Same cycle risk/guard as departmentHead.js.
+// field2 and head2 both get deactivated by earlier tests in this file
+// (reassign-then-deactivate, and the deactivated-JWT test), and the plan-cap
+// test right above pads the company to its Starter-plan limit so a fresh
+// hire 409s — reactivating one directly sidesteps both without depending on
+// run order or the seat cap.
+test('admin can move an employee under a new manager', async () => {
+  await query('UPDATE users SET is_active = TRUE WHERE id = $1', [fixtures.employeeIds.field2]);
+  const res = await api('PATCH', `/employees/${fixtures.employeeIds.field1}`, {
+    token: tokens.admin,
+    body: { managerId: fixtures.employeeIds.field2 },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.employee.managerId, fixtures.employeeIds.field2);
+});
+
+test('managerId is admin-only — a non-admin manage_employees holder cannot change it', async () => {
+  await query('UPDATE users SET is_active = TRUE WHERE id = $1', [fixtures.employeeIds.head2]);
+  const res = await api('PATCH', `/employees/${fixtures.employeeIds.field1}`, {
+    token: tokens.root,
+    body: { managerId: fixtures.employeeIds.head2 },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  // Silently ignored, same as levelId for a non-admin caller — stays
+  // whatever the previous test just set (field2), not this new target.
+  assert.equal(res.body.employee.managerId, fixtures.employeeIds.field2);
+});
+
+test('PATCH managerId rejects a reassignment that would create a cycle', async () => {
+  // root manages field1 and field2 (harness fixture). Making root report to
+  // their own report (field1) would be a direct cycle.
+  const res = await api('PATCH', `/employees/${fixtures.employeeIds.root}`, {
+    token: tokens.admin,
+    body: { managerId: fixtures.employeeIds.field1 },
+  });
+  assert.equal(res.status, 422, JSON.stringify(res.body));
+  assert.match(res.body.errors.managerId, /cycle/i);
+});
+
+test('PATCH managerId: null makes the employee a tree root', async () => {
+  const res = await api('PATCH', `/employees/${fixtures.employeeIds.field1}`, {
+    token: tokens.admin,
+    body: { managerId: null },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.employee.managerId, null);
+});

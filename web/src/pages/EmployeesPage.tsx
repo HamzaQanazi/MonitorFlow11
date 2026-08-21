@@ -35,6 +35,7 @@ interface Employee {
   branchName: Loc | null
   levelId: number | null
   levelName: Loc | null
+  managerId: number | null
   // Avg minutes to resolve the requests this employee holds; null = none yet.
   avgResolutionMinutes: number | null
 }
@@ -71,8 +72,11 @@ export default function EmployeesPage() {
   const page = Math.max(1, Number(params.get('page')) || 1)
   const departmentId = params.get('department') ?? ''
   const workerType = params.get('workerType') ?? ''
+  // Unset = 'active' (the default view — deactivated staff don't clutter it),
+  // not GET /employees' own unset-means-both default; 'all' opts back in.
+  const activeFilter = params.get('active') || 'active'
   const q = params.get('q') ?? ''
-  const hasFilters = Boolean(departmentId || workerType || q)
+  const hasFilters = Boolean(departmentId || workerType || activeFilter !== 'active' || q)
 
   const [data, setData] = useState<ListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -118,11 +122,12 @@ export default function EmployeesPage() {
     const qs = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
     if (departmentId) qs.set('departmentId', departmentId)
     if (workerType) qs.set('workerType', workerType)
+    if (activeFilter !== 'all') qs.set('isActive', String(activeFilter === 'active'))
     if (q) qs.set('q', q)
     const res = await apiFetch<ListResponse>(`/employees?${qs.toString()}`)
     setData(res)
     setError(null)
-  }, [page, departmentId, workerType, q])
+  }, [page, departmentId, workerType, activeFilter, q])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- setError fires only in the async catch, not synchronously
@@ -217,6 +222,16 @@ export default function EmployeesPage() {
                 {t(`worker_type_${w}`)}
               </option>
             ))}
+          </select>
+          <select
+            className="req-select"
+            aria-label={t('emp_filter_active')}
+            value={activeFilter}
+            onChange={(e) => setFilter('active', e.target.value === 'active' ? '' : e.target.value)}
+          >
+            <option value="active">{t('emp_active')}</option>
+            <option value="inactive">{t('emp_inactive')}</option>
+            <option value="all">{t('emp_all_statuses')}</option>
           </select>
           {hasFilters && (
             <button type="button" className="req-clear" onClick={clearFilters}>
@@ -438,9 +453,20 @@ function EmployeeForm({
   // and they're a valid manager choice — same rule the department picker's
   // onChange applies, just also covering "never touched the dropdown."
   const initialHead = !isEdit && isAdmin ? departments.find((d) => d.id === initialDeptId)?.headUserId : null
+  // Edit: seed from the employee's current manager. `managers` is the page's
+  // own (filtered/paginated) employee list, so a manager outside the current
+  // filter/page won't appear as an option here — same pre-existing limit as
+  // the create-time picker, not new to this.
   const [managerId, setManagerId] = useState(
-    initialHead != null && managers.some((m) => m.id === initialHead) ? String(initialHead) : ''
+    isEdit
+      ? employee?.managerId != null
+        ? String(employee.managerId)
+        : ''
+      : initialHead != null && managers.some((m) => m.id === initialHead)
+        ? String(initialHead)
+        : ''
   )
+  const managerOptions = managers.filter((m) => m.id !== employee?.id)
   const [levelId, setLevelId] = useState(employee?.levelId ? String(employee.levelId) : '')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
@@ -468,7 +494,9 @@ function EmployeeForm({
             workerType,
             departmentId: Number(depId),
             weeklyRestDay: weeklyRestDay === '' ? null : Number(weeklyRestDay),
-            ...(isAdmin ? { levelId: levelId ? Number(levelId) : null } : {}),
+            ...(isAdmin
+              ? { levelId: levelId ? Number(levelId) : null, managerId: managerId ? Number(managerId) : null }
+              : {}),
           },
         })
         onDone()
@@ -638,12 +666,12 @@ function EmployeeForm({
           </select>
           {errors.departmentId && <em className="field-err">{errors.departmentId}</em>}
         </label>
-        {!isEdit && isAdmin && (
+        {isAdmin && (
           <label className="field">
             <span>{t('emp_manager_optional')}</span>
             <select className="req-select" value={managerId} onChange={(e) => setManagerId(e.target.value)}>
               <option value="">{t('emp_manager_none')}</option>
-              {managers.map((m) => (
+              {managerOptions.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
                 </option>
@@ -664,6 +692,7 @@ function EmployeeForm({
               ))}
             </select>
             {errors.levelId && <em className="field-err">{errors.levelId}</em>}
+            <em className="field-hint">{t('emp_role_warn')}</em>
           </label>
         )}
         {errors._ && <p className="assign-error">{errors._}</p>}

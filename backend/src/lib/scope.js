@@ -6,12 +6,19 @@ const pool = require('../db');
 
 // All user ids in `rootId`'s subtree (inclusive). Accepts a pooled client so it
 // can run inside a transaction (e.g. the workflow engine's row lock).
+// `path` guards against a manager_id cycle in the data: a row is only
+// expanded once its own id hasn't already been visited on this path, so a
+// loop stops instead of recursing forever (2026-08-21 incident — a live
+// 3-cycle in `users.manager_id` OOM-crashed the server on every request that
+// touched it, since UNION ALL alone never terminates on a cycle).
 async function subtreeIds(rootId, db = pool) {
   const { rows } = await db.query(
     `WITH RECURSIVE sub AS (
-       SELECT id FROM users WHERE id = $1
+       SELECT id, ARRAY[id] AS path FROM users WHERE id = $1
        UNION ALL
-       SELECT u.id FROM users u JOIN sub ON u.manager_id = sub.id
+       SELECT u.id, sub.path || u.id
+       FROM users u JOIN sub ON u.manager_id = sub.id
+       WHERE NOT u.id = ANY(sub.path)
      )
      SELECT id FROM sub`,
     [rootId]
@@ -26,14 +33,36 @@ async function ownerInScope(rootId, targetId, db = pool) {
   if (targetId == null) return false;
   const { rows } = await db.query(
     `WITH RECURSIVE sub AS (
-       SELECT id FROM users WHERE id = $1
+       SELECT id, ARRAY[id] AS path FROM users WHERE id = $1
        UNION ALL
-       SELECT u.id FROM users u JOIN sub ON u.manager_id = sub.id
+       SELECT u.id, sub.path || u.id
+       FROM users u JOIN sub ON u.manager_id = sub.id
+       WHERE NOT u.id = ANY(sub.path)
      )
      SELECT 1 FROM sub WHERE id = $2 LIMIT 1`,
     [rootId, targetId]
   );
   return rows.length > 0;
+}
+
+// Ancestors of `id` (inclusive), walking manager_id upward — the reverse
+// direction of subtreeIds. Used to check whether re-pointing a group of
+// users at a new manager would create a cycle (departmentHead.js): it would,
+// iff `id` is already an ancestor of one of the users about to become its
+// reports. Same path guard as subtreeIds.
+async function ancestorIds(id, db = pool) {
+  const { rows } = await db.query(
+    `WITH RECURSIVE anc AS (
+       SELECT id, manager_id, ARRAY[id] AS path FROM users WHERE id = $1
+       UNION ALL
+       SELECT u.id, u.manager_id, anc.path || u.id
+       FROM users u JOIN anc ON u.id = anc.manager_id
+       WHERE NOT u.id = ANY(anc.path)
+     )
+     SELECT id FROM anc`,
+    [id]
+  );
+  return rows.map((r) => r.id);
 }
 
 // Gate 2's "whole company" case: the admin (Owner) has no subtree — they
@@ -49,4 +78,4 @@ async function ownerScopeIds(user, db = pool) {
   return subtreeIds(user.id, db);
 }
 
-module.exports = { subtreeIds, ownerInScope, ownerScopeIds };
+module.exports = { subtreeIds, ownerInScope, ownerScopeIds, ancestorIds };
