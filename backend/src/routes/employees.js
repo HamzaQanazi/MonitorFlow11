@@ -4,6 +4,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
 const pool = require('../db');
 const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
 const { statusOf } = require('../lib/workflowEngine');
@@ -13,6 +14,7 @@ const { allocateEmployeeEmail } = require('../lib/employeeEmail');
 const { PLANS } = require('../lib/onboardingOptions');
 const { reassignDepartmentHead } = require('../lib/departmentHead');
 const { sendMail } = require('../lib/mailer');
+const { csvToObjects } = require('../lib/csv');
 
 // Credential delivery emails (supervisor-directed, CLAUDE.md §13) — best-
 // effort, never awaited in a way that could fail the write that triggered
@@ -96,6 +98,70 @@ async function loadEmployee(id, actor) {
     [id, actor.id]
   );
   return rows[0] || null;
+}
+
+// Single-employee-row creation, shared by POST / (one at a time, the
+// original path) and POST /import (CSV, one row at a time reusing this exact
+// same validation/insert/email logic — the bulk path isn't a second,
+// hand-rolled create). Returns { employee } on success (the loaded row, not
+// yet publicEmployee-mapped — callers do that) or { errors } on a validation/
+// uniqueness/FK failure, never throws for those — only for a genuine
+// unexpected DB error, same as the original single-row code did.
+async function createEmployeeRow(actor, emailDomain, input) {
+  const {
+    firstName, lastName, email, password, phone, birthdate, gender, workerType,
+    weeklyRestDay, departmentId, managerId, levelId,
+  } = input;
+  const errors = {};
+  if (!firstName || typeof firstName !== 'string' || !firstName.trim()) errors.firstName = 'First name is required';
+  if (!lastName || typeof lastName !== 'string' || !lastName.trim()) errors.lastName = 'Last name is required';
+  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.email = 'A valid email is required';
+  }
+  if (!password || typeof password !== 'string' || password.length < 8) {
+    errors.password = 'Password must be at least 8 characters';
+  }
+  if (birthdate !== undefined && birthdate !== null && Number.isNaN(Date.parse(birthdate))) {
+    errors.birthdate = 'Invalid date';
+  }
+  if (gender !== undefined && gender !== null && !GENDERS.has(gender)) errors.gender = 'Invalid gender';
+  if (workerType !== undefined && workerType !== null && !WORKER_TYPES.has(workerType)) {
+    errors.workerType = 'Invalid worker type';
+  }
+  if (weeklyRestDay !== undefined && weeklyRestDay !== null && !isValidWeeklyRestDay(weeklyRestDay)) {
+    errors.weeklyRestDay = 'Must be 0 (Sunday) through 6 (Saturday)';
+  }
+  if (Object.keys(errors).length) return { errors };
+
+  const password_hash = await bcrypt.hash(password, 10);
+  let inserted;
+  try {
+    inserted = await withTx(async (tx) => {
+      const loginIdentifier = await allocateEmployeeEmail(tx, firstName, lastName, emailDomain);
+      const fullName = `${firstName.trim()} ${lastName.trim()}`;
+      const { rows } = await tx.query(
+        `INSERT INTO users (name, first_name, last_name, email, password_hash, role, phone,
+                            birthdate, gender, worker_type, weekly_rest_day, department_id, manager_id, level_id,
+                            login_identifier, company_id)
+         VALUES ($1, $2, $3, $4, $5, 'employee', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         RETURNING id, name, email, phone, is_active, department_id`,
+        [fullName, firstName.trim(), lastName.trim(), email.toLowerCase(), password_hash, phone || null,
+         birthdate || null, gender || null, workerType || null, weeklyRestDay ?? null, departmentId, managerId, levelId,
+         loginIdentifier, actor.company_id]
+      );
+      await logAudit(tx, actor.id, 'employee.created', 'user', rows[0].id, { email: rows[0].email });
+      return rows[0];
+    });
+  } catch (err) {
+    if (err.code === '23505') return { errors: { email: 'Email is already registered' } };
+    if (err.code === '23503') return { errors: { departmentId: 'Invalid department, manager, or level' } };
+    throw err;
+  }
+  const created = await loadEmployee(inserted.id, actor);
+  if (created.email) {
+    await sendCredentialsEmail(created.email, created.first_name || created.name, created.login_identifier, password);
+  }
+  return { employee: created };
 }
 
 // GET /employees?departmentId=&q=
@@ -211,26 +277,7 @@ router.get('/', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const b = req.body || {};
-    const { firstName, lastName, email, password, phone, birthdate, gender, workerType, weeklyRestDay } = b;
     const errors = {};
-    if (!firstName || typeof firstName !== 'string' || !firstName.trim()) errors.firstName = 'First name is required';
-    if (!lastName || typeof lastName !== 'string' || !lastName.trim()) errors.lastName = 'Last name is required';
-    if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errors.email = 'A valid email is required';
-    }
-    if (!password || typeof password !== 'string' || password.length < 8) {
-      errors.password = 'Password must be at least 8 characters';
-    }
-    if (birthdate !== undefined && birthdate !== null && Number.isNaN(Date.parse(birthdate))) {
-      errors.birthdate = 'Invalid date';
-    }
-    if (gender !== undefined && gender !== null && !GENDERS.has(gender)) errors.gender = 'Invalid gender';
-    if (workerType !== undefined && workerType !== null && !WORKER_TYPES.has(workerType)) {
-      errors.workerType = 'Invalid worker type';
-    }
-    if (weeklyRestDay !== undefined && weeklyRestDay !== null && !isValidWeeklyRestDay(weeklyRestDay)) {
-      errors.weeklyRestDay = 'Must be 0 (Sunday) through 6 (Saturday)';
-    }
 
     // Gate 2: an oversight actor's new hire becomes their direct report
     // (manager_id = actor), inheriting the actor's department. The admin has
@@ -260,7 +307,6 @@ router.post('/', async (req, res, next) => {
         levelId = b.levelId;
       }
     }
-
     if (Object.keys(errors).length) return res.status(422).json({ errors });
 
     // The generated login lives on the one company row's email_domain
@@ -270,7 +316,6 @@ router.post('/', async (req, res, next) => {
     if (!co.length || !co[0].email_domain) {
       return res.status(422).json({ errors: { _: 'Company email domain is not set — finish onboarding first' } });
     }
-    const emailDomain = co[0].email_domain;
 
     // Plan seat cap (step 7 of onboarding) — Enterprise's employeeCap is null
     // (unlimited). Counts active employees only; a deactivated one frees a seat.
@@ -287,39 +332,196 @@ router.post('/', async (req, res, next) => {
       }
     }
 
-    const password_hash = await bcrypt.hash(password, 10);
-    let inserted;
-    try {
-      inserted = await withTx(async (tx) => {
-        const loginIdentifier = await allocateEmployeeEmail(tx, firstName, lastName, emailDomain);
-        const fullName = `${firstName.trim()} ${lastName.trim()}`;
-        const { rows } = await tx.query(
-          `INSERT INTO users (name, first_name, last_name, email, password_hash, role, phone,
-                              birthdate, gender, worker_type, weekly_rest_day, department_id, manager_id, level_id,
-                              login_identifier, company_id)
-           VALUES ($1, $2, $3, $4, $5, 'employee', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-           RETURNING id, name, email, phone, is_active, department_id`,
-          [fullName, firstName.trim(), lastName.trim(), email.toLowerCase(), password_hash, phone || null,
-           birthdate || null, gender || null, workerType || null, weeklyRestDay ?? null, departmentId, managerId, levelId,
-           loginIdentifier, req.user.company_id]
-        );
-        await logAudit(tx, req.user.id, 'employee.created', 'user', rows[0].id, { email: rows[0].email });
-        return rows[0];
-      });
-    } catch (err) {
-      if (err.code === '23505') return res.status(422).json({ errors: { email: 'Email is already registered' } });
-      if (err.code === '23503') return res.status(422).json({ errors: { departmentId: 'Invalid department, manager, or level' } });
-      throw err;
-    }
-    const created = await loadEmployee(inserted.id, req.user);
-    if (created.email) {
-      await sendCredentialsEmail(created.email, created.first_name || created.name, created.login_identifier, password);
-    }
-    res.status(201).json({ employee: publicEmployee(created) });
+    const result = await createEmployeeRow(req.user, co[0].email_domain, {
+      firstName: b.firstName, lastName: b.lastName, email: b.email, password: b.password,
+      phone: b.phone, birthdate: b.birthdate, gender: b.gender, workerType: b.workerType,
+      weeklyRestDay: b.weeklyRestDay, departmentId, managerId, levelId,
+    });
+    if (result.errors) return res.status(422).json({ errors: result.errors });
+    res.status(201).json({ employee: publicEmployee(result.employee) });
   } catch (err) {
     next(err);
   }
 });
+
+// GET /employees/import/template — a starter CSV with the exact columns
+// POST /employees/import expects, one filled-in example row. Not itself
+// gated to admin-only fields: department/manager/level only ever get read
+// for an admin caller (see below), so a non-admin importer just leaves them
+// blank — the template shows the full column set either way for simplicity.
+router.get('/import/template', (req, res) => {
+  const csv =
+    'firstName,lastName,email,phone,birthdate,gender,workerType,weeklyRestDay,department,manager,level\n' +
+    'Jane,Doe,jane.doe@example.com,0590000000,1995-03-14,female,full_time,Friday,Field Services,,Staff\n';
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="employees-template.csv"');
+  res.send(csv);
+});
+
+const IMPORT_MAX_BYTES = 2 * 1024 * 1024;
+const IMPORT_MAX_ROWS = 500;
+const importUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: IMPORT_MAX_BYTES } });
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+// A blank cell → null (unset, matches the single-create form). A number
+// string → that number, validated by createEmployeeRow same as the API
+// body would be. A day name → its index. Anything else → NaN, which
+// createEmployeeRow's own isValidWeeklyRestDay check rejects with the
+// normal field error — this never silently swallows a bad value.
+function parseWeeklyRestDayCell(raw) {
+  const v = (raw || '').trim();
+  if (!v) return null;
+  if (/^\d+$/.test(v)) return Number(v);
+  const idx = DAY_NAMES.indexOf(v.toLowerCase());
+  return idx === -1 ? NaN : idx;
+}
+
+// POST /employees/import — CSV, multipart field `file`. Partial success by
+// design (user-confirmed): every row is validated and inserted independently
+// through createEmployeeRow, so one bad row never blocks the good ones —
+// the response lists exactly which rows landed and which didn't, with why.
+// No password column: each row gets a random temp password, same shape as
+// PATCH /:id/reset-password, delivered only by the credentials email (never
+// echoed back in the response) — a spreadsheet is not where passwords belong.
+router.post('/import', (req, res, next) => {
+  importUpload.single('file')(req, res, (err) => {
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(422).json({ errors: { file: 'File exceeds the 2 MB limit' } });
+    }
+    if (err) return next(err);
+    importEmployees(req, res, next);
+  });
+});
+
+async function importEmployees(req, res, next) {
+  try {
+    if (!req.file) return res.status(422).json({ errors: { file: 'A CSV file is required' } });
+    let rows;
+    try {
+      rows = csvToObjects(req.file.buffer.toString('utf8'));
+    } catch {
+      return res.status(422).json({ errors: { file: 'Could not parse the file as CSV' } });
+    }
+    if (!rows.length) return res.status(422).json({ errors: { file: 'The file has no data rows' } });
+    if (rows.length > IMPORT_MAX_ROWS) {
+      return res.status(422).json({ errors: { file: `A single import is limited to ${IMPORT_MAX_ROWS} rows` } });
+    }
+
+    const { rows: co } = await pool.query('SELECT id, plan, email_domain FROM company LIMIT 1');
+    if (!co.length || !co[0].email_domain) {
+      return res.status(422).json({ errors: { _: 'Company email domain is not set — finish onboarding first' } });
+    }
+    const planDef = PLANS.find((p) => p.key === co[0].plan);
+    let activeCount = null;
+    if (planDef && planDef.employeeCap != null) {
+      const { rows: countRows } = await pool.query(
+        "SELECT count(*)::int AS n FROM users WHERE role = 'employee' AND company_id = $1 AND is_active = true",
+        [co[0].id]
+      );
+      activeCount = countRows[0].n;
+    }
+
+    // Department/manager/level columns only mean anything for an admin
+    // caller (same restriction POST / already applies — a non-admin's hire
+    // always lands in their own department, under themselves). Resolved
+    // once here, not per row: a subtree-sized company's department/level
+    // catalogue and employee list are small, and re-querying per CSV row
+    // would be wasteful for a 500-row file.
+    const isAdmin = req.user.role === 'admin';
+    const departmentsByName = new Map();
+    const levelsByName = new Map();
+    const employeesByHandle = new Map();
+    if (isAdmin) {
+      const { rows: depts } = await pool.query('SELECT id, name FROM department');
+      for (const d of depts) {
+        if (d.name.en) departmentsByName.set(d.name.en.toLowerCase(), d.id);
+        if (d.name.ar) departmentsByName.set(d.name.ar.toLowerCase(), d.id);
+      }
+      const { rows: levels } = await pool.query('SELECT id, name FROM employee_level');
+      for (const l of levels) {
+        if (l.name.en) levelsByName.set(l.name.en.toLowerCase(), l.id);
+        if (l.name.ar) levelsByName.set(l.name.ar.toLowerCase(), l.id);
+      }
+      const { rows: emps } = await pool.query(
+        "SELECT id, login_identifier, email FROM users WHERE role = 'employee' AND company_id = $1",
+        [req.user.company_id]
+      );
+      for (const e of emps) {
+        employeesByHandle.set(e.login_identifier.toLowerCase(), e.id);
+        if (e.email) employeesByHandle.set(e.email.toLowerCase(), e.id);
+      }
+    }
+
+    const created = [];
+    const failed = [];
+    for (let idx = 0; idx < rows.length; idx++) {
+      const rowNum = idx + 2; // header is row 1
+      const r = rows[idx];
+      const rowErrors = {};
+
+      let departmentId = req.user.department_id;
+      let managerId = req.user.id;
+      let levelId = null;
+      if (isAdmin) {
+        const deptName = (r.department || '').toLowerCase();
+        if (!deptName) rowErrors.department = 'Department is required';
+        else if (!departmentsByName.has(deptName)) rowErrors.department = `Department "${r.department}" not found`;
+        else departmentId = departmentsByName.get(deptName);
+
+        managerId = null;
+        const managerHandle = (r.manager || '').toLowerCase();
+        if (managerHandle) {
+          if (!employeesByHandle.has(managerHandle)) rowErrors.manager = `Manager "${r.manager}" not found`;
+          else managerId = employeesByHandle.get(managerHandle);
+        }
+
+        const levelName = (r.level || '').toLowerCase();
+        if (levelName) {
+          if (!levelsByName.has(levelName)) rowErrors.level = `Level "${r.level}" not found`;
+          else levelId = levelsByName.get(levelName);
+        }
+      }
+      if (Object.keys(rowErrors).length) {
+        failed.push({ row: rowNum, errors: rowErrors });
+        continue;
+      }
+
+      if (activeCount !== null && activeCount >= planDef.employeeCap) {
+        failed.push({
+          row: rowNum,
+          errors: { _: `Employee limit reached for the ${planDef.name.en} plan (${planDef.employeeCap})` },
+        });
+        continue;
+      }
+
+      const password = `Temp-${crypto.randomBytes(6).toString('base64url')}`;
+      const result = await createEmployeeRow(req.user, co[0].email_domain, {
+        firstName: r.firstname, lastName: r.lastname, email: r.email, password,
+        phone: r.phone || null,
+        birthdate: r.birthdate || null,
+        gender: r.gender || null,
+        workerType: r.workertype || null,
+        weeklyRestDay: parseWeeklyRestDayCell(r.weeklyrestday),
+        departmentId, managerId, levelId,
+      });
+      if (result.errors) {
+        failed.push({ row: rowNum, errors: result.errors });
+        continue;
+      }
+      const emp = publicEmployee(result.employee);
+      created.push({ row: rowNum, employee: emp });
+      if (activeCount !== null) activeCount++;
+      // A manager referenced before their own row, or a sibling created
+      // earlier in this same file, is now resolvable for later rows too.
+      employeesByHandle.set(emp.loginIdentifier.toLowerCase(), emp.id);
+      if (emp.email) employeesByHandle.set(emp.email.toLowerCase(), emp.id);
+    }
+
+    res.json({ totalRows: rows.length, createdCount: created.length, failedCount: failed.length, created, failed });
+  } catch (err) {
+    next(err);
+  }
+}
 
 // PATCH /employees/{id} — edit name / phone / department
 router.patch('/:id', async (req, res, next) => {

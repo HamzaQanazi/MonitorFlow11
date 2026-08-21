@@ -726,6 +726,7 @@ paths:
                 birthdate: { type: string, format: date, nullable: true }
                 gender: { type: string, nullable: true }
                 workerType: { type: string, nullable: true }
+                weeklyRestDay: { type: integer, nullable: true, minimum: 0, maximum: 6 }
                 departmentId: { type: integer, description: required when the caller is the admin }
                 managerId: { type: integer, nullable: true, description: admin-only; omitted makes the hire a tree root }
                 levelId: { type: integer, nullable: true, description: admin-only }
@@ -741,16 +742,78 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/Validation' }
 
+  /employees/import/template:
+    get:
+      tags: [people]
+      summary: A starter CSV with the exact columns POST /employees/import expects, one example row.
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv: { schema: { type: string } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /employees/import:
+    post:
+      tags: [people]
+      summary: >
+        Bulk hire from a CSV file (multipart, field `file`) — user-confirmed
+        "partial success": every row is validated and inserted independently
+        (reusing exactly the same rules POST /employees applies), so one bad
+        row never blocks the rest of the file. No password column — each row
+        gets a random temp password delivered only by the credentials email
+        (§13), never echoed back here. department/manager/level columns
+        (matched by name, case-insensitive) are read only for an admin
+        caller — a non-admin's imported hires all land in their own
+        department, under themselves, same restriction as POST /employees.
+        Limited to 500 rows / 2 MB per file.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          description: Always 200 once the file itself parses — per-row results carry the actual outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalRows: { type: integer }
+                  createdCount: { type: integer }
+                  failedCount: { type: integer }
+                  created:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        row: { type: integer, description: 1-indexed CSV row, header is row 1 }
+                        employee: { $ref: '#/components/schemas/Employee' }
+                  failed:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        row: { type: integer }
+                        errors: { type: object, additionalProperties: { type: string } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: The file itself is missing, unparseable, empty, or too large/long — no rows were processed }
+
   /employees/{id}:
     patch:
       tags: [people]
       summary: >
-        Edit an employee's name, phone, department, or level. departmentId, if
-        given, must equal the caller's own department (cross-department moves
-        need an org-level actor that does not exist today). levelId is
-        admin-only — silently ignored for any other caller, same as at
-        creation (POST /employees) — and, if given, must reference an
-        existing level; null clears it.
+        Edit an employee's name, phone, department, level, or weekly rest
+        day. departmentId, if given, must equal the caller's own department
+        (cross-department moves need an org-level actor that does not exist
+        today). levelId is admin-only — silently ignored for any other
+        caller, same as at creation (POST /employees) — and, if given, must
+        reference an existing level; null clears it.
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
@@ -763,6 +826,7 @@ paths:
                 phone: { type: string, nullable: true }
                 departmentId: { type: integer }
                 levelId: { type: integer, nullable: true, description: admin-only }
+                weeklyRestDay: { type: integer, nullable: true, minimum: 0, maximum: 6 }
       responses:
         '200':
           description: Updated
@@ -1994,6 +2058,7 @@ components:
         birthdate: { type: string, format: date, nullable: true }
         gender: { type: string, nullable: true, description: machine key, e.g. 'male'/'female' }
         workerType: { type: string, nullable: true, description: machine key, e.g. 'full_time'/'part_time'/'contractor' }
+        weeklyRestDay: { type: integer, nullable: true, minimum: 0, maximum: 6, description: "one fixed day off/week, 0=Sunday..6=Saturday — respected by /schedule/suggest" }
         departmentId: { type: integer, nullable: true }
         departmentName: { $ref: '#/components/schemas/LocalizedText' }
         branchId: { type: integer, nullable: true, description: derived from the employee's department, not settable directly }

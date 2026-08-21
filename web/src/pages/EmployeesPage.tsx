@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { apiFetch, ApiError } from '../lib/api'
+import { apiFetch, ApiError, getToken } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n, type Loc } from '../i18n'
 import { formatDuration } from '../lib/format'
@@ -85,6 +85,7 @@ export default function EmployeesPage() {
     | { kind: 'deactivate'; employee: Employee }
     | { kind: 'reset'; employee: Employee }
     | { kind: 'summary'; employee: Employee }
+    | { kind: 'import' }
     | null
   >(null)
 
@@ -168,9 +169,14 @@ export default function EmployeesPage() {
             {hasFilters && ` ${t('matching')}`}
           </p>
         )}
-        <button type="button" className="req-retry emp-add" onClick={() => setDialog({ kind: 'create' })}>
-          {t('emp_add')}
-        </button>
+        <div className="emp-head-actions">
+          <button type="button" className="req-retry emp-add" onClick={() => setDialog({ kind: 'import' })}>
+            {t('emp_import')}
+          </button>
+          <button type="button" className="req-retry emp-add" onClick={() => setDialog({ kind: 'create' })}>
+            {t('emp_add')}
+          </button>
+        </div>
       </header>
 
       <div className="req-filters">
@@ -357,6 +363,9 @@ export default function EmployeesPage() {
       )}
       {dialog?.kind === 'summary' && (
         <EmployeeSummaryDialog employee={dialog.employee} onClose={() => setDialog(null)} />
+      )}
+      {dialog?.kind === 'import' && (
+        <ImportEmployeesDialog onClose={() => setDialog(null)} onDone={onDone} />
       )}
     </div>
   )
@@ -840,6 +849,149 @@ function EmployeeSummaryDialog({ employee, onClose }: { employee: Employee; onCl
             {t('close')}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Bulk hire from CSV (user-confirmed "partial success" — a bad row never
+// blocks the good ones). Uses raw fetch, same as ReportsPage's CSV export:
+// the Authorization header can't ride a plain <a href> download, and a
+// multipart upload isn't apiFetch's JSON-only shape either.
+interface ImportRowResult {
+  row: number
+  employee?: Employee
+  errors?: Record<string, string>
+}
+interface ImportResponse {
+  totalRows: number
+  createdCount: number
+  failedCount: number
+  created: ImportRowResult[]
+  failed: ImportRowResult[]
+}
+
+function ImportEmployeesDialog({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { t } = useI18n()
+  const [file, setFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<ImportResponse | null>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  async function downloadTemplate() {
+    const res = await fetch('/api/v1/employees/import/template', {
+      headers: { Authorization: `Bearer ${getToken() ?? ''}` },
+    })
+    if (!res.ok) return
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'employees-template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function submit() {
+    if (!file) return
+    setBusy(true)
+    setError(null)
+    try {
+      const form = new FormData()
+      form.set('file', file)
+      const res = await fetch('/api/v1/employees/import', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken() ?? ''}` },
+        body: form,
+      })
+      const body = (await res.json()) as ImportResponse | { error?: string; errors?: Record<string, string> }
+      if (!res.ok) {
+        const errs = (body as { errors?: Record<string, string> }).errors
+        throw new Error((errs && Object.values(errs)[0]) || (body as { error?: string }).error || `Import failed (${res.status})`)
+      }
+      setResult(body as ImportResponse)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="dialog-backdrop" onClick={onClose}>
+      <div className="dialog emp-import-dialog" onClick={(e) => e.stopPropagation()}>
+        <h4>{t('emp_import_h')}</h4>
+
+        {!result ? (
+          <>
+            <p className="req-status-msg">{t('emp_import_intro')}</p>
+            <button type="button" className="detail-close-text emp-import-template-btn" onClick={downloadTemplate}>
+              {t('emp_import_download_template')}
+            </button>
+
+            {error && <p className="assign-error">{error}</p>}
+
+            <label className="field">
+              <span>{file ? file.name : t('emp_import_no_file')}</span>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                disabled={busy}
+              />
+            </label>
+            <em className="field-hint">{t('emp_import_passwords_note')}</em>
+
+            <div className="dialog-actions">
+              <button type="button" className="detail-close-text" onClick={onClose} disabled={busy}>
+                {t('cancel')}
+              </button>
+              <button type="button" className="req-retry" onClick={submit} disabled={busy || !file}>
+                {busy ? t('emp_import_importing') : t('emp_import_submit')}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="req-status-msg">
+              {result.createdCount} {t('emp_import_result_summary')}
+              {result.failedCount} {t('emp_import_result_failed')}
+            </p>
+            {result.failed.length > 0 && (
+              <div className="req-tablewrap emp-import-results">
+                <table className="req-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">{t('emp_import_row')}</th>
+                      <th scope="col">{t('col_email')}</th>
+                      <th scope="col">{t('col_actions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.failed.map((f) => (
+                      <tr key={f.row}>
+                        <td>{f.row}</td>
+                        <td>{f.employee?.email ?? ''}</td>
+                        <td className="field-err">{Object.values(f.errors ?? {}).join(' · ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="dialog-actions">
+              <button type="button" className="req-retry" onClick={onDone}>
+                {t('emp_import_done')}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

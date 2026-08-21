@@ -892,11 +892,42 @@ mail delivery fails).
   Universal Links) that doesn't exist anywhere in this app yet. Revisit only
   if the browser hand-off turns out to be an actual usability complaint.
 
+**Added 2026-08-21, same session: bulk employee import from CSV.** User-
+requested — hiring one at a time doesn't scale for a company onboarding a
+large existing team. `POST /employees/import` (`routes/employees.js`,
+multipart, field `file`, ≤500 rows/2 MB) and `GET /employees/import/template`
+(a starter CSV). Deliberately **CSV, not real `.xlsx`**: parsing Excel's
+binary format needs a new dependency, CSV needs none, and Excel opens/saves
+CSV natively — `lib/csv.js` is a small hand-rolled RFC4180-ish parser (no
+library), unit-tested directly (no DB/server). No password column — each
+row gets a random temp password (same shape as `PATCH
+/employees/{id}/reset-password`) delivered only through the credentials
+email above, never echoed back in the response or written to disk. Every
+row is validated and inserted independently through `createEmployeeRow` —
+the exact same function `POST /employees` itself now calls, refactored out
+so bulk isn't a second, hand-rolled create path — so a bad row's 422-style
+errors are reported per-row without touching the good ones.
+**User-confirmed: partial success, not all-or-nothing** — the response
+always lists both `created` and `failed` (each keyed by CSV row number,
+header = row 1), and the plan's seat cap is enforced as a running counter
+across the file, not just once up front, so a batch that would cross the
+cap partway through fails only the rows that would exceed it. Only an admin
+caller gets `department`/`manager`/`level` CSV columns resolved (matched by
+name, case-insensitive, against the company's own catalogue) — a non-admin
+importer's hires all land in their own department under themselves, same
+restriction `POST /employees` already applies; a later row can name an
+earlier row's new hire as its manager, since the freshly created id is
+registered into the lookup as the loop goes. Web: `emp_import` button on
+`EmployeesPage.tsx` opens a dialog (download template → pick file → submit
+→ a results table of failed rows only, since the good ones are already
+visible in the list once it reloads).
+
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
 `audit_event`) · **bilingual auto-fill** (Gemini, above) · **AI auto-assign
 ranking** (§5) · **AI-suggested scheduling** (above) · **self-service
-password reset + credentials-by-email** (above). GPS tracking stays
+password reset + credentials-by-email** (above) · **bulk employee import
+from CSV** (above). GPS tracking stays
 out (I10).
 
 ---
@@ -931,7 +962,10 @@ before done → 409 · cross-subtree assign → refused · override to nonexiste
 status → 422 · download another user's file → 404 · user submit to internal-only
 service → 403 · hire past the plan's employee cap → 409 · clock-in with
 missing/out-of-range location → 422 · forgot-password on a real vs. fake
-identifier → identical response · expired/reused/unknown reset token → 422.
+identifier → identical response · expired/reused/unknown reset token → 422 ·
+CSV import: a bad row alongside good ones → good ones created, bad one
+reported, neither blocks the other · unknown department/manager/level name
+in a row → that row only fails · import row count over the limit → 422.
 
 ---
 
