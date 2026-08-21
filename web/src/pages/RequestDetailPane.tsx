@@ -458,8 +458,17 @@ export default function RequestDetailPane({
                       title: `${t('detail_move_pre')} #${detail.id} ${t('detail_to')} “${labelOf(tr.to)}”?`,
                       confirmLabel: L(tr.label),
                       danger,
+                      // Fires through the transition table (its own
+                      // required_capability, requires_note, required_form_key),
+                      // not the /status override — override always demands the
+                      // `override` capability regardless of what this
+                      // transition was actually authored with, and silently
+                      // skips required_form_key entirely.
                       run: (n) =>
-                        apiFetch(`/requests/${id}/status`, { method: 'PATCH', body: { to: tr.to, note: n } }),
+                        apiFetch(`/requests/${id}/transitions`, {
+                          method: 'POST',
+                          body: { transition_key: tr.key, note: n, expected_status: detail.status.key },
+                        }),
                     })
                   }
                 >
