@@ -89,3 +89,16 @@ test('malformed email domain → 422', async () => {
   assert.equal(res.status, 422);
   assert.ok(res.body.errors.emailDomain);
 });
+
+// A deployment with no feature modules has no Time Clock, Schedule,
+// Checklists, Knowledge Base or Events at all (requireFeature blocks every
+// module route), and clicking straight past the wizard's feature step used to
+// be enough to ship one.
+test('an empty feature list → 422', async () => {
+  const res = await api('PATCH', '/company/onboarding', {
+    token: tokens.admin,
+    body: { ...VALID, features: [] },
+  });
+  assert.equal(res.status, 422);
+  assert.ok(res.body.errors.features, JSON.stringify(res.body));
+});

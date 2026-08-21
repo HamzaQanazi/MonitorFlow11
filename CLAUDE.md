@@ -658,8 +658,10 @@ configures, sits outside the reporting tree, holds no capabilities.
 `admin` whose company is not yet onboarded to the wizard instead of the console;
 `markOnboarded()` drops the gate on save. Other account kinds never see it.
 
-*(Ponytail ceiling: single-org, one-shot onboarding, no re-run/edit UI — changing
-company details later is a direct row update for now.)*
+*(Ponytail ceiling: single-org, and onboarding itself is still one-shot — a
+second `PATCH /company/onboarding` is 409. Changing company details later is
+no longer a direct row update: `GET`/`PATCH /company` + the console's Settings
+page edit the same row after the fact, §15's 2026-08-22 re-scope.)*
 
 ---
 
@@ -975,6 +977,21 @@ optional on purpose — CLAUDE.md's own reasoning above still holds: it's an
 something every hire needs, so requiring it would misfit a simple
 single-schedule company.
 
+**Added 2026-08-22 (same session as the Add Service review): the onboarding
+wizard's feature step now requires at least one module**, on the client and in
+`PATCH /company/onboarding`. An empty `features` array left the deployment with
+no Time Clock, Schedule, Checklists, Knowledge Base or Events at all
+(`requireFeature` blocks every module route), and clicking straight past step 4
+was enough to ship that. The same save now also parks any department with no
+`branch_id` in the first branch the Owner names (`seed.js`'s starter department
+had none and nothing else connected it, so the branches were captured and then
+appeared in no UI), requires the logo to be an **image** (the wordmark renders
+it in an `<img>`, so the general `/files` allowlist's PDFs became a permanent
+broken image), and writes a `company.onboarded` audit row like every other
+config action (§6). The wizard gained a final **review step** before the
+one-shot save, and maps the server's 422 field keys back to the step they came
+from instead of stranding the Owner on the last step under a generic error.
+
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
 `audit_event`) · **bilingual auto-fill** (Gemini, above) · **AI auto-assign
@@ -1030,9 +1047,25 @@ Redundant `TASK.status` (intentional denormalization) · immutable definitions, 
 versioning · reassignment overwrites `employee_id` (history note is the audit) ·
 polling latency · 24h JWT, no refresh/revocation · email enumeration on register ·
 single organization per deployment · temporary passwords not force-changed · no
-automated frontend E2E · onboarding is one-shot with no in-app edit (change company
-details by direct row update, including turning a feature on after the fact —
-there is no re-run/edit UI for the wizard's step-4 picks, §9).
+automated frontend E2E.
+
+**Re-scoped 2026-08-22 (deliberate, user-directed — this was listed here as a
+limitation to state, not fix): company settings are editable after
+onboarding.** The old wording was "onboarding is one-shot with no in-app edit
+(change company details by direct row update, including turning a feature on
+after the fact)". Hand-editing a live database is not something a buyer can
+do, and three of the wizard's answers — the step-4 feature picks, the logo,
+and the branches — were otherwise permanent. `GET /company` + `PATCH /company`
+(`routes/company.js`, admin-only) now edit the same row the wizard writes,
+validated against the same `lib/onboardingOptions.js` catalogue the onboarding
+save uses (I8). Web: `SettingsPage.tsx`, one flat form under a new admin-only
+**Settings** nav item. **Onboarding itself stays one-shot** — `PATCH
+/company/onboarding` still 409s after completion and `onboarding_completed` is
+never touched by the settings path; this edits the row afterwards, it does not
+re-run the wizard. Branches are a full replace (an id renames, no id inserts,
+an omitted id deletes — 409 while a department still points at it), and a plan
+downgrade below the current active headcount is refused with the same limit
+`POST /employees` enforces on hire.
 
 **Corrected 2026-08-04** (this used to be listed here as a limitation — it
 isn't anymore): the onboarding wizard's feature-module selection now *does*

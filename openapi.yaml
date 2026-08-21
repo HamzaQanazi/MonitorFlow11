@@ -309,6 +309,86 @@ paths:
                       country: { type: string }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /company:
+    get:
+      tags: [onboarding]
+      summary: >
+        The company's current settings plus its branch list (each flagged
+        inUse when a department points at it). Owner/admin only. Backs the
+        console's Settings page.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  company: { type: object }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [onboarding]
+      summary: >
+        Edit the company settings after onboarding (Owner/admin only).
+        CLAUDE.md S15 listed "onboarding is one-shot with no in-app edit" as a
+        documented limitation; re-scoped 2026-08-22 by explicit decision, since
+        the documented workaround was hand-editing a live database and three of
+        the wizard's answers (features, logo, branches) were otherwise
+        permanent. Full replace, validated against the same catalogue the
+        onboarding save uses. Onboarding itself stays one-shot: this never
+        touches onboarding_completed, and PATCH /company/onboarding still 409s.
+        Branches are a full replace too - a row with an id renames it, one
+        without inserts, and an omitted id deletes it (409 if a department
+        still points at it). Downgrading to a plan whose employeeCap is below
+        the current active headcount is refused (422), the same limit
+        POST /employees enforces on hire.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, address, ownerJobTitle, phone, employeeRange, industry, subIndustry, emailDomain, plan, features, branches]
+              properties:
+                name: { $ref: '#/components/schemas/LocalizedText' }
+                address: { $ref: '#/components/schemas/LocalizedText' }
+                ownerJobTitle: { $ref: '#/components/schemas/LocalizedText' }
+                phone: { type: string }
+                employeeRange: { type: string }
+                industry: { type: string }
+                subIndustry: { type: string }
+                emailDomain: { type: string, description: affects logins generated from now on; existing rows keep theirs }
+                plan: { type: string }
+                features:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+                logoFileId: { type: string, nullable: true, description: omit to keep the current logo; must be an image }
+                branches:
+                  type: array
+                  minItems: 1
+                  description: same flat {en, ar} the onboarding save takes, plus an optional id
+                  items:
+                    type: object
+                    properties:
+                      id: { type: integer, description: omit to create a new branch }
+                      en: { type: string }
+                      ar: { type: string }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated: { type: boolean }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: A department still belongs to a branch being removed }
+        '422': { $ref: '#/components/responses/Validation' }
+
   /company/onboarding:
     patch:
       tags: [onboarding]
@@ -317,7 +397,12 @@ paths:
         catalogue server-side (I8), writes the single company row + its branches in
         one transaction, then flips onboarding_completed. One-shot — a second call
         after completion is 409. Optional logoFileId is a parentless file_attachment
-        the Owner POSTed to /files first.
+        the Owner POSTed to /files first - it must be an IMAGE (the console
+        wordmark renders it in an <img> via a data URI, so the general /files
+        allowlist's PDFs would be a broken image forever). `features` must name
+        at least one module: an empty set leaves the deployment with no module
+        routes at all. Also parks any department that has no branch yet in the
+        first branch created here, and writes a company.onboarded audit row.
       requestBody:
         required: true
         content:

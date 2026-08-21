@@ -45,6 +45,7 @@ const adminNav: { to: string; labelKey: string; end: boolean; feature?: string; 
   { to: '/events', labelKey: 'nav_events', end: false, feature: 'events', group: 'communication' },
   { to: '/services', labelKey: 'nav_services', end: true, group: 'setup' },
   { to: '/audit', labelKey: 'nav_audit', end: false, group: 'setup' },
+  { to: '/settings', labelKey: 'nav_settings', end: false, group: 'setup' },
 ]
 
 const GROUP_ORDER: NavGroup[] = ['overview', 'people', 'operations', 'communication', 'setup']

@@ -91,6 +91,12 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M6 4.5c3-1.3 5 1.3 8 0v9c-3 1.3-5-1.3-8 0Z" />
     </>
   ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 3.5v2M12 18.5v2M4.9 7.5l1.7 1M17.4 15.5l1.7 1M4.9 16.5l1.7-1M17.4 8.5l1.7-1" />
+    </>
+  ),
   services: (
     <>
       <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />

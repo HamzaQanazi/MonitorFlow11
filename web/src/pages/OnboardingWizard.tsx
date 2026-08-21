@@ -19,7 +19,41 @@ type Options = {
   plans: { key: string; name: Loc; employeeCap: number | null; featureGroups: string[] }[]
 }
 
-const STEP_COUNT = 6
+const STEP_COUNT = 7
+
+// The server keys its 422 errors by payload field; the wizard keys its inputs
+// by step-local names (nameEn/nameAr for one `name`). Without this map a save
+// rejection rendered nowhere at all and left the Owner on the last step under
+// a generic "couldn't save" — the same problem AddServiceWizard's
+// classifyErrors() solves. Each entry is [step index, the client field keys to
+// light up].
+const SERVER_FIELD_MAP: Record<string, [number, string[]]> = {
+  name: [0, ['nameEn', 'nameAr']],
+  address: [0, ['addressEn', 'addressAr']],
+  ownerJobTitle: [0, ['ownerJobTitleEn', 'ownerJobTitleAr']],
+  phone: [0, ['phone']],
+  employeeRange: [1, ['employeeRange']],
+  industry: [1, ['industry']],
+  subIndustry: [1, ['subIndustry']],
+  branches: [2, ['branches']],
+  features: [3, ['features']],
+  emailDomain: [4, ['emailDomain']],
+  logoFileId: [4, ['logoFileId']],
+  plan: [5, ['plan']],
+}
+
+function classifyServerErrors(serverErrors: Record<string, string>): { step: number; errors: Record<string, string> } {
+  const errors: Record<string, string> = {}
+  let step = STEP_COUNT - 1
+  for (const [serverKey, message] of Object.entries(serverErrors)) {
+    const entry = SERVER_FIELD_MAP[serverKey]
+    if (!entry) continue
+    const [stepIndex, clientKeys] = entry
+    for (const k of clientKeys) errors[k] = message
+    step = Math.min(step, stepIndex)
+  }
+  return { step, errors }
+}
 // Step 5's email-domain field — mirrors the backend's validation regex.
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i
 
@@ -74,6 +108,7 @@ export default function OnboardingWizard() {
   const [features, setFeatures] = useState<string[]>([])
   // Step 5
   const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [uploadedLogoId, setUploadedLogoId] = useState<string | null>(null)
   const [emailDomain, setEmailDomain] = useState('')
   // Step 6
   const [plan, setPlan] = useState('')
@@ -152,8 +187,11 @@ export default function OnboardingWizard() {
         if (!b.en.trim()) e[`branch${i}en`] = t('ob_err_required')
         if (!b.ar.trim()) e[`branch${i}ar`] = t('ob_err_required')
       })
+    } else if (s === 3) {
+      if (!features.length) e.features = t('ob_err_pick_feature')
     } else if (s === 4) {
       if (!DOMAIN_RE.test(emailDomain.trim())) e.emailDomain = t('ob_err_domain')
+      if (logoFile && !logoFile.type.startsWith('image/')) e.logoFileId = t('ob_err_logo_type')
     } else if (s === 5) {
       if (!plan) e.plan = t('ob_err_required')
     }
@@ -193,7 +231,14 @@ export default function OnboardingWizard() {
     setBusy(true)
     setSaveError('')
     try {
-      const logoFileId = logoFile ? await uploadLogo(logoFile) : null
+      // Reuse the id from a previous attempt: the upload has to happen before
+      // the save (the save needs its id), so a failed save used to leave a
+      // parentless file behind and every retry added another one.
+      let logoFileId = uploadedLogoId
+      if (logoFile && !logoFileId) {
+        logoFileId = await uploadLogo(logoFile)
+        setUploadedLogoId(logoFileId)
+      }
       const name = { en: nameEn, ar: nameAr }
       await apiFetch('/company/onboarding', {
         method: 'PATCH',
@@ -217,10 +262,17 @@ export default function OnboardingWizard() {
     } catch (err) {
       if (err instanceof ApiError && err.code === 'logo') {
         setSaveError(t('ob_err_logo'))
+      } else if (err instanceof ApiError && err.status === 409) {
+        // Another tab already finished this one-shot save.
+        setSaveError(t('ob_err_already_done'))
       } else {
         if (err instanceof ApiError && err.status === 422) {
           const body = err.body as { errors?: Record<string, string> } | undefined
-          if (body?.errors) setErrors(body.errors)
+          if (body?.errors) {
+            const { step: firstBadStep, errors: mapped } = classifyServerErrors(body.errors)
+            setErrors(mapped)
+            setStep(firstBadStep)
+          }
         }
         setSaveError(t('ob_err_save'))
       }
@@ -260,6 +312,7 @@ export default function OnboardingWizard() {
     'ob_s4_title',
     'ob_s5_title',
     'ob_s7_title',
+    'ob_review_title',
   ]
 
   return (
@@ -347,6 +400,7 @@ export default function OnboardingWizard() {
 
           {step === 2 && (
             <>
+              {errors.branches && <span className="ob-field-error">{errors.branches}</span>}
               <Field label={t('ob_branch_count')}>
                 <input
                   type="number"
@@ -403,6 +457,7 @@ export default function OnboardingWizard() {
           {step === 3 && (
             <>
               <p className="ob-hint">{t('ob_features_hint')}</p>
+              {errors.features && <span className="ob-field-error">{errors.features}</span>}
               {options.featureGroups.map((g) => (
                 <fieldset key={g.key} className="ob-feature-group">
                   <legend>{L(g.label)}</legend>
@@ -419,9 +474,16 @@ export default function OnboardingWizard() {
 
           {step === 4 && (
             <>
-              <Field label={t('ob_logo')}>
+              <Field label={t('ob_logo')} error={errors.logoFileId}>
                 <label className="ob-file">
-                  <input type="file" accept=".jpg,.jpeg,.png,.pdf" onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)} />
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={(e) => {
+                      setLogoFile(e.target.files?.[0] ?? null)
+                      setUploadedLogoId(null)
+                    }}
+                  />
                   <span>{logoFile ? logoFile.name : t('ob_choose_file')}</span>
                 </label>
               </Field>
@@ -466,6 +528,47 @@ export default function OnboardingWizard() {
                 ))}
               </div>
               {errors.plan && <span className="ob-field-error">{errors.plan}</span>}
+            </>
+          )}
+
+          {step === 6 && (
+            <>
+              <p className="ob-hint">{t('ob_review_hint')}</p>
+              <dl className="ob-review">
+                <dt>{t('ob_company_name_en')}</dt>
+                <dd>{nameEn} / {nameAr}</dd>
+                <dt>{t('ob_company_address_en')}</dt>
+                <dd>{addressEn} / {addressAr}</dd>
+                <dt>{t('ob_job_title_en')}</dt>
+                <dd>{ownerJobTitleEn} / {ownerJobTitleAr}</dd>
+                <dt>{t('ob_phone')}</dt>
+                <dd>{phone}</dd>
+                <dt>{t('ob_industry')}</dt>
+                <dd>
+                  {L(options.industries.find((i) => i.key === industry)?.label ?? { en: industry, ar: industry })}
+                  {' · '}
+                  {L(subs.find((sub) => sub.key === subIndustry)?.label ?? { en: subIndustry, ar: subIndustry })}
+                </dd>
+                <dt>{t('ob_employee_count')}</dt>
+                <dd>{employeeRange}</dd>
+                <dt>{t('ob_s3_title')}</dt>
+                <dd>{branchNames.map((b) => b.en).join(', ')}</dd>
+                <dt>{t('ob_s4_title')}</dt>
+                <dd>
+                  {options.featureGroups
+                    .flatMap((g) => g.features)
+                    .filter((f) => features.includes(f.key))
+                    .map((f) => L(f.label))
+                    .join(', ')}
+                </dd>
+                <dt>{t('ob_email_domain')}</dt>
+                <dd>{emailDomain}</dd>
+                <dt>{t('ob_logo')}</dt>
+                <dd>{logoFile ? logoFile.name : '—'}</dd>
+                <dt>{t('ob_s7_title')}</dt>
+                <dd>{L(options.plans.find((p) => p.key === plan)?.name ?? { en: plan, ar: plan })}</dd>
+              </dl>
+              <p className="ob-hint">{t('ob_review_editable')}</p>
             </>
           )}
 

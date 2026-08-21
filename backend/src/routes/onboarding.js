@@ -6,6 +6,7 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { logAudit } = require('../lib/audit');
 const {
   EMPLOYEE_RANGES,
   INDUSTRIES,
@@ -117,6 +118,11 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
 
   const features = Array.isArray(b.features) ? [...new Set(b.features)] : [];
   if (features.some((f) => !FEATURE_KEYS.has(f))) errors.features = 'Unknown feature selected';
+  // At least one module: an empty set leaves the console with no Time Clock,
+  // Schedule, Checklists, Knowledge Base or Events at all (requireFeature
+  // blocks every module route), and clicking straight past step 4 used to be
+  // enough to ship that.
+  else if (!features.length) errors.features = 'Select at least one feature';
 
   if (!PLAN_KEYS.has(b.plan)) errors.plan = 'Select a valid plan';
 
@@ -148,13 +154,21 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
     let logoFileId = null;
     if (b.logoFileId) {
       const { rows: fa } = await client.query(
-        `SELECT id FROM file_attachment
-         WHERE id = $1 AND uploaded_by = $2 AND request_id IS NULL AND task_id IS NULL`,
+        `SELECT id, mime_type FROM file_attachment
+         WHERE id = $1 AND uploaded_by = $2
+           AND request_id IS NULL AND task_id IS NULL AND time_entry_id IS NULL`,
         [b.logoFileId, req.user.id]
       );
       if (!fa.length) {
         await client.query('ROLLBACK');
         return res.status(422).json({ errors: { logoFileId: 'Unknown logo upload' } });
+      }
+      // routes/auth.js inlines this as a data URI into the console wordmark's
+      // <img>, so a PDF (which the general /files allowlist accepts) would
+      // render as a broken image with no way to replace it.
+      if (!/^image\//.test(fa[0].mime_type)) {
+        await client.query('ROLLBACK');
+        return res.status(422).json({ errors: { logoFileId: 'The logo must be a PNG or JPEG image' } });
       }
       logoFileId = fa[0].id;
     }
@@ -171,12 +185,29 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
         features, logoFileId, phone, b.plan, emailDomain, req.user.company_id,
       ]
     );
+    const branchIds = [];
     for (const branchName of branches) {
-      await client.query('INSERT INTO branch (company_id, name) VALUES ($1, $2)', [
-        req.user.company_id,
-        JSON.stringify(branchName),
-      ]);
+      const { rows } = await client.query(
+        'INSERT INTO branch (company_id, name) VALUES ($1, $2) RETURNING id',
+        [req.user.company_id, JSON.stringify(branchName)]
+      );
+      branchIds.push(rows[0].id);
     }
+    // seed.js creates one starter department with no branch_id, and nothing
+    // else connected it — so the branches the Owner just named appeared in no
+    // UI at all until they hand-edited a department. Park any unassigned
+    // department in the first branch; the Departments page can move it.
+    await client.query('UPDATE department SET branch_id = $1 WHERE branch_id IS NULL', [branchIds[0]]);
+
+    // Every other config action writes an audit row (§6); this is the largest
+    // one in the product and wrote none.
+    await logAudit(client, req.user.id, 'company.onboarded', 'company', req.user.company_id, {
+      industry: b.industry,
+      subIndustry: b.subIndustry,
+      plan: b.plan,
+      features,
+      branchCount: branchIds.length,
+    });
     await client.query('COMMIT');
     res.json({ onboardingCompleted: true });
   } catch (err) {

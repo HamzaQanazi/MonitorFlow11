@@ -15,6 +15,7 @@ const departmentRoutes = require('./routes/departments');
 const branchRoutes = require('./routes/branches');
 const reportRoutes = require('./routes/reports');
 const onboardingRoutes = require('./routes/onboarding');
+const companyRoutes = require('./routes/company');
 const timeClockRoutes = require('./routes/timeclock');
 const scheduleRoutes = require('./routes/schedule');
 const checklistsRoutes = require('./routes/checklists');
@@ -73,6 +74,8 @@ app.use('/api/v1/branches', branchRoutes);
 app.use('/api/v1/reports', reportRoutes);
 // Onboarding wizard: GET /onboarding/options + PATCH /company/onboarding.
 app.use('/api/v1', onboardingRoutes);
+// Company settings — editing the same row after onboarding (2026-08-22 §15 re-scope).
+app.use('/api/v1', companyRoutes);
 app.use('/api/v1/timeclock', timeClockRoutes);
 app.use('/api/v1/schedule', scheduleRoutes);
 app.use('/api/v1/checklists', checklistsRoutes);
