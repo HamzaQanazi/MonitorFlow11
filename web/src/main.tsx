@@ -24,6 +24,7 @@ import EventsPage from './pages/EventsPage'
 import LevelsPage from './pages/LevelsPage'
 import AuditPage from './pages/AuditPage'
 import AddServiceWizard from './pages/AddServiceWizard'
+import ServicesPage from './pages/ServicesPage'
 
 // Two-gate routing: oversight employees and the admin share the shell but not
 // the pages. Each page needs a capability (Gate 1) — or the admin kind for the
@@ -140,7 +141,9 @@ createRoot(document.getElementById('root')!).render(
             <Route path="events" element={<Guard need={['view_all', 'manage_events']} orAdmin feature="events"><EventsPage /></Guard>} />
             <Route path="levels" element={<Guard need="admin"><LevelsPage /></Guard>} />
             <Route path="audit" element={<Guard need="admin"><AuditPage /></Guard>} />
+            <Route path="services" element={<Guard need="admin"><ServicesPage /></Guard>} />
             <Route path="services/new" element={<Guard need="admin"><AddServiceWizard /></Guard>} />
+            <Route path="services/:id/edit" element={<Guard need="admin"><AddServiceWizard /></Guard>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

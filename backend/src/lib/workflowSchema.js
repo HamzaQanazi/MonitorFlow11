@@ -146,6 +146,67 @@ function validateWorkflowDefinition({ statuses, transitions }) {
     }
   });
 
+  // Structural soundness — only worth checking once the per-item errors are
+  // clear, since a bad from/to would otherwise report twice.
+  if (!errors.length) {
+    errors.push(...structuralErrors(statuses, transitions, terminalKeys));
+  }
+
+  return errors;
+}
+
+// A definition is immutable once any request exists (§3), so a workflow that
+// can strand a request is permanent damage. Three shapes are always wrong,
+// whoever authored them — the Add Service wizard, seed.js, or a direct call:
+//
+//   • a status nothing can reach — dead config the admin thinks is live;
+//   • a non-terminal status with no way out — a request that lands there can
+//     only be freed by an `override` holder forcing it;
+//   • an assign transition that also demands a form — assignment is not
+//     completion, and the two paths that fire it (PATCH /requests/{id}/assign
+//     and lib/autoAssign.js) have no form to give it.
+//
+// Deliberately NOT checked: "the workflow has an assign transition at all".
+// A self-service flow legitimately has none — seedChecklists.js is exactly
+// that shape (submitted -> logged, fired by the requester, never assigned).
+function structuralErrors(statuses, transitions, terminalKeys) {
+  const errors = [];
+
+  const initial = statuses.find((s) => s.is_initial === true);
+  const outgoing = new Map();
+  for (const tr of transitions) {
+    if (!outgoing.has(tr.from)) outgoing.set(tr.from, []);
+    outgoing.get(tr.from).push(tr.to);
+  }
+
+  const reached = new Set([initial.key]);
+  const queue = [initial.key];
+  while (queue.length) {
+    for (const to of outgoing.get(queue.shift()) || []) {
+      if (!reached.has(to)) {
+        reached.add(to);
+        queue.push(to);
+      }
+    }
+  }
+  for (const s of statuses) {
+    if (!reached.has(s.key)) {
+      errors.push(`statuses "${s.key}": no transition path reaches this status from "${initial.key}"`);
+    }
+  }
+
+  for (const s of statuses) {
+    if (!terminalKeys.has(s.key) && !(outgoing.get(s.key) || []).length) {
+      errors.push(`statuses "${s.key}": is not terminal but has no transition out of it`);
+    }
+  }
+
+  for (const tr of transitions) {
+    if (tr.required_capability === 'assign' && tr.required_form_key) {
+      errors.push(`transitions "${tr.key}": an assign transition cannot also require a form`);
+    }
+  }
+
   return errors;
 }
 

@@ -365,8 +365,17 @@ paths:
   /services:
     get:
       tags: [services]
-      summary: Enabled services the caller may submit to (respects accepts_external_users)
+      summary: Services the caller may submit to (respects accepts_external_users)
       parameters:
+        - name: includeDisabled
+          in: query
+          required: false
+          schema: { type: boolean }
+          description: >
+            Admin-only. Include disabled services in the list. Without it a
+            service switched off via PATCH /services/{id}/enabled disappeared
+            from every list, so nothing could re-enable it. Powers the console's
+            Services page.
         - name: owned
           in: query
           required: false
@@ -438,6 +447,15 @@ paths:
                 transitions:
                   type: array
                   items: { type: object }
+      description: >
+        Beyond the per-item rules, workflowSchema.js rejects three structural
+        shapes outright, because a definition is frozen once a request uses it
+        (S3) and each of these can strand a request permanently: a status no
+        transition path reaches; a non-terminal status with no transition out
+        of it; and an assign transition that also sets required_form_key
+        (assignment is not completion, and neither path that fires it has a
+        form to give). A workflow with NO assign transition is still valid -
+        a self-service flow legitimately has none.
       responses:
         '201':
           description: Created
@@ -449,6 +467,71 @@ paths:
                   serviceTypeId: { type: integer }
                   key: { type: string, description: auto-slugified from name.en, uniqueness-suffixed on collision }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /services/{id}:
+    get:
+      tags: [services]
+      summary: >
+        The whole service definition in one read - the row (including ownerId,
+        which the summary omits), both form schemas, the workflow, and whether
+        it is still editable. Admin-only, like the writes; backs the Add Service
+        wizard's edit mode.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    allOf:
+                      - $ref: '#/components/schemas/ServiceSummary'
+                      - type: object
+                        properties:
+                          ownerId: { type: integer }
+                          departmentId: { type: integer }
+                          defaultPriority: { type: string, enum: [low, medium, high] }
+                          editable:
+                            type: boolean
+                            description: false once any request has used this service (S3)
+                          requestFields: { type: array, items: { type: object } }
+                          completionFields: { type: array, items: { type: object } }
+                          statuses: { type: array, items: { type: object } }
+                          transitions: { type: array, items: { $ref: '#/components/schemas/TransitionDef' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [services]
+      summary: >
+        Edit a service that no request has used yet. S3's rule is "immutable
+        once any request exists", not immutable from birth - before this there
+        was no edit path at all, so a typo meant rebuilding the whole service.
+        Takes the same body as POST /services and runs the same validation (a
+        full replace, not a merge); `key` is never re-derived on rename. 409
+        once any request exists - disable and recreate from there, as before.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: identical to the POST /services body
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serviceTypeId: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The service already has requests - its definition is frozen }
         '422': { $ref: '#/components/responses/Validation' }
 
   /services/{id}/enabled:
@@ -2157,6 +2240,11 @@ components:
         acceptsEmployeeSubmitters: { type: boolean }
         autoAssign: { type: boolean }
         featureKey: { type: string, nullable: true }
+        editable:
+          type: boolean
+          description: >
+            false once any request has used this service, i.e. its definition is
+            frozen (S3). Drives the console Services page's Edit affordance.
 
     TransitionDef:
       type: object

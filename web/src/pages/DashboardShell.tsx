@@ -43,7 +43,7 @@ const adminNav: { to: string; labelKey: string; end: boolean; feature?: string; 
   { to: '/checklists', labelKey: 'nav_checklists', end: false, feature: 'forms_checklists', group: 'operations' },
   { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, feature: 'knowledge_base', group: 'communication' },
   { to: '/events', labelKey: 'nav_events', end: false, feature: 'events', group: 'communication' },
-  { to: '/services/new', labelKey: 'nav_add_service', end: false, group: 'setup' },
+  { to: '/services', labelKey: 'nav_services', end: true, group: 'setup' },
   { to: '/audit', labelKey: 'nav_audit', end: false, group: 'setup' },
 ]
 

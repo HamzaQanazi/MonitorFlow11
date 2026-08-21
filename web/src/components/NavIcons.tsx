@@ -91,6 +91,14 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M6 4.5c3-1.3 5 1.3 8 0v9c-3 1.3-5-1.3-8 0Z" />
     </>
   ),
+  services: (
+    <>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+    </>
+  ),
   add_service: (
     <>
       <rect x="3.5" y="3.5" width="17" height="17" rx="2.5" />

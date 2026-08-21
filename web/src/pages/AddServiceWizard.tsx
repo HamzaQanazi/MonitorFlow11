@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
 import { TranslateButton } from '../components/TranslateButton'
@@ -213,22 +214,27 @@ function buildFlow(statuses: StatusRow[], allowCancel: boolean, cancelLabelEn: s
 }
 
 // Every derived transition is view_all-gated oversight by default — the one
-// override is the per-edge "assignee handles this" checkbox. When auto-assign
-// is on, the very first edge is forced to `required_capability: 'assign'`
-// instead (that's the exact transition lib/autoAssign.js looks for) and its
-// checkbox is hidden, so turning auto-assign on can never silently do nothing.
+// override is the per-edge "assignee handles this" checkbox.
+//
+// The FIRST edge is always `required_capability: 'assign'`. That is the exact
+// transition both assignment paths look for (requests.js's PATCH
+// /requests/{id}/assign and lib/autoAssign.js) and the only thing that creates
+// a TASK row. It used to be forced only when auto-assign was ticked, which
+// meant every service built with auto-assign off had no assign transition at
+// all: its requests could never be given to anyone, never appeared in an
+// employee's task list, and any later "assignee handles this" step deadlocked,
+// since `actor: 'assignee'` resolves against a task that never existed.
 function edgesToTransitions(
   edges: Edge[],
   statusKeys: string[],
   cancelKey: string | null,
-  autoAssign: boolean,
   assigneeGated: Record<string, boolean>
 ) {
   const keyOf = (idx: number) => (idx === -1 ? cancelKey! : statusKeys[idx])
   return edges.map((e) => {
     const fromKey = keyOf(e.fromKeyIndex)
     const toKey = keyOf(e.toKeyIndex)
-    const forcedAssign = autoAssign && e.isFirst
+    const forcedAssign = e.isFirst
     const gated = !forcedAssign && !!assigneeGated[e.id]
     return {
       key: `${fromKey}_to_${toKey}`,
@@ -300,11 +306,127 @@ function firstErrorStep(c: ClassifiedErrors): number {
   return i === -1 ? 0 : i
 }
 
+// Stored shapes, as GET /services/:id returns them.
+interface StoredField {
+  id: string
+  label: Loc
+  type: FieldType
+  required?: boolean
+  options?: { value: string; label: Loc }[]
+  min?: number
+  max?: number
+}
+interface StoredStatus {
+  key: string
+  label: Loc
+  is_initial: boolean
+  is_terminal: boolean
+  sla_minutes: number | null
+}
+interface StoredTransition {
+  key: string
+  from: string
+  to: string
+  actor: string | null
+  required_capability: string | null
+}
+interface StoredService {
+  id: number
+  name: Loc
+  departmentId: number
+  defaultPriority: (typeof PRIORITIES)[number]
+  ownerId: number
+  acceptsExternalUsers: boolean
+  acceptsEmployeeSubmitters: boolean
+  autoAssign: boolean
+  editable: boolean
+  requestFields: StoredField[]
+  completionFields: StoredField[]
+  statuses: StoredStatus[]
+  transitions: StoredTransition[]
+}
+
+function storedToRows(fields: StoredField[]): FieldRow[] {
+  return fields.map((f) => ({
+    rid: newRid(),
+    labelEn: f.label.en,
+    labelAr: f.label.ar,
+    type: f.type,
+    required: f.required !== false,
+    options: (f.options ?? []).map((o) => ({ value: o.value, labelEn: o.label.en, labelAr: o.label.ar })),
+    min: f.min === undefined ? '' : String(f.min),
+    max: f.max === undefined ? '' : String(f.max),
+  }))
+}
+
+// Turns a stored definition back into this wizard's row model. It only
+// succeeds for the shape the wizard itself produces — a linear chain of steps
+// plus an optional cancel terminal that every non-final step can reach. A
+// hand-authored or seeded workflow (branches, holds, multiple distinct
+// outcomes) is reported as unsupported rather than silently flattened into
+// something the admin didn't write; the engine still runs those fine, they
+// just can't be round-tripped through this UI.
+function hydrate(svc: StoredService):
+  | { ok: true; statuses: StatusRow[]; allowCancel: boolean; cancelEn: string; cancelAr: string; assigneeGated: Record<string, boolean> }
+  | { ok: false } {
+  const terminals = svc.statuses.filter((s) => s.is_terminal)
+  if (terminals.length > 2 || terminals.length === 0) return { ok: false }
+
+  const allowCancel = terminals.length === 2
+  const chain = allowCancel ? svc.statuses.slice(0, -1) : svc.statuses
+  const cancel = allowCancel ? svc.statuses[svc.statuses.length - 1] : null
+  if (allowCancel && !cancel!.is_terminal) return { ok: false }
+  if (chain.length < 2) return { ok: false }
+  if (!chain[0].is_initial) return { ok: false }
+  if (!chain[chain.length - 1].is_terminal) return { ok: false }
+  if (chain.slice(0, -1).some((s) => s.is_terminal)) return { ok: false }
+
+  const rows: StatusRow[] = chain.map((s) => ({
+    rid: newRid(),
+    labelEn: s.label.en,
+    labelAr: s.label.ar,
+    slaMinutes: s.sla_minutes == null ? '' : String(s.sla_minutes),
+  }))
+
+  // Every transition must be one of the edges buildFlow would have derived.
+  const linear = new Map<string, StoredTransition>()
+  for (let i = 0; i < chain.length - 1; i++) linear.set(`${chain[i].key}|${chain[i + 1].key}`, null as never)
+  const assigneeGated: Record<string, boolean> = {}
+  for (const tr of svc.transitions) {
+    const linearKey = `${tr.from}|${tr.to}`
+    if (linear.has(linearKey)) {
+      const i = chain.findIndex((s) => s.key === tr.from)
+      if (tr.actor === 'assignee') assigneeGated[`${rows[i].rid}->${rows[i + 1].rid}`] = true
+      linear.set(linearKey, tr)
+      continue
+    }
+    if (cancel && tr.to === cancel.key && chain.some((s, i) => s.key === tr.from && i < chain.length - 1)) {
+      if (tr.actor === 'assignee') assigneeGated[`${rows[chain.findIndex((s) => s.key === tr.from)].rid}->cancel`] = true
+      continue
+    }
+    return { ok: false } // an edge this wizard could not have produced
+  }
+  if ([...linear.values()].some((v) => !v)) return { ok: false } // a missing step-to-step edge
+
+  return {
+    ok: true,
+    statuses: rows,
+    allowCancel,
+    cancelEn: cancel?.label.en ?? 'Cancelled',
+    cancelAr: cancel?.label.ar ?? 'ملغى',
+    assigneeGated,
+  }
+}
+
 export default function AddServiceWizard() {
   const { t, L } = useI18n()
 
   const [departments, setDepartments] = useState<Department[]>([])
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
+  const [ownerQuery, setOwnerQuery] = useState('')
+  // Held separately so the chosen owner stays visible once a later search
+  // filters them out of `employees`.
+  const [ownerName, setOwnerName] = useState('')
   const [loadError, setLoadError] = useState(false)
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -316,6 +438,14 @@ export default function AddServiceWizard() {
     statuses: new Set<number>(),
   })
   const [created, setCreated] = useState<{ serviceTypeId: number; key: string } | null>(null)
+  // Edit mode (§3: a definition is immutable once a request uses it, not from
+  // birth). `blocked` covers the two refusals: the service already has
+  // requests, or it wasn't authored by this wizard so hydrate() can't
+  // round-trip it.
+  const { id: editIdParam } = useParams()
+  const editId = editIdParam ? Number(editIdParam) : null
+  const [hydrating, setHydrating] = useState(editId !== null)
+  const [blocked, setBlocked] = useState<'frozen' | 'unsupported' | null>(null)
 
   // Step 1
   const [nameEn, setNameEn] = useState('')
@@ -330,26 +460,74 @@ export default function AddServiceWizard() {
   const [requestFields, setRequestFields] = useState<FieldRow[]>([newFieldRow()])
   const [completionFields, setCompletionFields] = useState<FieldRow[]>([newFieldRow()])
   // Step 4
-  const [statuses, setStatuses] = useState<StatusRow[]>([newStatusRow(), newStatusRow()])
+  // Three is the floor, not two: the first edge is the assignment and the last
+  // carries the completion form, and one edge cannot be both (workflowSchema.js
+  // rejects an assign transition that also requires a form).
+  const [statuses, setStatuses] = useState<StatusRow[]>([newStatusRow(), newStatusRow(), newStatusRow()])
   const [allowCancel, setAllowCancel] = useState(false)
   const [cancelLabelEn, setCancelLabelEn] = useState('Cancelled')
   const [cancelLabelAr, setCancelLabelAr] = useState('ملغى')
   const [assigneeGated, setAssigneeGated] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    Promise.all([
-      apiFetch<{ departments: Department[] }>('/departments'),
-      apiFetch<{ employees: EmployeeOption[] }>('/employees?pageSize=100'),
-    ])
-      .then(([d, e]) => {
-        setDepartments(d.departments)
-        setEmployees(e.employees)
-      })
+    apiFetch<{ departments: Department[] }>('/departments')
+      .then((d) => setDepartments(d.departments))
       .catch(() => setLoadError(true))
   }, [])
 
+  useEffect(() => {
+    if (editId === null) return
+    apiFetch<{ service: StoredService }>(`/services/${editId}`)
+      .then(({ service }) => {
+        if (!service.editable) {
+          setBlocked('frozen')
+          return
+        }
+        const flow = hydrate(service)
+        if (!flow.ok) {
+          setBlocked('unsupported')
+          return
+        }
+        setNameEn(service.name.en)
+        setNameAr(service.name.ar)
+        setDepartmentId(String(service.departmentId))
+        setDefaultPriority(service.defaultPriority)
+        setAcceptsExternalUsers(service.acceptsExternalUsers)
+        setAcceptsEmployeeSubmitters(service.acceptsEmployeeSubmitters)
+        setAutoAssign(service.autoAssign)
+        setOwnerId(String(service.ownerId))
+        setRequestFields(storedToRows(service.requestFields))
+        setCompletionFields(storedToRows(service.completionFields))
+        setStatuses(flow.statuses)
+        setAllowCancel(flow.allowCancel)
+        setCancelLabelEn(flow.cancelEn)
+        setCancelLabelAr(flow.cancelAr)
+        setAssigneeGated(flow.assigneeGated)
+      })
+      .catch(() => setLoadError(true))
+      .finally(() => setHydrating(false))
+  }, [editId])
+
+  // The owner list is searched on the server rather than fetched once and
+  // filtered here: pageSize caps at 100 (the contract's max), so a company
+  // with more staff than that silently lost the rest of its employees from
+  // the picker. isActive=true because owner_id is Gate 2's visibility anchor
+  // — a deactivated owner makes the service's requests invisible to everyone
+  // (services.js rejects one now, this stops it being offered at all).
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      const q = ownerQuery.trim()
+      apiFetch<{ employees: EmployeeOption[] }>(
+        `/employees?isActive=true&pageSize=50${q ? `&q=${encodeURIComponent(q)}` : ''}`,
+      )
+        .then((e) => setEmployees(e.employees))
+        .catch(() => setLoadError(true))
+    }, 250)
+    return () => clearTimeout(handle)
+  }, [ownerQuery])
+
   const { statusKeys, cancelKey, statusSchemas, edges } = buildFlow(statuses, allowCancel, cancelLabelEn, cancelLabelAr)
-  const transitionSchemas = edgesToTransitions(edges, statusKeys, cancelKey, autoAssign, assigneeGated)
+  const transitionSchemas = edgesToTransitions(edges, statusKeys, cancelKey, assigneeGated)
 
   function moveStatus(i: number, dir: -1 | 1) {
     setStatuses((prev) => {
@@ -371,7 +549,7 @@ export default function AddServiceWizard() {
         return completionFields.length > 0 && completionFields.every(fieldRowValid)
       case 3:
         return (
-          statuses.length >= 2 &&
+          statuses.length >= 3 &&
           statuses.every(statusRowValid) &&
           (!allowCancel || (cancelLabelEn.trim() !== '' && cancelLabelAr.trim() !== ''))
         )
@@ -386,8 +564,10 @@ export default function AddServiceWizard() {
     setStepErrors([[], [], [], [], []])
     setErrorRows({ requestFields: new Set(), completionFields: new Set(), statuses: new Set() })
     try {
-      const res = await apiFetch<{ serviceTypeId: number; key: string }>('/services', {
-        method: 'POST',
+      const res = await apiFetch<{ serviceTypeId: number; key?: string }>(
+        editId === null ? '/services' : `/services/${editId}`,
+        {
+        method: editId === null ? 'POST' : 'PATCH',
         body: {
           name: { en: nameEn, ar: nameAr },
           departmentId: Number(departmentId),
@@ -401,9 +581,15 @@ export default function AddServiceWizard() {
           statuses: statusSchemas,
           transitions: transitionSchemas,
         },
-      })
-      setCreated(res)
+      },
+      )
+      setCreated({ serviceTypeId: res.serviceTypeId, key: res.key ?? '' })
     } catch (err) {
+      // A request can land between the editable check and the save (§3).
+      if (err instanceof ApiError && err.status === 409) {
+        setBlocked('frozen')
+        return
+      }
       if (err instanceof ApiError && err.status === 422) {
         const body = err.body as { errors?: unknown } | undefined
         if (Array.isArray(body?.errors)) {
@@ -444,17 +630,42 @@ export default function AddServiceWizard() {
     )
   }
 
+  if (blocked) {
+    return (
+      <div className="req">
+        <header className="req-head">
+          <h1>{t('svc_edit_title')}</h1>
+        </header>
+        <div className="req-empty">
+          <p>{t(blocked === 'frozen' ? 'svc_edit_frozen' : 'svc_edit_unsupported')}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (hydrating) {
+    return (
+      <div className="req-skeleton" aria-busy="true">
+        {Array.from({ length: 5 }, (_, i) => (
+          <div className="skel-row" aria-hidden="true" key={i} />
+        ))}
+      </div>
+    )
+  }
+
   if (created) {
     return (
       <div className="req">
         <header className="req-head">
-          <h1>{t('svc_created_h')}</h1>
+          <h1>{t(editId === null ? 'svc_created_h' : 'svc_edit_saved_h')}</h1>
         </header>
         <div className="req-empty">
           <h2>{nameEn}</h2>
-          <p>
-            {t('svc_created_p')} <code>{created.key}</code>
-          </p>
+          {created.key && (
+            <p>
+              {t('svc_created_p')} <code>{created.key}</code>
+            </p>
+          )}
         </div>
       </div>
     )
@@ -466,7 +677,7 @@ export default function AddServiceWizard() {
   return (
     <div className="req">
       <header className="req-head">
-        <h1>{t('svc_title')}</h1>
+        <h1>{t(editId === null ? 'svc_title' : 'svc_edit_title')}</h1>
         <p className="req-meta">
           {t('ob_step_of')} {step + 1} {t('of')} {STEP_COUNT} — {t(stepTitles[step])}
         </p>
@@ -544,8 +755,24 @@ export default function AddServiceWizard() {
             <p className="ob-hint">{t('svc_auto_assign_hint')}</p>
             <label className="field">
               <span>{t('svc_owner')}</span>
-              <select className="req-select" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+              <input
+                type="search"
+                placeholder={t('svc_owner_search')}
+                value={ownerQuery}
+                onChange={(e) => setOwnerQuery(e.target.value)}
+              />
+              <select
+                className="req-select"
+                value={ownerId}
+                onChange={(e) => {
+                  setOwnerId(e.target.value)
+                  setOwnerName(employees.find((emp) => String(emp.id) === e.target.value)?.name ?? '')
+                }}
+              >
                 <option value="">{t('ob_select')}</option>
+                {ownerId && !employees.some((emp) => String(emp.id) === ownerId) && (
+                  <option value={ownerId}>{ownerName || ownerId}</option>
+                )}
                 {employees.map((emp) => (
                   <option key={emp.id} value={emp.id}>
                     {emp.name}
@@ -649,7 +876,7 @@ export default function AddServiceWizard() {
                       >
                         ↓
                       </button>
-                      {statuses.length > 2 && (
+                      {statuses.length > 3 && (
                         <button
                           type="button"
                           className="action-btn is-danger"
@@ -693,8 +920,8 @@ export default function AddServiceWizard() {
                   <span className="svc-edge-label">
                     {e.fromLabelEn || t('svc_untitled')} → {e.toLabelEn || t('svc_untitled')}
                   </span>
-                  {e.isFirst && autoAssign ? (
-                    <p className="ob-hint">{t('svc_auto_assign_note')}</p>
+                  {e.isFirst ? (
+                    <p className="ob-hint">{t(autoAssign ? 'svc_auto_assign_note' : 'svc_first_step_assign_note')}</p>
                   ) : (
                     <label className="svc-check">
                       <input
@@ -720,6 +947,40 @@ export default function AddServiceWizard() {
               {requestFields.length + completionFields.length} {t('svc_review_fields')} · {statusSchemas.length}{' '}
               {t('svc_review_statuses')} · {transitionSchemas.length} {t('svc_review_transitions')}
             </p>
+            {/* The derived workflow is invisible everywhere else and frozen the
+                moment a request uses it — this is the last point at which a
+                wrong gate can be caught. */}
+            <h4>{t('svc_review_who_h')}</h4>
+            <div className="req-tablewrap">
+              <table className="req-table">
+                <thead>
+                  <tr>
+                    <th scope="col">{t('svc_review_step')}</th>
+                    <th scope="col">{t('svc_review_who')}</th>
+                    <th scope="col">{t('svc_review_needs')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transitionSchemas.map((tr) => (
+                    <tr key={tr.key}>
+                      <td className="req-service">
+                        {tr.from} → {tr.to}
+                      </td>
+                      <td>
+                        {tr.actor === 'assignee'
+                          ? t('svc_who_assignee')
+                          : tr.required_capability === 'assign'
+                            ? t('svc_who_assign')
+                            : t('svc_who_oversight')}
+                      </td>
+                      <td className="tc-muted">
+                        {tr.required_form_key ? t('svc_needs_completion') : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -732,7 +993,7 @@ export default function AddServiceWizard() {
         </button>
         {!stepValid(step) && !busy && <p className="svc-next-hint">{t('svc_fill_required')}</p>}
         <button type="button" className="req-retry" onClick={next} disabled={busy || !stepValid(step)}>
-          {busy ? t('ob_saving') : step === STEP_COUNT - 1 ? t('svc_create') : t('next')}
+          {busy ? t('ob_saving') : step === STEP_COUNT - 1 ? t(editId === null ? 'svc_create' : 'svc_save_changes') : t('next')}
         </button>
       </div>
     </div>

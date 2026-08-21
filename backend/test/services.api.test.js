@@ -75,3 +75,187 @@ test('the admin can create a service', async () => {
   assert.equal(res.status, 201, JSON.stringify(res.body));
   assert.ok(res.body.serviceTypeId);
 });
+
+// ---- Structural workflow rules (workflowSchema.js). A definition is frozen
+// the moment a request uses it (§3), so a workflow that can strand a request
+// is permanent damage — these are rejected at author time instead.
+
+function servicePayload(overrides) {
+  return {
+    name: { en: 'Structural', ar: 'هيكلي' },
+    departmentId: fixtures.departmentId,
+    defaultPriority: 'low',
+    acceptsExternalUsers: true,
+    acceptsEmployeeSubmitters: false,
+    featureKey: null,
+    ownerId: fixtures.employeeIds.root,
+    requestFields: A_FIELD,
+    completionFields: A_FIELD,
+    ...A_WORKFLOW,
+    ...overrides,
+  };
+}
+
+test('a status nothing can reach is refused', async () => {
+  const res = await api('POST', '/services', {
+    token: tokens.admin,
+    body: servicePayload({
+      name: { en: 'Unreachable', ar: 'غير قابل للوصول' },
+      statuses: [
+        ...A_WORKFLOW.statuses,
+        { key: 'orphan', label: { en: 'Orphan', ar: 'يتيم' }, is_initial: false, is_terminal: true },
+      ],
+    }),
+  });
+  assert.equal(res.status, 422);
+  assert.ok(res.body.errors.some((e) => e.includes('no transition path reaches')), JSON.stringify(res.body));
+});
+
+test('a non-terminal status with no way out is refused', async () => {
+  const res = await api('POST', '/services', {
+    token: tokens.admin,
+    body: servicePayload({
+      name: { en: 'Dead end', ar: 'طريق مسدود' },
+      statuses: [
+        { key: 'open', label: { en: 'Open', ar: 'مفتوح' }, is_initial: true, is_terminal: false },
+        { key: 'stuck', label: { en: 'Stuck', ar: 'عالق' }, is_initial: false, is_terminal: false },
+        { key: 'closed', label: { en: 'Closed', ar: 'مغلق' }, is_initial: false, is_terminal: true },
+      ],
+      transitions: [
+        {
+          key: 'to_stuck', from: 'open', to: 'stuck',
+          label: { en: 'Stall', ar: 'تعليق' },
+          required_capability: null, actor: 'requester', requires_note: false, notify: [],
+        },
+        {
+          key: 'close', from: 'open', to: 'closed',
+          label: { en: 'Close', ar: 'إغلاق' },
+          required_capability: null, actor: 'requester', requires_note: false, notify: [],
+        },
+      ],
+    }),
+  });
+  assert.equal(res.status, 422);
+  assert.ok(res.body.errors.some((e) => e.includes('no transition out of it')), JSON.stringify(res.body));
+});
+
+test('an assign transition that also requires a form is refused', async () => {
+  const res = await api('POST', '/services', {
+    token: tokens.admin,
+    body: servicePayload({
+      name: { en: 'Assign plus form', ar: 'إسناد ونموذج' },
+      transitions: [
+        {
+          key: 'close', from: 'open', to: 'closed',
+          label: { en: 'Close', ar: 'إغلاق' },
+          required_capability: 'assign', actor: null,
+          required_form_key: 'completion', requires_note: false, notify: [],
+        },
+      ],
+    }),
+  });
+  assert.equal(res.status, 422);
+  assert.ok(res.body.errors.some((e) => e.includes('cannot also require a form')), JSON.stringify(res.body));
+});
+
+test('a self-service workflow with no assign transition is still allowed', async () => {
+  // seedChecklists.js is exactly this shape — submitted -> logged, fired by
+  // the requester, never assigned. It must not be caught by the new rules.
+  const res = await api('POST', '/services', {
+    token: tokens.admin,
+    body: servicePayload({ name: { en: 'Self service', ar: 'خدمة ذاتية' } }),
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+});
+
+// ---- ownerId must be an ACTIVE employee: owner_id is Gate 2's anchor, so a
+// deactivated owner makes every request on the service invisible.
+
+test('a deactivated employee cannot be a service owner', async () => {
+  const hire = await api('POST', '/employees', {
+    token: tokens.admin,
+    body: {
+      firstName: 'Owner', lastName: 'Gone', email: 'owner.gone@example.com',
+      phone: '0599000111', birthdate: '1990-01-01', gender: 'male', workerType: 'full_time',
+      departmentId: fixtures.departmentId,
+    },
+  });
+  assert.equal(hire.status, 201, JSON.stringify(hire.body));
+  const deactivated = hire.body.employee.id;
+  const off = await api('PATCH', `/employees/${deactivated}/deactivate`, { token: tokens.admin });
+  assert.equal(off.status, 200, JSON.stringify(off.body));
+
+  const res = await api('POST', '/services', {
+    token: tokens.admin,
+    body: servicePayload({ name: { en: 'Dead owner', ar: 'مالك معطّل' }, ownerId: deactivated }),
+  });
+  assert.equal(res.status, 422);
+  assert.ok(res.body.errors.some((e) => e.includes('active employee')), JSON.stringify(res.body));
+});
+
+// ---- Editing a service before any request has used it (§3's actual rule).
+
+test('a service with no requests can be edited, and GET /:id reports it editable', async () => {
+  const created = await api('POST', '/services', {
+    token: tokens.admin,
+    body: servicePayload({ name: { en: 'Editable', ar: 'قابل للتعديل' } }),
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const id = created.body.serviceTypeId;
+
+  const before = await api('GET', `/services/${id}`, { token: tokens.admin });
+  assert.equal(before.status, 200, JSON.stringify(before.body));
+  assert.equal(before.body.service.editable, true);
+
+  const res = await api('PATCH', `/services/${id}`, {
+    token: tokens.admin,
+    body: servicePayload({ name: { en: 'Renamed', ar: 'أُعيدت التسمية' }, defaultPriority: 'high' }),
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  const after = await api('GET', `/services/${id}`, { token: tokens.admin });
+  assert.equal(after.body.service.name.en, 'Renamed');
+  assert.equal(after.body.service.defaultPriority, 'high');
+  // `key` is a stable handle and is deliberately not re-derived on rename.
+  assert.equal(after.body.service.key, before.body.service.key);
+});
+
+test('editing is refused once the service has a request', async () => {
+  const created = await api('POST', '/services', {
+    token: tokens.admin,
+    body: servicePayload({ name: { en: 'Freezes on use', ar: 'يتجمّد عند الاستخدام' } }),
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const id = created.body.serviceTypeId;
+
+  // Editable right up until the first request lands.
+  const beforeUse = await api('PATCH', `/services/${id}`, {
+    token: tokens.admin,
+    body: servicePayload({ name: { en: 'Still editable', ar: 'ما زال قابلًا للتعديل' } }),
+  });
+  assert.equal(beforeUse.status, 200, JSON.stringify(beforeUse.body));
+
+  const req = await api('POST', '/requests', {
+    token: tokens.resident,
+    body: { serviceTypeId: id, formResponse: { note: 'first request' } },
+  });
+  assert.equal(req.status, 201, JSON.stringify(req.body));
+
+  const afterUse = await api('PATCH', `/services/${id}`, {
+    token: tokens.admin,
+    body: servicePayload({ name: { en: 'Too late', ar: 'فات الأوان' } }),
+  });
+  assert.equal(afterUse.status, 409, JSON.stringify(afterUse.body));
+
+  const detail = await api('GET', `/services/${id}`, { token: tokens.admin });
+  assert.equal(detail.body.service.editable, false);
+  assert.equal(detail.body.service.name.en, 'Still editable', 'the refused edit must not have landed');
+});
+
+test('a non-admin cannot edit or read a service definition', async () => {
+  assert.equal((await api('GET', `/services/${fixtures.serviceTypeId}`, { token: tokens.root })).status, 403);
+  assert.equal(
+    (await api('PATCH', `/services/${fixtures.serviceTypeId}`, { token: tokens.root, body: servicePayload({}) })).status,
+    403
+  );
+});
