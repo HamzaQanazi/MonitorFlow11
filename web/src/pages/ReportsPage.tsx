@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch, getToken } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
 import { useAuth } from '../auth/AuthContext'
-import Donut from '../components/Donut'
 import './RequestsPage.css'
 import './ReportsPage.css'
 
@@ -33,12 +32,21 @@ interface Aggregates {
   byService: Record<string, number>
   byRequesterRole: Record<string, number>
 }
+interface ChartDay {
+  date: string
+  open: number
+  closed: number
+  count: number
+}
 interface ReportResponse {
   requests: ReportRow[]
   page: number
   pageSize: number
   total: number
   aggregates: Aggregates
+  // Zero-filled across whatever range this filtered set spans (backend caps
+  // the fill at 366 days — beyond that it's the sparse actual data points).
+  chart: ChartDay[]
 }
 interface Service {
   id: number
@@ -55,10 +63,15 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function formatDay(iso: string) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
 export default function ReportsPage() {
   const { t, L } = useI18n()
   const { user } = useAuth()
   const canExport = !!user?.capabilities.includes('export')
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
   const state = params.get('state') ?? ''
@@ -414,40 +427,54 @@ export default function ReportsPage() {
             </div>
           </section>
 
-          {agg.total > 0 && (
-            <section className="rep-charts" aria-label={t('rep_summary')}>
-              <div className="rep-chart-card">
-                <h3>{t('rep_by_state')}</h3>
-                <Donut
-                  title={t('rep_by_state')}
-                  slices={STATES.map((s) => ({ key: s, label: t(`state_${s}`), value: agg.byState[s] || 0 }))}
-                />
+          {data.chart.length > 0 && (
+            <section className="rep-trend" aria-labelledby="rep-trend-heading">
+              <div className="panel-head">
+                <h3 id="rep-trend-heading">{t('rep_trend')}</h3>
+                <span className="panel-meta">
+                  {formatDay(data.chart[0].date)} – {formatDay(data.chart[data.chart.length - 1].date)}
+                </span>
               </div>
-              <div className="rep-chart-card">
-                <h3>{t('rep_by_priority')}</h3>
-                <Donut
-                  title={t('rep_by_priority')}
-                  slices={PRIORITIES.map((p) => ({ key: p, label: t(`pri_${p}`), value: agg.byPriority[p] || 0 }))}
-                />
-              </div>
-              <div className="rep-chart-card">
-                <h3>{t('rep_by_service')}</h3>
-                <Donut
-                  title={t('rep_by_service')}
-                  slices={Object.entries(agg.byService).map(([name, n]) => ({ key: name, label: name, value: n }))}
-                />
-              </div>
-              <div className="rep-chart-card">
-                <h3>{t('rep_by_requester')}</h3>
-                <Donut
-                  title={t('rep_by_requester')}
-                  slices={REQUESTER_ROLES.map((r) => ({
-                    key: r,
-                    label: t(`requester_${r}`),
-                    value: agg.byRequesterRole[r] || 0,
-                  }))}
-                />
-              </div>
+              {(() => {
+                const max = Math.max(...data.chart.map((d) => d.count))
+                return (
+                  <div
+                    className="chart"
+                    role="img"
+                    aria-label={`${t('rep_trend')}: ${data.chart.reduce((s, d) => s + d.count, 0)} ${t('dash_total')}, ${formatDay(data.chart[0].date)} – ${formatDay(data.chart[data.chart.length - 1].date)}`}
+                  >
+                    {data.chart.map((d) => (
+                      <div className="chart-col" key={d.date} title={`${formatDay(d.date)} · ${d.count}`}>
+                        {d.count === 0 ? (
+                          <div className="chart-bar is-zero" />
+                        ) : (
+                          <div className="chart-stack" style={{ height: `${(d.count / max) * 100}%` }}>
+                            {d.open > 0 && <div className="chart-seg is-open" style={{ flexGrow: d.open }} />}
+                            {d.closed > 0 && <div className="chart-seg is-closed" style={{ flexGrow: d.closed }} />}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+              <table className="visually-hidden">
+                <caption>{t('rep_trend')}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{t('col_when')}</th>
+                    <th scope="col">{t('request_word')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.chart.map((d) => (
+                    <tr key={d.date}>
+                      <td>{d.date}</td>
+                      <td>{d.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </section>
           )}
 
@@ -483,9 +510,20 @@ export default function ReportsPage() {
                   </thead>
                   <tbody>
                     {data.requests.map((r) => (
-                      <tr key={r.id}>
+                      <tr key={r.id} onClick={() => navigate(`/requests/${r.id}`)}>
                         <td className="req-id">#{r.id}</td>
-                        <td className="req-service">{L(r.serviceTypeName)}</td>
+                        <td className="req-service">
+                          <button
+                            type="button"
+                            className="req-open"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigate(`/requests/${r.id}`)
+                            }}
+                          >
+                            {L(r.serviceTypeName)}
+                          </button>
+                        </td>
                         <td>{r.requester.name}</td>
                         <td>
                           <span className={`status-pill is-${r.status.isTerminal ? 'closed' : 'open'}`}>

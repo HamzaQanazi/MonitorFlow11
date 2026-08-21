@@ -89,26 +89,77 @@
   flex-wrap: wrap;
 }
 
-/* Distribution pies (feature 9 — visual insights, also carried into the PDF). */
-.rep-charts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
-  margin-block-start: 16px;
-}
-.rep-chart-card {
+/* Trend chart — volume over whatever range the current filters span. */
+.rep-trend {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
-.rep-chart-card h3 {
+
+.rep-trend .panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.rep-trend h3 {
   font-size: 13px;
   font-weight: 650;
   color: var(--muted);
 }
+
+.rep-trend .panel-meta {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.rep-trend .chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 140px;
+  border-bottom: 1px solid var(--border);
+}
+
+.rep-trend .chart-col {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+  min-width: 0;
+  border-radius: 3px;
+}
+
+.rep-trend .chart-col:hover {
+  background: var(--surface);
+}
+
+.rep-trend .chart-bar.is-zero {
+  width: 100%;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--border);
+}
+
+.rep-trend .chart-stack {
+  width: 100%;
+  min-height: 3px;
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 3px 3px 0 0;
+  overflow: hidden;
+}
+
+.rep-trend .chart-seg {
+  width: 100%;
+  min-height: 2px;
+}
+
+.rep-trend .chart-seg.is-open { background: var(--state-open); }
+.rep-trend .chart-seg.is-closed { background: var(--state-closed); }
 
 /* Print header is off-screen until the browser prints (Export PDF). */
 .rep-print-head {
@@ -140,12 +191,9 @@
   .shell-main {
     padding: 0 !important;
   }
-  /* Keep pies and table from splitting awkwardly across pages. */
-  .rep-chart-card,
+  /* Keep the trend chart and table rows from splitting awkwardly across pages. */
+  .rep-trend,
   .req-table tr {
     break-inside: avoid;
-  }
-  .rep-charts {
-    grid-template-columns: repeat(3, 1fr);
   }
 }

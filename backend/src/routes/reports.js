@@ -47,7 +47,7 @@ router.get('/', async (req, res, next) => {
 
     const agg = await pool.query(
       `SELECT (s->>'is_terminal')::bool AS is_terminal, r.priority, st.name->>'en' AS service_type_name,
-              u.role AS requester_role
+              u.role AS requester_role, to_char(r.created_at::date, 'YYYY-MM-DD') AS day
        ${FROM} ${whereSql}`,
       params
     );
@@ -56,12 +56,41 @@ router.get('/', async (req, res, next) => {
     const byPriority = {};
     const byService = {};
     const byRequesterRole = { user: 0, employee: 0 };
+    // Trend (feature request, 2026-08-21): same open/closed-by-current-status
+    // split as the dashboard's chart, but over whatever range this filtered
+    // set actually spans, not a fixed 30 days — Reports has its own
+    // dateFrom/dateTo filters, and there's no one "default window" for an
+    // all-time custom report the way there is for a live dashboard.
+    const byDay = new Map();
     for (const row of agg.rows) {
       if (row.is_terminal) byState.closed += 1;
       else byState.open += 1;
       byPriority[row.priority] = (byPriority[row.priority] || 0) + 1;
       byService[row.service_type_name] = (byService[row.service_type_name] || 0) + 1;
       byRequesterRole[row.requester_role] = (byRequesterRole[row.requester_role] || 0) + 1;
+      const bucket = byDay.get(row.day) || { open: 0, closed: 0 };
+      if (row.is_terminal) bucket.closed += 1;
+      else bucket.open += 1;
+      byDay.set(row.day, bucket);
+    }
+    // Zero-fill the gaps so the chart is a continuous line, not sparse dots —
+    // ponytail: capped at 366 days: a report spanning more than a year skips
+    // the fill and just returns the days that actually have data, so this
+    // can't generate an unbounded number of columns.
+    const days = [...byDay.keys()].sort();
+    let chartDays = days.map((date) => ({ date, ...byDay.get(date), count: byDay.get(date).open + byDay.get(date).closed }));
+    if (days.length > 1) {
+      const first = new Date(`${days[0]}T00:00:00Z`);
+      const last = new Date(`${days[days.length - 1]}T00:00:00Z`);
+      const spanDays = Math.round((last - first) / 86400000);
+      if (spanDays > 0 && spanDays <= 366) {
+        chartDays = [];
+        for (let d = new Date(first); d <= last; d.setUTCDate(d.getUTCDate() + 1)) {
+          const key = d.toISOString().slice(0, 10);
+          const bucket = byDay.get(key) || { open: 0, closed: 0 };
+          chartDays.push({ date: key, ...bucket, count: bucket.open + bucket.closed });
+        }
+      }
     }
 
     res.json({
@@ -79,6 +108,7 @@ router.get('/', async (req, res, next) => {
       pageSize,
       total: list.rows.length ? list.rows[0].total : 0,
       aggregates: { total: agg.rows.length, byState, byPriority, byService, byRequesterRole },
+      chart: chartDays,
     });
   } catch (err) {
     next(err);
