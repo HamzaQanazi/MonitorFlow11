@@ -576,6 +576,20 @@ paths:
             Who submitted the request — external `user` vs internal `employee`
             (e.g. Time Off). Shared by GET /requests, GET /reports, and the
             CSV export via the one requestQuery.js filter engine.
+        - name: slaBreached
+          in: query
+          schema: { type: string, enum: [true] }
+          description: >
+            Only open requests past their current status's sla_minutes — same
+            definition as GET /dashboard/stats' slaBreaches count. Dashboard's
+            SLA-breach tile links here.
+        - name: reopened
+          in: query
+          schema: { type: string, enum: [true] }
+          description: >
+            Only requests whose history ever moved from an is_terminal status
+            back to non-terminal — same definition as GET /dashboard/stats'
+            reopenRate. Dashboard's reopen-rate tile links here.
       responses:
         '200':
           description: OK
@@ -680,6 +694,16 @@ paths:
         - { $ref: '#/components/parameters/page' }
         - { $ref: '#/components/parameters/pageSize' }
         - { name: departmentId, in: query, required: false, schema: { type: integer } }
+        - { name: workerType, in: query, required: false, schema: { type: string } }
+        - name: isActive
+          in: query
+          required: false
+          schema: { type: string, enum: [true, false] }
+          description: >
+            Unset returns both active and inactive (unchanged default —
+            ReportsPage's employee filter relies on this to offer inactive
+            employees, labelled). EmployeesPage defaults its own filter to
+            isActive=true so deactivated staff don't clutter the normal view.
         - { name: q, in: query, required: false, schema: { type: string }, description: name or email substring }
       responses:
         '200':
@@ -820,7 +844,12 @@ paths:
         (cross-department moves need an org-level actor that does not exist
         today). levelId is admin-only — silently ignored for any other
         caller, same as at creation (POST /employees) — and, if given, must
-        reference an existing level; null clears it.
+        reference an existing level; null clears it. managerId is likewise
+        admin-only (2026-08-21 addition — previously an employee's manager
+        could only change via a whole-department head reassignment): must
+        reference an active employee and must not be inside this employee's
+        own subtree (422 — would create a reporting cycle, same check as
+        PATCH /departments/{id}/head); null makes them a tree root.
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
@@ -836,6 +865,7 @@ paths:
                 workerType: { type: string }
                 departmentId: { type: integer }
                 levelId: { type: integer, nullable: true, description: admin-only }
+                managerId: { type: integer, nullable: true, description: admin-only; must not create a reporting cycle }
                 weeklyRestDay: { type: integer, nullable: true, minimum: 0, maximum: 6 }
       responses:
         '200':
@@ -1192,23 +1222,14 @@ paths:
                       properties:
                         state: { type: string, enum: [open, closed] }
                         count: { type: integer }
-                  byService:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        serviceTypeId: { type: integer }
-                        name: { $ref: '#/components/schemas/LocalizedText' }
-                        count: { type: integer }
-                  byPriority:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        priority: { type: string, enum: [low, medium, high] }
-                        count: { type: integer }
                   byDepartment:
                     type: array
+                    description: >
+                      Sorted slowest-first by avgResolutionMinutes (nulls —
+                      nothing resolved yet — sort last). By Service and By
+                      Priority were dropped from this endpoint (2026-08-21):
+                      both duplicated GET /reports' filterable/exportable
+                      charts, so the dashboard no longer repeats them.
                     items:
                       type: object
                       properties:
@@ -1237,14 +1258,19 @@ paths:
                       everClosed: { type: integer }
                       rate: { type: number, nullable: true }
                   workload:
-                    type: array
-                    description: Top employees by open (non-terminal) task count, subtree-scoped.
-                    items:
-                      type: object
-                      properties:
-                        employeeId: { type: integer }
-                        employeeName: { type: string }
-                        openCount: { type: integer }
+                    type: object
+                    description: Employees with open (non-terminal) tasks, subtree-scoped.
+                    properties:
+                      total: { type: integer, description: "Count before the top-8 truncation." }
+                      top:
+                        type: array
+                        description: Top 8 by open task count.
+                        items:
+                          type: object
+                          properties:
+                            employeeId: { type: integer }
+                            employeeName: { type: string }
+                            openCount: { type: integer }
         '403': { $ref: '#/components/responses/Forbidden' }
 
   /dashboard/chart:
@@ -2075,6 +2101,7 @@ components:
         branchName: { $ref: '#/components/schemas/LocalizedText' }
         levelId: { type: integer, nullable: true }
         levelName: { $ref: '#/components/schemas/LocalizedText' }
+        managerId: { type: integer, nullable: true, description: "null = a tree root" }
 
     EmployeeListItem:
       type: object
