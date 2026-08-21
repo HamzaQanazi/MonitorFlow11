@@ -4,8 +4,10 @@
 // other service keeps today's fully-manual flow untouched.
 //
 // Fires right after a request is created, inside the same transaction as the
-// INSERT (called by routes/requests.js). Picks the least-loaded active
-// employee in the service's own subtree and fires the workflow's
+// INSERT (called by routes/requests.js). Ranks active employees in the
+// service's own subtree by a weighted blend of three I10-safe outcome
+// metrics (reopen rate, avg resolution time, open load — same definitions
+// EmployeesPage/dashboard.js already use) and fires the workflow's
 // assign-capability transition through workflowEngine's applyTransition — the
 // exact same writes a human assign uses (status, task, history, audit,
 // notifications), so nothing here re-implements or diverges from that path.
@@ -16,6 +18,35 @@
 // Authorization for this action is the service's auto_assign flag itself.
 const { subtreeIds } = require('./scope');
 const { applyTransition } = require('./workflowEngine');
+
+// Lower is better for all three metrics. A candidate with no history for a
+// metric yet (new hire, nothing completed) gets 0.5 — neutral, neither
+// rewarded nor punished — so load ends up being the sole tiebreaker for
+// employees with no track record yet, same as the old least-loaded-only pick.
+const WEIGHTS = { reopen: 0.5, ttc: 0.3, load: 0.2 };
+
+function normalize(values) {
+  const known = values.filter((v) => v !== null);
+  // Fewer than 2 data points can't be compared (a lone sample would always
+  // min-max to "best", regardless of how good or bad it actually is) — treat
+  // the whole metric as neutral rather than let one data point swing it.
+  if (known.length < 2) return values.map(() => 0.5);
+  const min = Math.min(...known);
+  const max = Math.max(...known);
+  return values.map((v) => (v === null ? 0.5 : max > min ? (v - min) / (max - min) : 0.5));
+}
+
+function rankCandidates(rows) {
+  const normReopen = normalize(rows.map((r) => r.reopen_rate));
+  const normTtc = normalize(rows.map((r) => r.avg_resolution_minutes));
+  const normLoad = normalize(rows.map((r) => r.open_count));
+  const scored = rows.map((r, i) => ({
+    ...r,
+    score: WEIGHTS.reopen * normReopen[i] + WEIGHTS.ttc * normTtc[i] + WEIGHTS.load * normLoad[i],
+  }));
+  scored.sort((a, b) => a.score - b.score || a.id - b.id);
+  return scored[0];
+}
 
 // `request` is the just-created row: {id, user_id, status}. `service` is what
 // POST /requests already loaded: {ownerId, name, autoAssign, statuses, transitions}.
@@ -33,10 +64,14 @@ async function maybeAutoAssign(client, { request, service }) {
   if (!transition) return null;
 
   const scope = await subtreeIds(service.ownerId, client);
-  // Least-loaded active employee in scope (§13's own load-balancing pick,
-  // not ranking on anything I10 would call behavioural — open task count is
-  // the same outcome metric EmployeesPage already surfaces). Ties broken by
-  // id for determinism, which also gives round-robin behaviour in practice.
+  // Ranking inputs, all I10-safe outcome metrics (§2, §5): open load (same
+  // subquery as before), avg resolution minutes (same "resolved" definition
+  // employees.js/the CSV export use — request creation to the completion-form
+  // transition's target status), and reopen rate (same terminal→non-terminal
+  // LAG definition dashboard.js uses for its company-wide figure, scoped here
+  // per employee via task.employee_id). ponytail: correlated subqueries per
+  // candidate — fine for a subtree-sized pool, same tradeoff employees.js
+  // already made for its per-row resolution-time column.
   const { rows: candidates } = await client.query(
     `SELECT u.id, u.name,
             (SELECT COUNT(*)::int
@@ -45,15 +80,43 @@ async function maybeAutoAssign(client, { request, service }) {
              JOIN workflow_definition w ON w.service_type_id = r.service_type_id
              JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = t.status
              WHERE t.employee_id = u.id AND (s->>'is_terminal')::boolean = FALSE
-            ) AS open_task_count
+            ) AS open_count,
+            (SELECT AVG(EXTRACT(EPOCH FROM (comp.completed_at - r.created_at)) / 60)
+             FROM task t
+             JOIN request r ON r.id = t.request_id
+             JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+             CROSS JOIN LATERAL (
+               SELECT MIN(h.changed_at) AS completed_at
+               FROM request_status_history h
+               WHERE h.request_id = r.id
+                 AND h.status = (
+                   SELECT tr->>'to' FROM jsonb_array_elements(w.transitions) tr
+                   WHERE tr->>'required_form_key' IS NOT NULL
+                   LIMIT 1
+                 )
+             ) comp
+             WHERE t.employee_id = u.id AND comp.completed_at IS NOT NULL
+            ) AS avg_resolution_minutes,
+            (SELECT CASE WHEN COUNT(*) FILTER (WHERE hist.is_terminal) = 0 THEN NULL
+                    ELSE COUNT(*) FILTER (WHERE hist.prev_terminal AND NOT hist.is_terminal)::float
+                         / COUNT(*) FILTER (WHERE hist.is_terminal) END
+             FROM (
+               SELECT h.changed_at, (s->>'is_terminal')::bool AS is_terminal,
+                      LAG((s->>'is_terminal')::bool) OVER (PARTITION BY h.request_id ORDER BY h.changed_at) AS prev_terminal
+               FROM request_status_history h
+               JOIN task t ON t.request_id = h.request_id
+               JOIN request r ON r.id = h.request_id
+               JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+               JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = h.status
+               WHERE t.employee_id = u.id
+             ) hist
+            ) AS reopen_rate
      FROM users u
-     WHERE u.id = ANY($1) AND u.role = 'employee' AND u.is_active
-     ORDER BY open_task_count ASC, u.id ASC
-     LIMIT 1`,
+     WHERE u.id = ANY($1) AND u.role = 'employee' AND u.is_active`,
     [scope]
   );
-  const employee = candidates[0];
-  if (!employee) return null;
+  if (!candidates.length) return null;
+  const employee = rankCandidates(candidates);
 
   const requestForEngine = {
     id: request.id,
@@ -92,4 +155,4 @@ async function maybeAutoAssign(client, { request, service }) {
   };
 }
 
-module.exports = { maybeAutoAssign };
+module.exports = { maybeAutoAssign, rankCandidates };

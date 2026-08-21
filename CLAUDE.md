@@ -326,7 +326,7 @@ way (I4); the server is the actual enforcement.
 
 **Auto-assign (added 2026-08-14, §13 re-scope — opt-in, not a third gate):**
 `service_type.auto_assign` (default `false`). When on, `POST /requests`
-picks the least-loaded active employee in the service's own subtree
+ranks active employees in the service's own subtree
 (`subtreeIds(service.owner_id)`, the same Gate-2 scope every other
 assignment call uses) and fires the workflow's `required_capability: 'assign'`
 transition automatically, in the same transaction as the request's creation
@@ -342,9 +342,23 @@ for a system pick, so Gate 1 doesn't apply here — authorization is the
 service's own `auto_assign` flag, set only by an admin; Gate 2 is enforced by
 construction, since the candidate pool can never be anything but the
 service's own subtree. Always reversible: a human can reassign afterward
-through the exact same UI as any manual reassignment. Ranks by open task
-count (the same outcome metric `EmployeesPage` already surfaces) — not a
-behavioural signal, I10-safe.
+through the exact same UI as any manual reassignment.
+**Re-scoped 2026-08-21 (deliberate — ranking, not just least-loaded):** the
+candidate score is a weighted blend of three I10-safe outcome metrics, all
+already tracked elsewhere in the app — reopen rate (weight 0.5, same
+terminal→non-terminal history definition `dashboard.js`'s company-wide figure
+uses, scoped per employee), avg resolution minutes (weight 0.3, same
+request-creation-to-completion-transition definition `EmployeesPage`'s
+per-employee column uses), and open task count (weight 0.2, the original
+metric). Each metric is min-max normalized across the candidate pool before
+weighting so the three different units are comparable; a candidate with no
+completed-task history yet for a metric gets a neutral 0.5 rather than being
+penalized or favored, so a brand-new hire is ranked on load alone until they
+build a track record. Lowest score wins, ties broken by user id (this is what
+gives the original load-only version its round-robin behaviour in practice,
+preserved here for the all-neutral case). Local scoring over existing DB
+data — no vendor call, no model — same I10-safe reasoning as the original
+metric, just three of them instead of one.
 
 ---
 
