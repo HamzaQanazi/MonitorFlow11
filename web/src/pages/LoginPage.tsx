@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import { ApiError } from '../lib/api'
@@ -160,6 +160,10 @@ export default function LoginPage() {
               </p>
             )}
           </div>
+
+          <Link to="/forgot-password" className="login-forgot">
+            {t('login_forgot_link')}
+          </Link>
 
           <button className="login-submit" type="submit" disabled={submitting}>
             {submitting ? (

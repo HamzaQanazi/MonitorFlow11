@@ -161,6 +161,60 @@ paths:
               schema: { $ref: '#/components/schemas/Account' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      security: []
+      summary: >
+        Self-service reset, step 1 (CLAUDE.md §13 re-scope, supervisor-directed).
+        Always responds 200 with the same body whether or not `identifier`
+        matches an account — never reveals existence. If it does match, emails
+        a single-use, 1-hour-expiry reset link to that account's `email`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier]
+              properties:
+                identifier: { type: string, description: "The same value used to log in — an employee number or an email." }
+      responses:
+        '200':
+          description: Always returned, regardless of whether the identifier matched
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { ok: { type: boolean } }
+        '422': { $ref: '#/components/responses/Validation' }
+        '429': { description: Reset request rate limit exceeded }
+
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      security: []
+      summary: Self-service reset, step 2 — consumes the token from the emailed link.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string, description: "The raw token from the emailed reset link." }
+                newPassword: { type: string, format: password, minLength: 8 }
+      responses:
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { ok: { type: boolean } }
+        '422': { $ref: '#/components/responses/Validation' }
+
   # ── Onboarding wizard (v7) — first-login company setup ───────────────────────
   /onboarding/options:
     get:

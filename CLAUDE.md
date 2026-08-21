@@ -216,8 +216,14 @@ either exception above — flag it the same way before building it.
   disabling the old (documented MVP limitation).
 - **No WebSockets, no push.** All "live" updates poll: notifications 30s,
   task/request lists 30s, detail pages on-focus refresh only.
-- **No draft saving, no signature capture, no self-service password reset** — cut
-  for MVP. If asked to build one, say so instead of proceeding.
+- **No draft saving, no signature capture** — cut for MVP. If asked to build
+  one, say so instead of proceeding.
+- **Revised — self-service password reset now exists** (§13, supervisor-
+  directed re-scope). `POST /auth/forgot-password` / `POST /auth/reset-password`
+  (`routes/auth.js`) — this was on the "no self-service password reset" cut
+  list; it no longer is. Still no forced-change flow for admin-issued temp
+  passwords, and still no refresh tokens/server-side logout (both remain
+  documented limitations, §15).
 - **Every permission rule (§5) is enforced server-side**, never only hidden in
   the UI. Ownership checks are required *in addition to* capability checks.
 - **No status keys hardcoded in application code** (§8). If a feature seems to
@@ -251,8 +257,10 @@ either exception above — flag it the same way before building it.
   tokens (documented MVP limitation).
 - Passwords: bcrypt, cost ≥ 10.
 - Login rate limit: 5 attempts / 15 min per identifier+IP (in-memory is fine).
+  `/auth/forgot-password` gets the identical shape on its own counter (§13).
 - Never log request bodies on `/auth/*` or `/requests` (passwords / personal
-  data).
+  data). A new-hire's or a reset's password/token is emailed, never logged or
+  written to `audit_event` (§13).
 - Deactivated accounts (`is_active = false`) are rejected at JWT validation, not
   only at login.
 - `login_identifier` is deliberately generic: an external `user` logs in with
@@ -475,6 +483,11 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
   request.priority_changed) written by the workflow engine and the
   assign/priority handlers. The operational family deliberately duplicates the
   `request_status_history` timeline so the admin audit page is one feed.
+- **password_reset_token** (`031_password_reset.sql`, §13) — id, user_id (FK,
+  cascade), token_hash (sha256 of the raw token; the raw value is never
+  stored, only emailed), expires_at, used_at (nullable — single-use),
+  created_at. A fresh `/auth/forgot-password` call deletes any prior row for
+  that user before inserting, so there's at most one live token per user.
 
 Location is a real geography column, not a string in JSONB — spatial analysis
 later needs new *queries*, not a migration.
@@ -741,8 +754,9 @@ WebSocket live refresh · push notifications ·
 behavioural monitoring** (I10) · signature capture · draft saving · satisfaction
 ratings · multi-organization / true multi-tenancy (single-org per deployment;
 "many companies" = one deployment each) · payments · advanced BI · **named vendor
-integrations** · self-service forgot/reset password · request deadlines ·
-form/workflow versioning · refresh tokens / server-side logout.
+integrations** (except the three explicitly re-scoped exceptions below) ·
+request deadlines · form/workflow versioning · refresh tokens / server-side
+logout.
 
 **Re-scoped 2026-07-31 (deliberate, was on this list): the visual Form
 Builder / Workflow Config UI.** `AddServiceWizard.tsx` + `POST /services`
@@ -835,10 +849,47 @@ day, not rotating rest days, not multiple days off, not per-week variation.
 Extend to a real availability table only if one of those turns out to
 matter in practice.
 
+**Re-scoped 2026-08-21 (deliberate, third exception to the named-vendor ban
+— supervisor-directed, was previously on the "deliberately NOT built" list):
+self-service password reset + credentials-by-email.** `lib/mailer.js` is a
+thin SMTP wrapper (env-configured — `SMTP_HOST`/`PORT`/`USER`/`PASS`/`FROM`,
+`.env.example`), same "vendor key never reaches the client" shape as the
+Nominatim/Gemini proxies; unlike those two it isn't a fixed named service —
+it's whatever SMTP account a deployment points it at (a free Gmail app
+password works for dev/small-scale). If `SMTP_HOST` is unset, it logs the
+message instead of sending — never a hard dependency, and every caller
+treats it as best-effort (a hire or a reset request still succeeds even if
+mail delivery fails).
+- **Credentials by email:** `POST /employees` and `PATCH /employees/{id}/reset-password`
+  (`routes/employees.js`) now email the login + password to the employee's
+  real `email` column — distinct from `login_identifier` (§4), which is a
+  synthetic handle built from name + the company's onboarding-set
+  `email_domain` and not necessarily a deliverable mailbox on its own. The
+  admin still also sees the credential once in the UI (existing reveal-once
+  behavior, unchanged) — email is an added delivery channel, not a
+  replacement for it.
+- **Forgot password:** `POST /auth/forgot-password` / `POST /auth/reset-password`
+  (`routes/auth.js`, `031_password_reset.sql`'s `password_reset_token`
+  table). Single-use, 1-hour-expiry token; only its sha256 hash is ever
+  stored, so a leaked DB row can't be replayed as a working link. Forgot-
+  password always returns the same response whether or not the identifier
+  matched an account — no enumeration, rate-limited the same 5-per-15-min
+  shape as login (§4), separate counter so the two can't lock each other
+  out. Web: a "Forgot password?" link on `LoginPage.tsx` →
+  `ForgotPasswordPage.tsx` (request) → `ResetPasswordPage.tsx` (the emailed
+  link lands here, reads `?token=`). Applies to all three account kinds
+  (I2) — `user` accounts reset against the real email they registered with;
+  admin/employee reset against `email`, same as the credentials-by-email
+  path above. **Not yet built:** the two Flutter mobile apps' own forgot-
+  password UI — the backend endpoints are shared/generic, so mobile can
+  adopt them without any backend change, but no mobile screen calls them
+  yet (student 1's surface, §11 — flag before building it there too).
+
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
 `audit_event`) · **bilingual auto-fill** (Gemini, above) · **AI auto-assign
-ranking** (§5) · **AI-suggested scheduling** (above). GPS tracking stays
+ranking** (§5) · **AI-suggested scheduling** (above) · **self-service
+password reset + credentials-by-email** (above). GPS tracking stays
 out (I10).
 
 ---
@@ -872,7 +923,8 @@ deactivated JWT → 401 · deactivate employee holding an open task → 409 · c
 before done → 409 · cross-subtree assign → refused · override to nonexistent
 status → 422 · download another user's file → 404 · user submit to internal-only
 service → 403 · hire past the plan's employee cap → 409 · clock-in with
-missing/out-of-range location → 422.
+missing/out-of-range location → 422 · forgot-password on a real vs. fake
+identifier → identical response · expired/reused/unknown reset token → 422.
 
 ---
 

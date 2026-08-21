@@ -244,6 +244,23 @@
   line-height: 1.45;
 }
 
+.login-forgot {
+  justify-self: start;
+  margin-top: -8px;
+  color: var(--amber-600);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.login-forgot:hover {
+  text-decoration: underline;
+}
+
+a.login-submit {
+  text-decoration: none;
+}
+
 /* Mobile: brand pane collapses to a slim identity band */
 @media (max-width: 860px) {
   .login {

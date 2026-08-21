@@ -1,11 +1,14 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { loadCapabilities } = require('../lib/capabilities');
+const { withTx } = require('../lib/audit');
+const { sendMail } = require('../lib/mailer');
 
 const router = express.Router();
 
@@ -98,6 +101,30 @@ function signToken(user) {
   return jwt.sign({ sub: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '24h' });
 }
 
+// Same shape as rateLimitLogin above — separate map/keying so a burst of
+// forgot-password requests can't also lock someone out of logging in.
+const RESET_WINDOW_MS = 15 * 60 * 1000;
+const RESET_MAX_ATTEMPTS = 5;
+const resetAttempts = new Map();
+
+function rateLimitReset(req, res, next) {
+  const identifier = (req.body || {}).identifier || '';
+  const key = `${String(identifier).toLowerCase()}|${req.ip}`;
+  const now = Date.now();
+  const entry = resetAttempts.get(key);
+  if (!entry || now > entry.resetAt) {
+    resetAttempts.set(key, { count: 1, resetAt: now + RESET_WINDOW_MS });
+    return next();
+  }
+  if (entry.count >= RESET_MAX_ATTEMPTS) {
+    return res.status(429).json({ error: 'Too many requests, try again later' });
+  }
+  entry.count += 1;
+  next();
+}
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
+
 router.post('/register', async (req, res, next) => {
   try {
     const { name, email, password, phone } = req.body || {};
@@ -167,6 +194,84 @@ router.post('/login', rateLimitLogin, async (req, res, next) => {
 router.get('/me', requireAuth, async (req, res) => {
   const company = await getCompanyInfo(req.user.company_id);
   res.json({ user: publicUser(req.user, req.user.capabilities, company) });
+});
+
+// POST /auth/forgot-password — self-service reset (CLAUDE.md §13 re-scope,
+// supervisor-directed, 2026-08-21). Accepts the same identifier used to log
+// in (email for a `user`, the generated login email for an employee/admin)
+// and, separately, resolves it to the account's real `email` column to send
+// to — the two differ for employees (§4). Always the same response whether
+// or not the identifier matched anything (no account enumeration, same
+// reasoning as the documented register-enumeration limitation, §15, just
+// actually closed here since a reset request is more sensitive than a
+// registration collision).
+router.post('/forgot-password', rateLimitReset, async (req, res, next) => {
+  try {
+    const identifier = (req.body || {}).identifier;
+    if (!identifier || typeof identifier !== 'string') {
+      return res.status(422).json({ errors: { identifier: 'Enter your login email or ID' } });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT id, name, first_name, email FROM users
+       WHERE is_active AND (lower(login_identifier) = lower($1) OR lower(email) = lower($1))`,
+      [identifier]
+    );
+    const user = rows[0];
+    if (user && user.email) {
+      const token = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      // Only one live token per user — a fresh request supersedes any
+      // earlier, unused one rather than leaving multiple valid links around.
+      await pool.query('DELETE FROM password_reset_token WHERE user_id = $1', [user.id]);
+      await pool.query(
+        'INSERT INTO password_reset_token (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+        [user.id, tokenHash, new Date(Date.now() + RESET_TOKEN_TTL_MS)]
+      );
+      const resetUrl = `${process.env.WEB_BASE_URL || 'http://localhost:5173'}/reset-password?token=${token}`;
+      const who = user.first_name || user.name;
+      await sendMail(user.email, 'Reset your MonitorFlow password / إعادة تعيين كلمة المرور', {
+        en: `Hi ${who},\n\nSomeone requested a password reset for your MonitorFlow account. This link is valid for 1 hour:\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email — your password won't change.`,
+        ar: `مرحبًا ${who}،\n\nتم طلب إعادة تعيين كلمة المرور لحسابك في MonitorFlow. هذا الرابط صالح لمدة ساعة واحدة:\n\n${resetUrl}\n\nإذا لم تطلب ذلك، يمكنك تجاهل هذه الرسالة — لن تتغيّر كلمة المرور.`,
+      });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /auth/reset-password — consumes the token from the emailed link.
+// Single-use (used_at) and time-boxed (expires_at); a bad/expired/reused
+// token is a 422 keyed the same way every other form-shaped rejection here
+// is, not a distinct error family.
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body || {};
+    const errors = {};
+    if (!token || typeof token !== 'string') errors.token = 'Invalid or expired link';
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+      errors.newPassword = 'Password must be at least 8 characters';
+    }
+    if (Object.keys(errors).length) return res.status(422).json({ errors });
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const { rows } = await pool.query(
+      `SELECT id, user_id FROM password_reset_token
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`,
+      [tokenHash]
+    );
+    if (!rows.length) return res.status(422).json({ errors: { token: 'Invalid or expired link' } });
+
+    const password_hash = await bcrypt.hash(newPassword, 10);
+    await withTx(async (tx) => {
+      await tx.query('UPDATE users SET password_hash = $1 WHERE id = $2', [password_hash, rows[0].user_id]);
+      await tx.query('UPDATE password_reset_token SET used_at = now() WHERE id = $1', [rows[0].id]);
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;

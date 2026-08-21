@@ -123,6 +123,41 @@ const dict: Record<string, Loc> = {
     en: 'Can’t reach the server. Check your connection and try again.',
     ar: 'تعذّر الوصول إلى الخادم. تحقّق من اتصالك ثم حاول مجددًا.',
   },
+  login_forgot_link: { en: 'Forgot password?', ar: 'نسيت كلمة المرور؟' },
+
+  // forgot / reset password
+  fp_title: { en: 'Reset your password', ar: 'إعادة تعيين كلمة المرور' },
+  fp_sub: {
+    en: 'Enter your login email or employee number and we’ll email you a reset link.',
+    ar: 'أدخل بريدك الإلكتروني أو رقمك الوظيفي وسنرسل لك رابط إعادة التعيين عبر البريد.',
+  },
+  fp_identifier: { en: 'Employee no. or email', ar: 'الرقم الوظيفي أو البريد الإلكتروني' },
+  fp_submit: { en: 'Send reset link', ar: 'إرسال رابط إعادة التعيين' },
+  fp_submitting: { en: 'Sending…', ar: 'جارٍ الإرسال…' },
+  fp_sent: {
+    en: 'If that account exists, we’ve sent a password reset link to its email address. Check your inbox (and spam folder).',
+    ar: 'إن كان الحساب موجودًا، أرسلنا رابط إعادة تعيين كلمة المرور إلى بريده الإلكتروني. تحقّق من صندوق الوارد (ومجلد الرسائل غير المرغوبة).',
+  },
+  fp_back_to_login: { en: 'Back to sign in', ar: 'العودة لتسجيل الدخول' },
+
+  rp_title: { en: 'Choose a new password', ar: 'اختر كلمة مرور جديدة' },
+  rp_new_password: { en: 'New password', ar: 'كلمة المرور الجديدة' },
+  rp_confirm_password: { en: 'Confirm new password', ar: 'تأكيد كلمة المرور الجديدة' },
+  rp_submit: { en: 'Reset password', ar: 'إعادة تعيين كلمة المرور' },
+  rp_submitting: { en: 'Resetting…', ar: 'جارٍ إعادة التعيين…' },
+  rp_mismatch: { en: 'Passwords don’t match.', ar: 'كلمتا المرور غير متطابقتين.' },
+  rp_too_short: { en: 'Password must be at least 8 characters.', ar: 'يجب أن تتكوّن كلمة المرور من 8 أحرف على الأقل.' },
+  rp_no_token: {
+    en: 'This link is missing its reset code. Request a new one below.',
+    ar: 'هذا الرابط لا يحتوي على رمز إعادة التعيين. اطلب رابطًا جديدًا أدناه.',
+  },
+  rp_invalid_token: {
+    en: 'This link is invalid or has expired. Request a new one below.',
+    ar: 'هذا الرابط غير صالح أو منتهي الصلاحية. اطلب رابطًا جديدًا أدناه.',
+  },
+  rp_success: { en: 'Your password has been reset. You can sign in now.', ar: 'تم إعادة تعيين كلمة المرور. يمكنك تسجيل الدخول الآن.' },
+  rp_go_to_login: { en: 'Go to sign in', ar: 'الانتقال لتسجيل الدخول' },
+  rp_request_new_link: { en: 'Request a new link', ar: 'اطلب رابطًا جديدًا' },
 
   // dashboard
   dash_overview: { en: 'Overview', ar: 'نظرة عامة' },

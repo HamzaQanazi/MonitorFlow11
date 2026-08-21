@@ -12,6 +12,18 @@ const { withTx, logAudit } = require('../lib/audit');
 const { allocateEmployeeEmail } = require('../lib/employeeEmail');
 const { PLANS } = require('../lib/onboardingOptions');
 const { reassignDepartmentHead } = require('../lib/departmentHead');
+const { sendMail } = require('../lib/mailer');
+
+// Credential delivery emails (supervisor-directed, CLAUDE.md §13) — best-
+// effort, never awaited in a way that could fail the write that triggered
+// them (mailer.sendMail itself never throws). `who` greets the employee by
+// name; `loginIdentifier`/`password` are whatever the caller just set.
+function sendCredentialsEmail(to, who, loginIdentifier, password) {
+  return sendMail(to, 'Your MonitorFlow account / حسابك في MonitorFlow', {
+    en: `Hi ${who},\n\nAn account was created for you on MonitorFlow. Sign in with:\n\nLogin: ${loginIdentifier}\nPassword: ${password}\n\nPlease keep these credentials safe.`,
+    ar: `مرحبًا ${who}،\n\nتم إنشاء حساب لك على MonitorFlow. سجّل الدخول باستخدام:\n\nاسم الدخول: ${loginIdentifier}\nكلمة المرور: ${password}\n\nيرجى الحفاظ على هذه البيانات بسرية.`,
+  });
+}
 
 const router = express.Router();
 router.use(requireAuth);
@@ -300,6 +312,9 @@ router.post('/', async (req, res, next) => {
       throw err;
     }
     const created = await loadEmployee(inserted.id, req.user);
+    if (created.email) {
+      await sendCredentialsEmail(created.email, created.first_name || created.name, created.login_identifier, password);
+    }
     res.status(201).json({ employee: publicEmployee(created) });
   } catch (err) {
     next(err);
@@ -481,6 +496,7 @@ router.patch('/:id/reset-password', async (req, res, next) => {
       // The temp password itself is never audited (secrets stay out of detail).
       await logAudit(tx, req.user.id, 'employee.password_reset', 'user', emp.id);
     });
+    if (emp.email) await sendCredentialsEmail(emp.email, emp.first_name || emp.name, emp.login_identifier, tempPassword);
     res.json({ tempPassword });
   } catch (err) {
     next(err);
