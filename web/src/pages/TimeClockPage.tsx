@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError, getToken } from '../lib/api'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth, hasCapability } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import LocationPin from '../components/LocationPin'
 import './RequestsPage.css'
@@ -353,8 +353,10 @@ function TimesheetsView() {
   const { t } = useI18n()
   const { user } = useAuth()
   // export.csv needs the `export` capability on top of view_all, so a manager
-  // without it would otherwise click an enabled button and get a 403.
-  const canExport = !!user?.capabilities.includes('export')
+  // without it would otherwise click an enabled button and get a 403. Via
+  // hasCapability so the Owner isn't locked out of their own export: the route
+  // is requireCapabilityOrAdmin and an admin holds no capabilities (§5).
+  const canExport = hasCapability(user, 'export')
   const [params, setParams] = useSearchParams()
   const weekStart = params.get('weekStart') || mondayOf(todayIso())
 
@@ -548,6 +550,10 @@ function DayShiftsDialog({
   onDone: () => void
 }) {
   const { t } = useI18n()
+  const { user } = useAuth()
+  // PATCH /shifts/{id} and /approve both need manage_employees on top of the
+  // view_all that got the manager onto this page.
+  const canManage = hasCapability(user, 'manage_employees')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [errors, setErrors] = useState<FieldErrors>({})
@@ -658,11 +664,23 @@ function DayShiftsDialog({
                     </span>
                   </div>
                   <div className="tc-shift-actions">
-                    <button type="button" className="action-btn" onClick={() => startEdit(s)}>
+                    <button
+                      type="button"
+                      className="action-btn"
+                      disabled={!canManage}
+                      title={canManage ? undefined : t('no_manage_cap')}
+                      onClick={() => startEdit(s)}
+                    >
                       {t('emp_edit')}
                     </button>
                     {s.approvalStatus === 'pending' && (
-                      <button type="button" className="action-btn" disabled={busyId === s.id} onClick={() => approve(s.id)}>
+                      <button
+                        type="button"
+                        className="action-btn"
+                        disabled={!canManage || busyId === s.id}
+                        title={canManage ? undefined : t('no_manage_cap')}
+                        onClick={() => approve(s.id)}
+                      >
                         {busyId === s.id ? t('tc_approving') : t('tc_approve')}
                       </button>
                     )}

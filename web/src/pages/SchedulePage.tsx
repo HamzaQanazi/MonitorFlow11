@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
+import { useAuth, hasCapability } from '../auth/AuthContext'
 import { useI18n, type Loc } from '../i18n'
 import { TranslateButton } from '../components/TranslateButton'
 import './RequestsPage.css'
@@ -99,6 +100,11 @@ interface ShiftTemplate {
 
 function TemplatesView() {
   const { t, L } = useI18n()
+  const { user } = useAuth()
+  // The page is reachable on view_all, but every write here is
+  // requireCapabilityOrAdmin('manage_employees') — without this the buttons
+  // are live and 403 on click.
+  const canManage = hasCapability(user, 'manage_employees')
   const [templates, setTemplates] = useState<ShiftTemplate[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<{ kind: 'create' } | { kind: 'edit'; template: ShiftTemplate } | { kind: 'delete'; template: ShiftTemplate } | null>(null)
@@ -123,7 +129,13 @@ function TemplatesView() {
     <>
       <div className="req-filters">
         <div className="control-row">
-          <button type="button" className="req-retry emp-add" onClick={() => setDialog({ kind: 'create' })}>
+          <button
+            type="button"
+            className="req-retry emp-add"
+            onClick={() => setDialog({ kind: 'create' })}
+            disabled={!canManage}
+            title={canManage ? undefined : t('no_manage_cap')}
+          >
             {t('sc_add_template')}
           </button>
         </div>
@@ -178,10 +190,22 @@ function TemplatesView() {
                   <td>{tpl.endTime.slice(0, 5)}</td>
                   <td className="emp-actions-col">
                     <div className="emp-actions">
-                      <button type="button" className="action-btn" onClick={() => setDialog({ kind: 'edit', template: tpl })}>
+                      <button
+                        type="button"
+                        className="action-btn"
+                        onClick={() => setDialog({ kind: 'edit', template: tpl })}
+                        disabled={!canManage}
+                        title={canManage ? undefined : t('no_manage_cap')}
+                      >
                         {t('emp_edit')}
                       </button>
-                      <button type="button" className="action-btn is-danger" onClick={() => setDialog({ kind: 'delete', template: tpl })}>
+                      <button
+                        type="button"
+                        className="action-btn is-danger"
+                        onClick={() => setDialog({ kind: 'delete', template: tpl })}
+                        disabled={!canManage}
+                        title={canManage ? undefined : t('no_manage_cap')}
+                      >
                         {t('sc_delete_template')}
                       </button>
                     </div>
@@ -227,6 +251,8 @@ function TemplateFormDialog({ template, onClose, onDone }: { template?: ShiftTem
     } catch (err) {
       const fe = fieldErrorsOf(err)
       if (Object.keys(fe).length) setErrors(fe)
+      // 409: the hours are frozen because the shift has already been worked.
+      else if (err instanceof ApiError && err.status === 409) setErrors({ _: t('sc_template_hours_locked') })
       else setErrors({ _: (err as Error).message })
       setBusy(false)
     }
@@ -326,6 +352,10 @@ interface RosterEmployee {
 
 function RosterView() {
   const { t, L } = useI18n()
+  const { user } = useAuth()
+  // Reading the roster is view_all; PUT /roster and POST /suggest both need
+  // manage_employees (see TemplatesView).
+  const canManage = hasCapability(user, 'manage_employees')
   const [params, setParams] = useSearchParams()
   const weekStart = params.get('weekStart') || mondayOf(todayIso())
   const weekEnd = addDays(weekStart, 6)
@@ -396,10 +426,22 @@ function RosterView() {
             <span>{t('tc_week_start')}</span>
             <input type="date" className="req-select" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
           </label>
-          <button type="button" className="req-retry emp-add" onClick={() => setCopyConfirm(true)} disabled={copying || !employees}>
+          <button
+            type="button"
+            className="req-retry emp-add"
+            onClick={() => setCopyConfirm(true)}
+            disabled={!canManage || copying || !employees}
+            title={canManage ? undefined : t('no_manage_cap')}
+          >
             {copying ? t('sc_copying') : t('sc_copy_last_week')}
           </button>
-          <button type="button" className="req-retry emp-add" onClick={() => setSuggestOpen(true)} disabled={!employees}>
+          <button
+            type="button"
+            className="req-retry emp-add"
+            onClick={() => setSuggestOpen(true)}
+            disabled={!canManage || !employees}
+            title={canManage ? undefined : t('no_manage_cap')}
+          >
             {t('sc_suggest')}
           </button>
         </div>
@@ -535,6 +577,8 @@ function RosterCellDialog({
   onDone: () => void
 }) {
   const { t, L } = useI18n()
+  const { user } = useAuth()
+  const canManage = hasCapability(user, 'manage_employees')
   const [templateId, setTemplateId] = useState<string>(current ? String(current.templateId) : '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -580,14 +624,26 @@ function RosterCellDialog({
         </label>
         <div className="dialog-actions">
           {current && (
-            <button type="button" className="action-btn is-danger" disabled={busy} onClick={() => save(true)}>
+            <button
+              type="button"
+              className="action-btn is-danger"
+              disabled={!canManage || busy}
+              title={canManage ? undefined : t('no_manage_cap')}
+              onClick={() => save(true)}
+            >
               {t('sc_clear_day')}
             </button>
           )}
           <button type="button" className="detail-close-text" onClick={onClose}>
             {t('cancel')}
           </button>
-          <button type="button" className="req-retry" disabled={busy || !templateId} onClick={() => save(false)}>
+          <button
+            type="button"
+            className="req-retry"
+            disabled={!canManage || busy || !templateId}
+            title={canManage ? undefined : t('no_manage_cap')}
+            onClick={() => save(false)}
+          >
             {busy ? t('tc_saving') : t('save')}
           </button>
         </div>

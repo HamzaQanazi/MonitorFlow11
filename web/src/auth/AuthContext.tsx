@@ -51,6 +51,14 @@ export function canUseConsole(u: Pick<AuthUser, 'role' | 'capabilities'>): boole
   return u.role === 'admin' || u.capabilities.some((c) => CONSOLE_CAPABILITIES.includes(c))
 }
 
+// Mirrors requireCapabilityOrAdmin (middleware/auth.js): the admin passes
+// every capability gate while holding no capabilities of their own (§5), so a
+// bare capabilities.includes() check disables exactly the actions the Owner is
+// most entitled to. Use this anywhere the UI mirrors a server-side gate.
+export function hasCapability(u: Pick<AuthUser, 'role' | 'capabilities'> | null | undefined, cap: string): boolean {
+  return !!u && (u.role === 'admin' || u.capabilities.includes(cap))
+}
+
 type AuthStatus = 'restoring' | 'signedOut' | 'signedIn'
 
 interface AuthContextValue {

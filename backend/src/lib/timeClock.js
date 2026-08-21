@@ -121,14 +121,32 @@ function shiftEnd(clockOutAt, clockInAt, now) {
   return new Date(Math.min(now.getTime(), new Date(clockInAt).getTime() + MAX_OPEN_SHIFT_MS));
 }
 
-// ponytail: overnight shifts (expectedEndTime < expectedStartTime) aren't
-// modeled — clamped to 0 expected seconds. Add wraparound if a company needs it.
+// A template whose end time is at or before its start crosses midnight (a
+// 17:00–01:00 night shift). It used to clamp to 0 expected seconds, which
+// billed the entire shift as overtime — an 8h night read as 8h of overtime.
+function isOvernight(defaultShift) {
+  return timeStringToSeconds(defaultShift.expectedEndTime) <= timeStringToSeconds(defaultShift.expectedStartTime);
+}
+
 function expectedSecondsFromDefault(defaultShift) {
   if (!defaultShift?.expectedStartTime || !defaultShift?.expectedEndTime) return null;
-  return Math.max(
-    0,
-    timeStringToSeconds(defaultShift.expectedEndTime) - timeStringToSeconds(defaultShift.expectedStartTime)
-  );
+  const start = timeStringToSeconds(defaultShift.expectedStartTime);
+  const end = timeStringToSeconds(defaultShift.expectedEndTime);
+  return end > start ? end - start : end + 86400 - start;
+}
+
+// Did this clock-out land after the shift's end time? The plain comparison
+// holds for a same-day shift. For an overnight one the end time is a small
+// number (01:00) and every pre-midnight clock-out beats it, so leaving two
+// hours EARLY got flagged late — restrict the late window to the stretch
+// between the end time and the next shift's start.
+// ponytail: a clock-in far enough past the start to wrap the ring is still
+// not flagged (either shape) — model the shift as an interval, not two
+// times, if that case ever matters.
+function isLateAgainst(tod, defaultShift, boundaryTime) {
+  const boundary = timeStringToSeconds(boundaryTime);
+  if (!isOvernight(defaultShift)) return tod > boundary;
+  return tod > boundary && tod < timeStringToSeconds(defaultShift.expectedStartTime);
 }
 
 // Has the employee's scheduled start time arrived yet on `date`? A past date
@@ -176,7 +194,8 @@ function computeAttendance({ shift, breakSeconds = 0, defaultShift, date, now = 
     lateClockOut:
       !!clockOutAt &&
       !!defaultShift?.expectedEndTime &&
-      timeOfDaySeconds(clockOutAt) > timeStringToSeconds(defaultShift.expectedEndTime),
+      !!defaultShift?.expectedStartTime &&
+      isLateAgainst(timeOfDaySeconds(clockOutAt), defaultShift, defaultShift.expectedEndTime),
     absent: false,
     currentlyWorking: shift.status === 'active',
   };

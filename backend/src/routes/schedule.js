@@ -8,7 +8,8 @@ const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole, requireCapabilityOrAdmin, requireFeature } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
-const { subtreeIds } = require('../lib/scope');
+const { ownerScopeIds } = require('../lib/scope');
+const { companyDate } = require('../lib/timeClock');
 const { isBilingual } = require('../lib/i18nLabel');
 
 const router = express.Router();
@@ -60,6 +61,22 @@ router.post('/templates', requireCapabilityOrAdmin('manage_employees'), async (r
   }
 });
 
+// Time Clock's late/absent/overtime math (lib/timeClock.js) joins
+// schedule_entry -> shift_template and reads the CURRENT start/end, so editing
+// a template's hours rewrites what the Today tab, the timesheet grid, and the
+// payroll CSV say about days that already happened. Same hazard §3 addresses
+// for form/workflow definitions: once it has been used, it is frozen. Only the
+// hours are — the bilingual name is a label and never feeds the math, so
+// renaming stays allowed, and a template used only on future dates is still
+// fully editable.
+async function usedOnAPastDate(templateId) {
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM schedule_entry WHERE shift_template_id = $1 AND date < $2::date LIMIT 1',
+    [templateId, companyDate(new Date())]
+  );
+  return rowCount > 0;
+}
+
 router.patch('/templates/:id', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -69,6 +86,24 @@ router.patch('/templates/:id', requireCapabilityOrAdmin('manage_employees'), asy
     if (startTime !== undefined && !TIME_RE.test(startTime || '')) errors.startTime = 'startTime must be HH:MM';
     if (endTime !== undefined && !TIME_RE.test(endTime || '')) errors.endTime = 'endTime must be HH:MM';
     if (Object.keys(errors).length) return res.status(422).json({ errors });
+
+    const current = (
+      await pool.query('SELECT start_time, end_time FROM shift_template WHERE id = $1 AND company_id = $2', [
+        id,
+        req.user.company_id,
+      ])
+    ).rows[0];
+    if (!current) return res.status(404).json({ error: 'Not found' });
+
+    // pg hands back TIME as 'HH:MM:SS'; the client sends 'HH:MM'.
+    const hoursChanged =
+      (startTime !== undefined && startTime !== current.start_time.slice(0, 5)) ||
+      (endTime !== undefined && endTime !== current.end_time.slice(0, 5));
+    if (hoursChanged && (await usedOnAPastDate(id))) {
+      return res.status(409).json({
+        error: 'This shift has already been worked on past dates — changing its hours would rewrite attendance history. Create a new shift instead.',
+      });
+    }
 
     const template = await withTx(async (client) => {
       const { rows } = await client.query(
@@ -108,6 +143,10 @@ router.delete('/templates/:id', requireCapabilityOrAdmin('manage_employees'), as
     if (!deleted) return res.status(404).json({ error: 'Not found' });
     res.status(204).end();
   } catch (err) {
+    // The pre-check above runs on its own connection, so a roster write can
+    // land between it and the DELETE. The FK (NO ACTION) is the real guard —
+    // report it as the same 409 rather than letting it surface as a 500.
+    if (err.code === '23503') return res.status(409).json({ error: 'Template is used by scheduled shifts' });
     next(err);
   }
 });
@@ -122,7 +161,10 @@ router.get('/roster', requireCapabilityOrAdmin('view_all'), async (req, res, nex
     if (!DATE_RE.test(from || '') || !DATE_RE.test(to || '')) {
       return res.status(400).json({ error: 'from and to must be YYYY-MM-DD' });
     }
-    const ids = await subtreeIds(req.user.id);
+    // ownerScopeIds, not subtreeIds: the Owner is an admin with no subtree
+    // (I2), so a raw subtree walk left them with an empty roster they also
+    // could not write to (every employeeId failed the PUT's scope check).
+    const ids = await ownerScopeIds(req.user);
     const [{ rows: employees }, { rows: entries }] = await Promise.all([
       pool.query(`SELECT id, name FROM users WHERE id = ANY($1::int[]) AND role = 'employee' AND is_active ORDER BY name`, [
         ids,
@@ -163,8 +205,10 @@ router.get('/roster', requireCapabilityOrAdmin('view_all'), async (req, res, nex
 
 // PUT /schedule/roster — bulk upsert. { entries: [{employeeId, date, templateId}] },
 // templateId: null clears that employee's day. Every employeeId must be in the
-// caller's subtree (404-over-403, same shape as tasks.js) and every template
-// must belong to the caller's company (422 on a bad id via the FK).
+// caller's scope (404-over-403, same shape as tasks.js); an unknown templateId
+// trips the FK and comes back 422. (The FK proves the template EXISTS, not that
+// it belongs to this company — indistinguishable while a deployment holds one
+// company, §13, but it is not the company check it looks like.)
 router.put('/roster', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
     const entries = Array.isArray(req.body?.entries) ? req.body.entries : null;
@@ -176,7 +220,7 @@ router.put('/roster', requireCapabilityOrAdmin('manage_employees'), async (req, 
       }
     }
 
-    const ids = new Set(await subtreeIds(req.user.id));
+    const ids = new Set(await ownerScopeIds(req.user));
     if (entries.some((e) => !ids.has(e.employeeId))) return res.status(404).json({ error: 'Not found' });
 
     await withTx(async (client) => {
@@ -257,7 +301,7 @@ router.post('/suggest', requireCapabilityOrAdmin('manage_employees'), async (req
     ).rows[0];
     if (!template) return res.status(404).json({ error: 'Not found' });
 
-    const subtree = await subtreeIds(req.user.id);
+    const subtree = await ownerScopeIds(req.user);
     if (employeeIds?.length) {
       const allowed = new Set(subtree);
       if (employeeIds.some((id) => !allowed.has(id))) return res.status(404).json({ error: 'Not found' });

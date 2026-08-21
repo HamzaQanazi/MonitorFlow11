@@ -161,3 +161,38 @@ test('a closed day is never flagged unclosed', () => {
   const shifts = [{ clockInAt: '2026-08-03T09:00:00Z', clockOutAt: '2026-08-03T17:00:00Z', breakSeconds: 0 }];
   assert.equal(computeTimesheetDay({ shifts, defaultShift: null }).unclosed, false);
 });
+
+// Overnight templates (end time at or before start — a 17:00–01:00 night).
+// The expected duration used to clamp to 0, so a normal 8h night billed as 8h
+// of overtime, and every pre-midnight clock-out beat the 01:00 end time.
+
+test('an overnight shift worked in full is not overtime', () => {
+  const defaultShift = { expectedStartTime: '17:00:00', expectedEndTime: '01:00:00' };
+  const shift = { clockInAt: '2026-08-03T17:00:00Z', clockOutAt: '2026-08-04T01:00:00Z', status: 'completed' };
+  const r = computeAttendance({ shift, defaultShift });
+  assert.equal(r.totalHours, 8);
+  assert.equal(r.overtimeHours, 0);
+  assert.equal(r.lateClockOut, false);
+});
+
+test('leaving an overnight shift early is not a late clock-out', () => {
+  const defaultShift = { expectedStartTime: '17:00:00', expectedEndTime: '01:00:00' };
+  const shift = { clockInAt: '2026-08-03T17:00:00Z', clockOutAt: '2026-08-03T23:00:00Z', status: 'completed' };
+  assert.equal(computeAttendance({ shift, defaultShift }).lateClockOut, false);
+});
+
+test('staying past an overnight shift’s end is still flagged and counted', () => {
+  const defaultShift = { expectedStartTime: '17:00:00', expectedEndTime: '01:00:00' };
+  const shift = { clockInAt: '2026-08-03T17:00:00Z', clockOutAt: '2026-08-04T01:30:00Z', status: 'completed' };
+  const r = computeAttendance({ shift, defaultShift });
+  assert.equal(r.lateClockOut, true);
+  assert.equal(r.overtimeHours, 0.5);
+});
+
+test('a same-day shift keeps the plain late-clock-out comparison', () => {
+  const defaultShift = { expectedStartTime: '09:00:00', expectedEndTime: '17:00:00' };
+  const late = { clockInAt: '2026-08-03T09:00:00Z', clockOutAt: '2026-08-03T18:00:00Z', status: 'completed' };
+  const onTime = { clockInAt: '2026-08-03T09:00:00Z', clockOutAt: '2026-08-03T16:30:00Z', status: 'completed' };
+  assert.equal(computeAttendance({ shift: late, defaultShift }).lateClockOut, true);
+  assert.equal(computeAttendance({ shift: onTime, defaultShift }).lateClockOut, false);
+});

@@ -1836,7 +1836,12 @@ paths:
   /schedule/templates/{id}:
     patch:
       tags: [schedule]
-      summary: Edit a shift template. Requires manage_employees.
+      summary: >
+        Edit a shift template. Requires manage_employees. The bilingual name is
+        always editable, but startTime/endTime are frozen once the template has
+        been used on a past date — Time Clock reads the current hours when it
+        computes late/absent/overtime, so changing them would rewrite
+        attendance history for days that already happened (409).
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         content:
@@ -1850,6 +1855,7 @@ paths:
       responses:
         '200': { description: Updated, content: { application/json: { schema: { type: object, properties: { template: { $ref: '#/components/schemas/ShiftTemplate' } } } } } }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Hours are frozen — the template has already been worked on a past date }
         '422': { $ref: '#/components/responses/Validation' }
     delete:
       tags: [schedule]
@@ -1864,9 +1870,10 @@ paths:
     get:
       tags: [schedule]
       summary: >
-        Manager roster grid — one row per subtree employee with every
-        schedule_entry in [from, to]. Requires view_all (Gate 1) + subtree
-        scope (Gate 2).
+        Manager roster grid — one row per in-scope employee with every
+        schedule_entry in [from, to]. Requires view_all (Gate 1) + scope
+        (Gate 2: an oversight employee's subtree, or the whole company for the
+        Owner, who has no subtree).
       parameters:
         - { name: from, in: query, required: true, schema: { type: string, format: date } }
         - { name: to, in: query, required: true, schema: { type: string, format: date } }
@@ -2387,6 +2394,9 @@ components:
         weeklyTotalHours: { type: number }
         weeklyOvertimeHours: { type: number }
 
+    # An endTime at or before startTime means the shift crosses midnight (a
+    # 17:00–01:00 night); Time Clock's duration and late-clock-out math handle
+    # the wraparound (lib/timeClock.js).
     ShiftTemplate:
       type: object
       properties:

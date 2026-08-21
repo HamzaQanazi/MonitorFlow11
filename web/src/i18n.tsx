@@ -487,6 +487,14 @@ const dict: Record<string, Loc> = {
   rep_loading: { en: 'Loading reports…', ar: 'جارٍ تحميل التقارير…' },
   rep_export_err: { en: 'Couldn’t export:', ar: 'تعذّر التصدير:' },
   rep_export_no_cap: { en: 'Your level doesn’t grant the export capability.', ar: 'مستواك لا يمنح صلاحية التصدير.' },
+  no_manage_cap: {
+    en: 'Your level doesn’t grant the manage employees capability.',
+    ar: 'مستواك لا يمنح صلاحية إدارة الموظفين.',
+  },
+  sc_template_hours_locked: {
+    en: 'This shift has already been worked on past dates — changing its hours would rewrite attendance history. Create a new shift instead.',
+    ar: 'تم العمل بهذه الوردية في تواريخ سابقة — تغيير ساعاتها سيعيد كتابة سجل الحضور. أنشئ وردية جديدة بدلًا من ذلك.',
+  },
   rep_no_match_h: { en: 'No matching requests', ar: 'لا طلبات مطابقة' },
   rep_no_match_p: { en: 'Nothing matches these filters. Loosen or clear them to see more.', ar: 'لا شيء يطابق عوامل التصفية هذه. خفّفها أو امسحها لعرض المزيد.' },
 
