@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
-import Donut from '../components/Donut'
 import { formatDuration } from '../lib/format'
 import './DashboardPage.css'
 
@@ -16,14 +16,17 @@ interface Stats {
   // Weighted mean minutes to resolution across the board; null = nothing resolved.
   avgResolutionMinutes: number | null
   byState: { state: State; count: number }[]
-  // Service names arrive bilingual ({en,ar}) — the dashboard picks with L().
-  byService: { serviceTypeId: number; name: Loc; count: number }[]
-  byPriority: { priority: string; count: number }[]
+  // Department names arrive bilingual ({en,ar}) — the dashboard picks with L().
+  // Sorted slowest-first by avgResolutionMinutes (backend); the count-distribution
+  // panel below re-sorts its own copy by count, the Resolution panel uses this order.
+  // By Service / By Priority were dropped (2026-08-21) — ReportsPage already has
+  // both as filterable/exportable charts, so the dashboard no longer repeats them.
   byDepartment: { departmentId: number; name: Loc; count: number; avgResolutionMinutes: number | null }[]
   byRequesterRole: { role: string; count: number }[]
   slaBreaches: { count: number; rate: number | null }
   reopenRate: { reopened: number; everClosed: number; rate: number | null }
-  workload: { employeeId: number; employeeName: string; openCount: number }[]
+  // `total` is the count before the top-8 truncation, so the panel can show "+N more".
+  workload: { total: number; top: { employeeId: number; employeeName: string; openCount: number }[] }
 }
 
 interface Chart {
@@ -125,6 +128,17 @@ export default function DashboardPage() {
   const mid = chart.days[Math.floor(chart.days.length / 2)]
   const last = chart.days[chart.days.length - 1]
 
+  // Resolution panel reads stats.byDepartment as-is (backend sorts it
+  // slowest-first); this distribution bar wants biggest-first instead, so it
+  // re-sorts its own copy rather than the backend maintaining two orders.
+  const departmentsByCount = [...stats.byDepartment].sort((a, b) => b.count - a.count)
+  const maxDepartmentCount = Math.max(1, ...departmentsByCount.map((d) => d.count))
+  const workloadMore = stats.workload.total - stats.workload.top.length
+  // stats.byDepartment is already slowest-first (nulls last, backend-sorted),
+  // so the first non-null entry is the max — same bar treatment as Department/
+  // Requester/Workload below.
+  const maxResolutionMinutes = Math.max(1, ...stats.byDepartment.map((d) => d.avgResolutionMinutes ?? 0))
+
   function showTip(e: React.MouseEvent<HTMLDivElement>, day: Chart['days'][number]) {
     const col = e.currentTarget
     const width = chartRef.current?.clientWidth ?? 0
@@ -190,7 +204,10 @@ export default function DashboardPage() {
 
       {stats.total > 0 && (
         <section className="dash-alerts" aria-label={t('dash_health')}>
-          <div className={`alert-tile${stats.slaBreaches.count > 0 ? ' is-breach' : ''}`}>
+          <Link
+            to="/requests?slaBreached=true"
+            className={`alert-tile${stats.slaBreaches.count > 0 ? ' is-breach' : ''}`}
+          >
             <span className="alert-count">{stats.slaBreaches.count}</span>
             <span className="alert-label">
               {t('dash_sla_breaches')}
@@ -198,8 +215,8 @@ export default function DashboardPage() {
                 <> · {Math.round(stats.slaBreaches.rate * 100)}% {t('dash_of_open')}</>
               )}
             </span>
-          </div>
-          <div className="alert-tile">
+          </Link>
+          <Link to="/requests?reopened=true" className="alert-tile">
             <span className="alert-count">
               {stats.reopenRate.rate != null ? `${Math.round(stats.reopenRate.rate * 100)}%` : '—'}
             </span>
@@ -209,7 +226,7 @@ export default function DashboardPage() {
                 <> · {stats.reopenRate.reopened}/{stats.reopenRate.everClosed}</>
               )}
             </span>
-          </div>
+          </Link>
         </section>
       )}
 
@@ -220,91 +237,90 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="dash-grid">
-          <section className="dash-panel" aria-labelledby="activity-heading">
-            <div className="panel-head">
-              <h2 id="activity-heading">{t('dash_requests_created')}</h2>
-              <span className="panel-meta">
-                {t('dash_last_30')} · {chartTotal} {t('dash_total')}
-                {peak && max > 0 && (
-                  <>
-                    {' '}
-                    · {t('dash_peak')} {max} {t('dash_on')} {formatDay(peak.date)}
-                  </>
-                )}
-              </span>
-            </div>
-            <div
-              className="chart"
-              ref={chartRef}
-              onMouseLeave={() => setTip(null)}
-              role="img"
-              aria-label={`${t('dash_requests_created')} — ${t('dash_last_30')}: ${chartTotal} ${t('dash_total')}${peak && max > 0 ? `, ${t('dash_peak')} ${max} ${t('dash_on')} ${formatDay(peak.date)}` : ''}.`}
-            >
-              {chart.days.map((d) => (
-                <div className="chart-col" key={d.date} onMouseEnter={(e) => showTip(e, d)}>
-                  {d.count === 0 ? (
-                    <div className="chart-bar is-zero" />
-                  ) : (
-                    <div className="chart-stack" style={{ height: `${(d.count / max) * 100}%` }}>
-                      {d.open > 0 && (
-                        <div className="chart-seg is-open" style={{ flexGrow: d.open }} />
-                      )}
-                      {d.closed > 0 && (
-                        <div className="chart-seg is-closed" style={{ flexGrow: d.closed }} />
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-              {tip && (
-                <div className="chart-tip" style={{ left: tip.x }}>
-                  {tip.text}
-                </div>
-              )}
-            </div>
-            <div className="chart-x" aria-hidden="true">
-              <span>{formatDay(chart.days[0].date)}</span>
-              <span>{formatDay(mid.date)}</span>
-              <span>{formatDay(last.date)}</span>
-            </div>
-            <table className="visually-hidden">
-              <caption>{t('dash_requests_created')}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">{t('col_when')}</th>
-                  <th scope="col">{t('req_title')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {chart.days.map((d) => (
-                  <tr key={d.date}>
-                    <td>{d.date}</td>
-                    <td>{d.count}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-
-          <div className="dash-side">
-            <section className="dash-panel" aria-labelledby="service-heading">
+          <div className="dash-main">
+            <section className="dash-panel" aria-labelledby="activity-heading">
               <div className="panel-head">
-                <h2 id="service-heading">{t('dash_by_service')}</h2>
+                <h2 id="activity-heading">{t('dash_requests_created')}</h2>
+                <span className="panel-meta">
+                  {t('dash_last_30')} · {chartTotal} {t('dash_total')}
+                  {peak && max > 0 && (
+                    <>
+                      {' '}
+                      · {t('dash_peak')} {max} {t('dash_on')} {formatDay(peak.date)}
+                    </>
+                  )}
+                </span>
               </div>
-              <Donut
-                title={t('dash_by_service')}
-                slices={stats.byService.map((s) => ({ key: String(s.serviceTypeId), label: L(s.name), value: s.count }))}
-              />
+              <div
+                className="chart"
+                ref={chartRef}
+                onMouseLeave={() => setTip(null)}
+                role="img"
+                aria-label={`${t('dash_requests_created')} — ${t('dash_last_30')}: ${chartTotal} ${t('dash_total')}${peak && max > 0 ? `, ${t('dash_peak')} ${max} ${t('dash_on')} ${formatDay(peak.date)}` : ''}.`}
+              >
+                {chart.days.map((d) => (
+                  <div className="chart-col" key={d.date} onMouseEnter={(e) => showTip(e, d)}>
+                    {d.count === 0 ? (
+                      <div className="chart-bar is-zero" />
+                    ) : (
+                      <div className="chart-stack" style={{ height: `${(d.count / max) * 100}%` }}>
+                        {d.open > 0 && (
+                          <div className="chart-seg is-open" style={{ flexGrow: d.open }} />
+                        )}
+                        {d.closed > 0 && (
+                          <div className="chart-seg is-closed" style={{ flexGrow: d.closed }} />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {tip && (
+                  <div className="chart-tip" style={{ left: tip.x }}>
+                    {tip.text}
+                  </div>
+                )}
+              </div>
+              <div className="chart-x" aria-hidden="true">
+                <span>{formatDay(chart.days[0].date)}</span>
+                <span>{formatDay(mid.date)}</span>
+                <span>{formatDay(last.date)}</span>
+              </div>
+              <table className="visually-hidden">
+                <caption>{t('dash_requests_created')}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{t('col_when')}</th>
+                    <th scope="col">{t('req_title')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chart.days.map((d) => (
+                    <tr key={d.date}>
+                      <td>{d.date}</td>
+                      <td>{d.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </section>
 
             <section className="dash-panel" aria-labelledby="department-heading">
               <div className="panel-head">
                 <h2 id="department-heading">{t('dash_by_department')}</h2>
               </div>
-              <Donut
-                title={t('dash_by_department')}
-                slices={stats.byDepartment.map((d) => ({ key: String(d.departmentId), label: L(d.name), value: d.count }))}
-              />
+              {departmentsByCount.length > 0 ? (
+                departmentsByCount.map((d) => (
+                  <div className="break-row" key={d.departmentId}>
+                    <span className="break-label">{L(d.name)}</span>
+                    <span className="break-count">{d.count}</span>
+                    <div className="break-bar" aria-hidden="true">
+                      <div style={{ width: `${(d.count / maxDepartmentCount) * 100}%` }} />
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="panel-meta">{t('no_data')}</p>
+              )}
             </section>
 
             <section className="dash-panel" aria-labelledby="resolution-heading">
@@ -319,28 +335,20 @@ export default function DashboardPage() {
                   <div className="break-row" key={d.departmentId}>
                     <span className="break-label">{L(d.name)}</span>
                     <span className="break-count">{formatDuration(d.avgResolutionMinutes, t)}</span>
+                    {d.avgResolutionMinutes != null && (
+                      <div className="break-bar" aria-hidden="true">
+                        <div style={{ width: `${(d.avgResolutionMinutes / maxResolutionMinutes) * 100}%` }} />
+                      </div>
+                    )}
                   </div>
                 ))
               ) : (
                 <p className="panel-meta">{t('dash_no_resolved')}</p>
               )}
             </section>
+          </div>
 
-            <section className="dash-panel" aria-labelledby="priority-heading">
-              <div className="panel-head">
-                <h2 id="priority-heading">{t('dash_by_priority')}</h2>
-              </div>
-              {stats.byPriority.map((p) => (
-                <div className="break-row" key={p.priority}>
-                  <span className="break-label">{t(`pri_${p.priority}`)}</span>
-                  <span className="break-count">{p.count}</span>
-                  <div className="break-bar" aria-hidden="true">
-                    <div style={{ width: `${stats.total ? (p.count / stats.total) * 100 : 0}%` }} />
-                  </div>
-                </div>
-              ))}
-            </section>
-
+          <div className="dash-side">
             <section className="dash-panel" aria-labelledby="requester-heading">
               <div className="panel-head">
                 <h2 id="requester-heading">{t('dash_by_requester')}</h2>
@@ -356,24 +364,29 @@ export default function DashboardPage() {
               ))}
             </section>
 
-            {stats.workload.length > 0 && (
+            {stats.workload.top.length > 0 && (
               <section className="dash-panel" aria-labelledby="workload-heading">
                 <div className="panel-head">
                   <h2 id="workload-heading">{t('dash_workload')}</h2>
                 </div>
-                {stats.workload.map((w) => (
+                {stats.workload.top.map((w) => (
                   <div className="break-row" key={w.employeeId}>
                     <span className="break-label">{w.employeeName}</span>
                     <span className="break-count">{w.openCount}</span>
                     <div className="break-bar" aria-hidden="true">
                       <div
                         style={{
-                          width: `${(w.openCount / stats.workload[0].openCount) * 100}%`,
+                          width: `${(w.openCount / stats.workload.top[0].openCount) * 100}%`,
                         }}
                       />
                     </div>
                   </div>
                 ))}
+                {workloadMore > 0 && (
+                  <p className="panel-meta">
+                    +{workloadMore} {t('dash_more')}
+                  </p>
+                )}
               </section>
             )}
           </div>

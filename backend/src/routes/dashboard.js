@@ -12,7 +12,7 @@ router.use(requireAuth, requireCapabilityOrAdmin('view_all'));
 router.get('/stats', async (req, res, next) => {
   try {
     const dept = [await ownerScopeIds(req.user)];
-    const [byState, byService, byPriority, byDepartment, byRequesterRole, slaBreach, reopen, workload] = await Promise.all([
+    const [byState, byDepartment, byRequesterRole, slaBreach, reopen, workload] = await Promise.all([
       pool.query(
         `SELECT (s->>'is_terminal')::bool AS is_terminal, COUNT(*)::int AS count
          FROM request r
@@ -23,23 +23,7 @@ router.get('/stats', async (req, res, next) => {
          GROUP BY 1`,
         dept
       ),
-      pool.query(
-        `SELECT st.id, st.name, COUNT(r.id)::int AS count
-         FROM service_type st
-         LEFT JOIN request r ON r.service_type_id = st.id
-         WHERE st.enabled AND st.owner_id = ANY($1)
-         GROUP BY st.id, st.name
-         ORDER BY st.id`,
-        dept
-      ),
-      pool.query(
-        `SELECT priority, COUNT(*)::int AS count
-         FROM request r JOIN service_type st ON st.id = r.service_type_id
-         WHERE st.owner_id = ANY($1)
-         GROUP BY priority`,
-        dept
-      ),
-      // Per-department request counts (for the distribution pie) + resolution
+      // Per-department request counts (for the distribution bar) + resolution
       // time. "Resolved" = the request reached its completion-form transition's
       // target status (same definition as the CSV export's completed_at, §7);
       // requests that never got there (e.g. rejected) are excluded from the
@@ -125,8 +109,11 @@ router.get('/stats', async (req, res, next) => {
       // behaviour) — count of each employee's non-terminal tasks, scoped to the
       // actor's subtree (Gate 2, same `dept` scope array as everything above).
       // Top 8 by load; employees with zero open tasks just don't appear.
+      // total_employees (COUNT(*) OVER(), pre-LIMIT) lets the client show
+      // "+N more" instead of silently truncating.
       pool.query(
-        `SELECT u.id AS employee_id, u.name AS employee_name, COUNT(*)::int AS open_count
+        `SELECT u.id AS employee_id, u.name AS employee_name, COUNT(*)::int AS open_count,
+                COUNT(*) OVER()::int AS total_employees
          FROM task t
          JOIN request r ON r.id = t.request_id
          JOIN workflow_definition w ON w.service_type_id = r.service_type_id
@@ -149,8 +136,6 @@ router.get('/stats', async (req, res, next) => {
       if (r.is_terminal) closed += r.count;
       else open += r.count;
     }
-    const priorityCounts = Object.fromEntries(byPriority.rows.map((r) => [r.priority, r.count]));
-    const priorities = ['high', 'medium', 'low'];
     const requesterRoleCounts = Object.fromEntries(byRequesterRole.rows.map((r) => [r.role, r.count]));
     const requesterRoles = ['user', 'employee'];
 
@@ -167,6 +152,19 @@ router.get('/stats', async (req, res, next) => {
     const slaBreachCount = slaBreach.rows[0].count;
     const { ever_closed: everClosed, reopened } = reopen.rows[0];
 
+    // Slowest-first: departments with no resolutions yet (null avg) sort last,
+    // not first — "where are we behind" reads top-down.
+    const byDepartmentSorted = byDepartment.rows
+      .map((r) => ({
+        departmentId: r.department_id,
+        name: r.department_name,
+        count: r.count,
+        avgResolutionMinutes: r.completed_count
+          ? Math.round(Number(r.total_minutes) / r.completed_count)
+          : null,
+      }))
+      .sort((a, b) => (b.avgResolutionMinutes ?? -1) - (a.avgResolutionMinutes ?? -1));
+
     res.json({
       total: open + closed,
       avgResolutionMinutes: resolvedCount ? Math.round(totalMinutes / resolvedCount) : null,
@@ -174,24 +172,18 @@ router.get('/stats', async (req, res, next) => {
         { state: 'open', count: open },
         { state: 'closed', count: closed },
       ],
-      byService: byService.rows.map((r) => ({ serviceTypeId: r.id, name: r.name, count: r.count })),
-      byPriority: priorities.map((p) => ({ priority: p, count: priorityCounts[p] || 0 })),
       byRequesterRole: requesterRoles.map((role) => ({ role, count: requesterRoleCounts[role] || 0 })),
-      byDepartment: byDepartment.rows.map((r) => ({
-        departmentId: r.department_id,
-        name: r.department_name,
-        count: r.count,
-        avgResolutionMinutes: r.completed_count
-          ? Math.round(Number(r.total_minutes) / r.completed_count)
-          : null,
-      })),
+      byDepartment: byDepartmentSorted,
       slaBreaches: { count: slaBreachCount, rate: open ? slaBreachCount / open : null },
       reopenRate: { reopened, everClosed, rate: everClosed ? reopened / everClosed : null },
-      workload: workload.rows.map((r) => ({
-        employeeId: r.employee_id,
-        employeeName: r.employee_name,
-        openCount: r.open_count,
-      })),
+      workload: {
+        total: workload.rows.length ? workload.rows[0].total_employees : 0,
+        top: workload.rows.map((r) => ({
+          employeeId: r.employee_id,
+          employeeName: r.employee_name,
+          openCount: r.open_count,
+        })),
+      },
     });
   } catch (err) {
     next(err);

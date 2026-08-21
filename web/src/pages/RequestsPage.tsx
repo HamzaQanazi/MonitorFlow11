@@ -80,9 +80,15 @@ export default function RequestsPage() {
   const q = params.get('q') ?? ''
   const employeeId = params.get('employee') ?? ''
   const requesterRole = params.get('requester') ?? ''
+  // Dashboard's SLA-breach / reopen-rate tiles link here with these set —
+  // not exposed as their own filter controls, just an active-filter pill.
+  const slaBreached = params.get('slaBreached') === 'true'
+  const reopened = params.get('reopened') === 'true'
   // v5: list ⇄ map over the same filters (no new page — a view mode).
   const view = params.get('view') === 'map' ? 'map' : 'list'
-  const hasFilters = Boolean(state || serviceTypeId || priority || q || employeeId || requesterRole)
+  const hasFilters = Boolean(
+    state || serviceTypeId || priority || q || employeeId || requesterRole || slaBreached || reopened
+  )
 
   const [data, setData] = useState<ListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -139,11 +145,13 @@ export default function RequestsPage() {
     if (q) qs.set('q', q)
     if (employeeId) qs.set('employeeId', employeeId)
     if (requesterRole) qs.set('requesterRole', requesterRole)
+    if (slaBreached) qs.set('slaBreached', 'true')
+    if (reopened) qs.set('reopened', 'true')
     const res = await apiFetch<ListResponse>(`/requests?${qs.toString()}`)
     setData(res)
     setUpdatedAt(new Date())
     setError(null)
-  }, [page, state, serviceTypeId, priority, q, employeeId, requesterRole])
+  }, [page, state, serviceTypeId, priority, q, employeeId, requesterRole, slaBreached, reopened])
 
   useEffect(() => {
     let cancelled = false
@@ -239,6 +247,22 @@ export default function RequestsPage() {
               {t(`state_${s}`)}
             </button>
           ))}
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={slaBreached}
+            onClick={() => setFilter('slaBreached', slaBreached ? '' : 'true')}
+          >
+            {t('dash_sla_breaches')}
+          </button>
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={reopened}
+            onClick={() => setFilter('reopened', reopened ? '' : 'true')}
+          >
+            {t('dash_reopen_rate')}
+          </button>
         </div>
         <div className="control-row">
           <input
@@ -335,6 +359,8 @@ export default function RequestsPage() {
           q={q}
           employeeId={employeeId}
           requesterRole={requesterRole}
+          slaBreached={slaBreached}
+          reopened={reopened}
           openDetail={openDetail}
         />
       ) : error ? (

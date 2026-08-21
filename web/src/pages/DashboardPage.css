@@ -116,6 +116,14 @@
   padding: 14px 16px;
   border-radius: var(--radius-md);
   background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.alert-tile:hover,
+.alert-tile:focus-visible {
+  background: var(--border);
 }
 
 .alert-tile.is-breach {
@@ -150,6 +158,7 @@
   padding-top: 28px;
 }
 
+.dash-main,
 .dash-side {
   display: flex;
   flex-direction: column;

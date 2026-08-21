@@ -33,6 +33,8 @@ function buildRequestFilter(q, user, ownerScope = null) {
   // Phase 4: `state` (open|closed, from is_terminal) replaces `category`.
   if (q.state !== undefined && !['open', 'closed'].includes(q.state)) bad.push('state');
   if (q.requesterRole !== undefined && !REQUESTER_ROLES.includes(q.requesterRole)) bad.push('requesterRole');
+  if (q.slaBreached !== undefined && q.slaBreached !== 'true') bad.push('slaBreached');
+  if (q.reopened !== undefined && q.reopened !== 'true') bad.push('reopened');
   if (bad.length) return { error: `Invalid query params: ${bad.join(', ')}` };
 
   const where = [];
@@ -65,6 +67,33 @@ function buildRequestFilter(q, user, ownerScope = null) {
   if (q.requesterRole !== undefined) add('u.role = ?', q.requesterRole);
   if (q.dateFrom !== undefined) add('r.created_at >= ?::date', q.dateFrom);
   if (q.dateTo !== undefined) add("r.created_at < ?::date + INTERVAL '1 day'", q.dateTo);
+  // Same is_terminal + sla_minutes reasoning as the dashboard's SLA-breach
+  // count and lib/escalation.js's sweep (§10) — never a status key. `s` is
+  // the current-status lateral element every caller already joins.
+  if (q.slaBreached === 'true') {
+    where.push(
+      `s->>'sla_minutes' IS NOT NULL AND NOT (s->>'is_terminal')::bool ` +
+        `AND r.updated_at < now() - (s->>'sla_minutes')::int * INTERVAL '1 minute'`
+    );
+  }
+  // Same reopen definition as the dashboard's reopen-rate metric (§10): the
+  // request's history ever moved from an is_terminal status back to a
+  // non-terminal one. Correlated per-request, not the dashboard's aggregate.
+  if (q.reopened === 'true') {
+    where.push(
+      `EXISTS (
+         SELECT 1 FROM (
+           SELECT (s2->>'is_terminal')::bool AS is_terminal,
+                  LAG((s2->>'is_terminal')::bool) OVER (ORDER BY h.changed_at) AS prev_terminal
+           FROM request_status_history h
+           JOIN workflow_definition w2 ON w2.service_type_id = r.service_type_id
+           JOIN LATERAL jsonb_array_elements(w2.statuses) s2 ON s2->>'key' = h.status
+           WHERE h.request_id = r.id
+         ) hist
+         WHERE hist.prev_terminal AND NOT hist.is_terminal
+       )`
+    );
+  }
   // st.name is bilingual JSONB (Phase 3) — search both language values.
   if (q.q) add("(u.name ILIKE ? OR st.name->>'en' ILIKE ? OR st.name->>'ar' ILIKE ?)", `%${q.q}%`);
 

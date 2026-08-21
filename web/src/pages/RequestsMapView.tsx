@@ -29,6 +29,8 @@ interface Props {
   q: string
   employeeId: string
   requesterRole: string
+  slaBreached: boolean
+  reopened: boolean
   openDetail: (id: number) => void
 }
 
@@ -73,6 +75,8 @@ export default function RequestsMapView({
   q,
   employeeId,
   requesterRole,
+  slaBreached,
+  reopened,
   openDetail,
 }: Props) {
   // The module already binds Leaflet to `L`; alias the i18n picker as `loc`.
@@ -91,6 +95,8 @@ export default function RequestsMapView({
       if (q) qs.set('q', q)
       if (employeeId) qs.set('employeeId', employeeId)
       if (requesterRole) qs.set('requesterRole', requesterRole)
+      if (slaBreached) qs.set('slaBreached', 'true')
+      if (reopened) qs.set('reopened', 'true')
       apiFetch<{ requests: MapRow[]; total: number }>(`/requests?${qs.toString()}`)
         .then((res) => {
           if (cancelled) return
@@ -110,7 +116,7 @@ export default function RequestsMapView({
       cancelled = true
       clearInterval(timer)
     }
-  }, [state, serviceTypeId, priority, q, employeeId, requesterRole])
+  }, [state, serviceTypeId, priority, q, employeeId, requesterRole, slaBreached, reopened])
 
   if (rows === null) {
     return error ? (
@@ -130,7 +136,7 @@ export default function RequestsMapView({
   const located = rows.filter((r) => r.location !== null)
   const missing = rows.length - located.length
   const points = located.map((r) => [r.location!.lat, r.location!.lng] as [number, number])
-  const fitKey = [state, serviceTypeId, priority, q, employeeId, requesterRole].join('|')
+  const fitKey = [state, serviceTypeId, priority, q, employeeId, requesterRole, slaBreached, reopened].join('|')
 
   return (
     <div className="req-mapwrap">
