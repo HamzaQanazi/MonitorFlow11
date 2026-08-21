@@ -401,6 +401,15 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
   auto-promotes their own manager to head (and re-points the department's
   other members to report to them) or, if that head has no active manager,
   refuses the deactivation (409) until the Owner reassigns the head first.
+User-clarified 2026-08-21: department and the reporting tree are
+deliberately decoupled — hiring someone into a department does **not**
+auto-set their `manager_id` to that department's head at the DB/API level
+(only department creation and head reassignment do that). The Add Employee
+web form (admin only) does default the Manager picker to the selected
+department's head when one exists (`EmployeesPage.tsx`, UX only, always
+overridable) — a convenience default, not a rule the server enforces,
+since the picker still needs to work for a company with no department
+heads set yet (a fresh onboarding's default department has none).
 - **users** — id, name (computed `${firstName} ${lastName}` for employees created
   through the extended Add Employee form — see §5's login_identifier note), email
   (nullable, unique), password_hash, role

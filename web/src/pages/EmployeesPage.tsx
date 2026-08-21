@@ -47,6 +47,7 @@ interface ListResponse {
 interface Department {
   id: number
   name: Loc
+  headUserId: number | null
 }
 interface Level {
   id: number
@@ -431,8 +432,15 @@ function EmployeeForm({
   const [gender, setGender] = useState(employee?.gender ?? '')
   const [workerType, setWorkerType] = useState(employee?.workerType ?? '')
   const [weeklyRestDay, setWeeklyRestDay] = useState(employee?.weeklyRestDay != null ? String(employee.weeklyRestDay) : '')
-  const [depId, setDepId] = useState(String(employee?.departmentId ?? departments[0]?.id ?? ''))
-  const [managerId, setManagerId] = useState('')
+  const initialDeptId = employee?.departmentId ?? departments[0]?.id ?? null
+  const [depId, setDepId] = useState(String(initialDeptId ?? ''))
+  // Smart default: the initially-selected department's head, if it has one
+  // and they're a valid manager choice — same rule the department picker's
+  // onChange applies, just also covering "never touched the dropdown."
+  const initialHead = !isEdit && isAdmin ? departments.find((d) => d.id === initialDeptId)?.headUserId : null
+  const [managerId, setManagerId] = useState(
+    initialHead != null && managers.some((m) => m.id === initialHead) ? String(initialHead) : ''
+  )
   const [levelId, setLevelId] = useState(employee?.levelId ? String(employee.levelId) : '')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
@@ -604,7 +612,24 @@ function EmployeeForm({
         </label>
         <label className="field">
           <span>{t('emp_department')}</span>
-          <select className="req-select" value={depId} onChange={(e) => setDepId(e.target.value)}>
+          <select
+            className="req-select"
+            value={depId}
+            onChange={(e) => {
+              const nextDepId = e.target.value
+              setDepId(nextDepId)
+              // Smart default, not a hard rule: if the picked department has
+              // a head and the manager field hasn't been set to anything
+              // else yet, default to that head — one less click for the
+              // common case, still fully overridable below.
+              if (!isEdit && isAdmin && managerId === '') {
+                const dept = departments.find((d) => String(d.id) === nextDepId)
+                if (dept?.headUserId != null && managers.some((m) => m.id === dept.headUserId)) {
+                  setManagerId(String(dept.headUserId))
+                }
+              }
+            }}
+          >
             {departments.map((d) => (
               <option key={d.id} value={d.id}>
                 {L(d.name)}
