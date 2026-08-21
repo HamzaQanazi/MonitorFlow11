@@ -410,6 +410,19 @@ department's head when one exists (`EmployeesPage.tsx`, UX only, always
 overridable) — a convenience default, not a rule the server enforces,
 since the picker still needs to work for a company with no department
 heads set yet (a fresh onboarding's default department has none).
+**Re-scoped 2026-08-21, same session: the Add Department web dialog**
+(`DepartmentsPage.tsx`) — supervisor-directed: the separate "Head" dropdown
+is gone; a "Head" radio now sits next to each checked row in the one
+employee checklist (exactly one checked employee can be head — the API
+contract is unchanged, `headEmployeeId` + `memberEmployeeIds` still POST
+the same shape, this only changed how the client builds them). User-
+directed, same dialog: checking someone already in a different department
+used to silently move them (`department_id`/`manager_id` overwritten, no
+warning) — the checklist now shows each employee's current department
+inline, and if creating would move anyone out of one, a confirmation step
+lists exactly who before the write fires. `PATCH /departments/{id}/head`
+(the separate reassign-head flow, an existing department's head only) is
+unchanged — still its own dropdown, this dialog wasn't in scope.
 - **users** — id, name (computed `${firstName} ${lastName}` for employees created
   through the extended Add Employee form — see §5's login_identifier note), email
   (nullable, unique), password_hash, role

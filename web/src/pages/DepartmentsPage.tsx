@@ -24,6 +24,8 @@ interface Department {
 interface EmployeeOption {
   id: number
   name: string
+  departmentId: number | null
+  departmentName: Loc | null
 }
 interface BranchOption {
   id: number
@@ -177,9 +179,15 @@ export default function DepartmentsPage() {
   )
 }
 
-// Create: bilingual name + a head picker + a member checklist. Submit stays
-// disabled until a head is picked and at least one other employee is ticked
-// (server enforces the same rule — this just avoids a round trip for it).
+// Create: bilingual name + one unified employee checklist. Checking someone
+// includes them; a "Head" radio (only one at a time, only among checked
+// rows) replaces the old separate head dropdown — supervisor-directed,
+// 2026-08-21. Submit stays disabled until a head is picked and at least one
+// other employee is checked (server enforces the same rule — this just
+// avoids a round trip for it). If any checked employee already belongs to a
+// different department, a confirmation step lists exactly who's being moved
+// before the write happens — user-directed, same session: this used to
+// silently reassign department_id/manager_id with no warning.
 function DepartmentForm({
   employees,
   branches,
@@ -196,9 +204,10 @@ function DepartmentForm({
   const [nameAr, setNameAr] = useState('')
   const [branchId, setBranchId] = useState('')
   const [headId, setHeadId] = useState('')
-  const [memberIds, setMemberIds] = useState<Set<number>>(new Set())
+  const [includedIds, setIncludedIds] = useState<Set<number>>(new Set())
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
+  const [confirmingMove, setConfirmingMove] = useState(false)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -206,19 +215,24 @@ function DepartmentForm({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  function toggleMember(id: number) {
-    setMemberIds((prev) => {
+  function toggleIncluded(id: number) {
+    setIncludedIds((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      if (next.has(id)) {
+        next.delete(id)
+        if (headId === String(id)) setHeadId('')
+      } else {
+        next.add(id)
+      }
       return next
     })
   }
 
-  const canSubmit = nameEn.trim() && nameAr.trim() && branchId && headId && memberIds.size > 0
+  const otherMemberIds = [...includedIds].filter((id) => String(id) !== headId)
+  const canSubmit = nameEn.trim() && nameAr.trim() && branchId && headId && otherMemberIds.length > 0
+  const movedEmployees = employees.filter((emp) => includedIds.has(emp.id) && emp.departmentId != null)
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
+  async function doCreate() {
     setBusy(true)
     setErrors({})
     try {
@@ -228,7 +242,7 @@ function DepartmentForm({
           name: { en: nameEn, ar: nameAr },
           branchId: Number(branchId),
           headEmployeeId: Number(headId),
-          memberEmployeeIds: [...memberIds],
+          memberEmployeeIds: otherMemberIds,
         },
       })
       onDone()
@@ -236,7 +250,44 @@ function DepartmentForm({
       const fe = fieldErrorsOf(err)
       setErrors(Object.keys(fe).length ? fe : { _: t('dept_err_save') })
       setBusy(false)
+      setConfirmingMove(false)
     }
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (movedEmployees.length > 0 && !confirmingMove) {
+      setConfirmingMove(true)
+      return
+    }
+    doCreate()
+  }
+
+  if (confirmingMove) {
+    return (
+      <div className="dialog-backdrop" onClick={onClose}>
+        <div className="dialog" onClick={(e) => e.stopPropagation()}>
+          <h4>{t('dept_move_confirm_h')}</h4>
+          <p className="req-status-msg">{t('dept_move_confirm_p')}</p>
+          <ul className="dept-move-list">
+            {movedEmployees.map((emp) => (
+              <li key={emp.id}>
+                {emp.name} — {emp.departmentName ? L(emp.departmentName) : ''}
+              </li>
+            ))}
+          </ul>
+          {errors._ && <p className="assign-error">{errors._}</p>}
+          <div className="dialog-actions">
+            <button type="button" className="detail-close-text" onClick={() => setConfirmingMove(false)} disabled={busy}>
+              {t('dept_move_back')}
+            </button>
+            <button type="button" className="req-retry" onClick={doCreate} disabled={busy}>
+              {busy ? t('tc_saving') : t('dept_move_confirm_btn')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -266,34 +317,39 @@ function DepartmentForm({
           </select>
           {errors.branchId && <em className="field-err">{errors.branchId}</em>}
         </label>
-        <label className="field">
-          {t('dept_head_label')}
-          <select value={headId} onChange={(e) => setHeadId(e.target.value)} required>
-            <option value="">{t('dept_head_ph')}</option>
-            {employees.map((emp) => (
-              <option key={emp.id} value={emp.id} disabled={memberIds.has(emp.id)}>
-                {emp.name}
-              </option>
-            ))}
-          </select>
-          {errors.headEmployeeId && <em className="field-err">{errors.headEmployeeId}</em>}
-        </label>
         <div className="field">
           {t('dept_members_label')}
           <div className="dept-member-list">
-            {employees
-              .filter((emp) => String(emp.id) !== headId)
-              .map((emp) => (
-                <label key={emp.id} className="dept-member-row">
-                  <input
-                    type="checkbox"
-                    checked={memberIds.has(emp.id)}
-                    onChange={() => toggleMember(emp.id)}
-                  />
-                  {emp.name}
-                </label>
-              ))}
+            {employees.map((emp) => {
+              const included = includedIds.has(emp.id)
+              return (
+                <div key={emp.id} className="dept-member-row">
+                  <label className="dept-member-check">
+                    <input type="checkbox" checked={included} onChange={() => toggleIncluded(emp.id)} />
+                    {emp.name}
+                    {emp.departmentName && (
+                      <span className="dept-member-current">
+                        {' — '}
+                        {t('dept_currently_in')} {L(emp.departmentName)}
+                      </span>
+                    )}
+                  </label>
+                  {included && (
+                    <label className="dept-head-radio">
+                      <input
+                        type="radio"
+                        name="dept-head"
+                        checked={headId === String(emp.id)}
+                        onChange={() => setHeadId(String(emp.id))}
+                      />
+                      {t('dept_head_radio_label')}
+                    </label>
+                  )}
+                </div>
+              )
+            })}
           </div>
+          {errors.headEmployeeId && <em className="field-err">{errors.headEmployeeId}</em>}
           {errors.memberEmployeeIds && <em className="field-err">{errors.memberEmployeeIds}</em>}
         </div>
         <div className="dialog-actions">
