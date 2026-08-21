@@ -151,6 +151,23 @@ const Map<String, Map<String, String>> _dict = {
   'login_signin_btn': {'en': 'Sign in', 'ar': 'تسجيل الدخول'},
   'login_have_account': {'en': 'Already have an account? Sign in', 'ar': 'لديك حساب؟ سجّل الدخول'},
   'login_new_here': {'en': 'New here? Create an account', 'ar': 'جديد هنا؟ أنشئ حسابًا'},
+  'login_forgot_link': {'en': 'Forgot password?', 'ar': 'نسيت كلمة المرور؟'},
+
+  // forgot password (self-service reset, CLAUDE.md §13 re-scope)
+  'fp_title': {'en': 'Reset your password', 'ar': 'إعادة تعيين كلمة المرور'},
+  'fp_sub': {
+    'en': 'Enter your login email or employee number and we’ll email you a reset link.',
+    'ar': 'أدخل بريدك الإلكتروني أو رقمك الوظيفي وسنرسل لك رابط إعادة التعيين عبر البريد.',
+  },
+  'fp_identifier': {'en': 'Employee no. or email', 'ar': 'الرقم الوظيفي أو البريد الإلكتروني'},
+  'fp_submit': {'en': 'Send reset link', 'ar': 'إرسال رابط إعادة التعيين'},
+  'fp_sent': {
+    'en':
+        'If that account exists, we’ve sent a password reset link to its email address. Open it on this device — it opens in your browser — then come back here to sign in.',
+    'ar':
+        'إن كان الحساب موجودًا، أرسلنا رابط إعادة تعيين كلمة المرور إلى بريده الإلكتروني. افتحه على هذا الجهاز — سيُفتح في المتصفح — ثم عد إلى هنا لتسجيل الدخول.',
+  },
+  'fp_back_to_login': {'en': 'Back to sign in', 'ar': 'العودة لتسجيل الدخول'},
   'login_show_password': {'en': 'Show password', 'ar': 'إظهار كلمة المرور'},
   'login_hide_password': {'en': 'Hide password', 'ar': 'إخفاء كلمة المرور'},
   'login_err_name': {'en': 'Name is required', 'ar': 'الاسم مطلوب'},

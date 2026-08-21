@@ -79,4 +79,20 @@ void main() {
     await tester.pump();
     expect(find.byIcon(Icons.visibility_off), findsOneWidget);
   });
+
+  testWidgets('forgot-password link is shown in sign-in mode, hidden while registering',
+      (tester) async {
+    await tester.pumpWidget(wrap());
+    expect(find.text('Forgot password?'), findsOneWidget);
+    await tester.tap(find.text('New here? Create an account'));
+    await tester.pump();
+    expect(find.text('Forgot password?'), findsNothing);
+  });
+
+  testWidgets('tapping forgot-password opens the reset-request screen', (tester) async {
+    await tester.pumpWidget(wrap());
+    await tester.tap(find.text('Forgot password?'));
+    await tester.pumpAndSettle();
+    expect(find.text('Reset your password'), findsOneWidget);
+  });
 }

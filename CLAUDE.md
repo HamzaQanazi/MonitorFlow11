@@ -880,10 +880,17 @@ mail delivery fails).
   link lands here, reads `?token=`). Applies to all three account kinds
   (I2) — `user` accounts reset against the real email they registered with;
   admin/employee reset against `email`, same as the credentials-by-email
-  path above. **Not yet built:** the two Flutter mobile apps' own forgot-
-  password UI — the backend endpoints are shared/generic, so mobile can
-  adopt them without any backend change, but no mobile screen calls them
-  yet (student 1's surface, §11 — flag before building it there too).
+  path above. Mobile (student 1's surface, §11): `LoginScreen`'s
+  "Forgot password?" link opens `ForgotPasswordScreen` (the same
+  `POST /auth/forgot-password`, same enumeration-safe confirmation either
+  way) — shared by both the User and Employee apps, same as the login
+  screen itself. Deliberately **no native "set new password" screen**: the
+  emailed link opens `ResetPasswordPage.tsx` (above) in the device's
+  browser — a public page with no console/role gate, so it completes the
+  reset for a mobile-only account exactly as well as a console one — rather
+  than building app deep-linking (custom URL scheme or platform App/
+  Universal Links) that doesn't exist anywhere in this app yet. Revisit only
+  if the browser hand-off turns out to be an actual usability complaint.
 
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write

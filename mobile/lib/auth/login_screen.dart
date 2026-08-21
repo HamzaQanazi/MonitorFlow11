@@ -8,6 +8,7 @@ import '../api/api_client.dart';
 import '../i18n.dart';
 import '../theme.dart';
 import 'auth_state.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -205,6 +206,20 @@ class _LoginScreenState extends State<LoginScreen> {
                           decoration: InputDecoration(
                             labelText: i18n.tr('login_phone_optional'),
                             errorText: _fieldErrors['phone'],
+                          ),
+                        ),
+                      ],
+                      if (!_registering) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: TextButton(
+                            onPressed: _submitting
+                                ? null
+                                : () => Navigator.of(context).push(
+                                      MaterialPageRoute(builder: (_) => const ForgotPasswordScreen()),
+                                    ),
+                            child: Text(i18n.tr('login_forgot_link')),
                           ),
                         ),
                       ],
