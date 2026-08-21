@@ -103,13 +103,15 @@ async function loadEmployee(id, actor) {
 // Single-employee-row creation, shared by POST / (one at a time, the
 // original path) and POST /import (CSV, one row at a time reusing this exact
 // same validation/insert/email logic — the bulk path isn't a second,
-// hand-rolled create). Returns { employee } on success (the loaded row, not
-// yet publicEmployee-mapped — callers do that) or { errors } on a validation/
-// uniqueness/FK failure, never throws for those — only for a genuine
-// unexpected DB error, same as the original single-row code did.
+// hand-rolled create). The caller never sets a password (credentials are
+// email-delivered, never admin-typed or spreadsheet-carried) — one is always
+// generated here. Returns { employee, password } on success (the loaded row,
+// not yet publicEmployee-mapped — callers do that) or { errors } on a
+// validation/uniqueness/FK failure, never throws for those — only for a
+// genuine unexpected DB error, same as the original single-row code did.
 async function createEmployeeRow(actor, emailDomain, input) {
   const {
-    firstName, lastName, email, password, phone, birthdate, gender, workerType,
+    firstName, lastName, email, phone, birthdate, gender, workerType,
     weeklyRestDay, departmentId, managerId, levelId,
   } = input;
   const errors = {};
@@ -118,21 +120,16 @@ async function createEmployeeRow(actor, emailDomain, input) {
   if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     errors.email = 'A valid email is required';
   }
-  if (!password || typeof password !== 'string' || password.length < 8) {
-    errors.password = 'Password must be at least 8 characters';
-  }
-  if (birthdate !== undefined && birthdate !== null && Number.isNaN(Date.parse(birthdate))) {
-    errors.birthdate = 'Invalid date';
-  }
-  if (gender !== undefined && gender !== null && !GENDERS.has(gender)) errors.gender = 'Invalid gender';
-  if (workerType !== undefined && workerType !== null && !WORKER_TYPES.has(workerType)) {
-    errors.workerType = 'Invalid worker type';
-  }
+  if (!phone || typeof phone !== 'string' || !phone.trim()) errors.phone = 'Phone is required';
+  if (!birthdate || Number.isNaN(Date.parse(birthdate))) errors.birthdate = 'A valid birthdate is required';
+  if (!gender || !GENDERS.has(gender)) errors.gender = 'Gender is required';
+  if (!workerType || !WORKER_TYPES.has(workerType)) errors.workerType = 'Worker type is required';
   if (weeklyRestDay !== undefined && weeklyRestDay !== null && !isValidWeeklyRestDay(weeklyRestDay)) {
     errors.weeklyRestDay = 'Must be 0 (Sunday) through 6 (Saturday)';
   }
   if (Object.keys(errors).length) return { errors };
 
+  const password = `Temp-${crypto.randomBytes(6).toString('base64url')}`;
   const password_hash = await bcrypt.hash(password, 10);
   let inserted;
   try {
@@ -145,8 +142,8 @@ async function createEmployeeRow(actor, emailDomain, input) {
                             login_identifier, company_id)
          VALUES ($1, $2, $3, $4, $5, 'employee', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING id, name, email, phone, is_active, department_id`,
-        [fullName, firstName.trim(), lastName.trim(), email.toLowerCase(), password_hash, phone || null,
-         birthdate || null, gender || null, workerType || null, weeklyRestDay ?? null, departmentId, managerId, levelId,
+        [fullName, firstName.trim(), lastName.trim(), email.toLowerCase(), password_hash, phone.trim(),
+         birthdate, gender, workerType, weeklyRestDay ?? null, departmentId, managerId, levelId,
          loginIdentifier, actor.company_id]
       );
       await logAudit(tx, actor.id, 'employee.created', 'user', rows[0].id, { email: rows[0].email });
@@ -161,7 +158,7 @@ async function createEmployeeRow(actor, emailDomain, input) {
   if (created.email) {
     await sendCredentialsEmail(created.email, created.first_name || created.name, created.login_identifier, password);
   }
-  return { employee: created };
+  return { employee: created, password };
 }
 
 // GET /employees?departmentId=&q=
@@ -174,6 +171,7 @@ router.get('/', async (req, res, next) => {
     if (!Number.isInteger(page) || page < 1) bad.push('page');
     if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) bad.push('pageSize');
     if (q.departmentId !== undefined && !Number.isInteger(Number(q.departmentId))) bad.push('departmentId');
+    if (q.workerType !== undefined && !WORKER_TYPES.has(q.workerType)) bad.push('workerType');
     if (bad.length) return res.status(400).json({ error: `Invalid query params: ${bad.join(', ')}` });
 
     const where = ["u.role = 'employee'"];
@@ -188,6 +186,7 @@ router.get('/', async (req, res, next) => {
     if (req.user.role !== 'admin') add('u.id = ANY(?)', await subtreeIds(req.user.id));
     add('u.id <> ?', req.user.id);
     if (q.departmentId !== undefined) add('u.department_id = ?', Number(q.departmentId));
+    if (q.workerType !== undefined) add('u.worker_type = ?', q.workerType);
     if (q.q) add('(u.name ILIKE ? OR u.email ILIKE ?)', `%${q.q}%`);
 
     params.push(pageSize, (page - 1) * pageSize);
@@ -273,7 +272,10 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// POST /employees — create an employee; monitor sets the initial password.
+// POST /employees — create an employee. The server always generates the
+// initial password (never admin-typed) — it's delivered by the credentials
+// email and also returned once here, same reveal-once shape as
+// PATCH /:id/reset-password, as a fallback if mail delivery is slow/down.
 router.post('/', async (req, res, next) => {
   try {
     const b = req.body || {};
@@ -333,12 +335,12 @@ router.post('/', async (req, res, next) => {
     }
 
     const result = await createEmployeeRow(req.user, co[0].email_domain, {
-      firstName: b.firstName, lastName: b.lastName, email: b.email, password: b.password,
+      firstName: b.firstName, lastName: b.lastName, email: b.email,
       phone: b.phone, birthdate: b.birthdate, gender: b.gender, workerType: b.workerType,
       weeklyRestDay: b.weeklyRestDay, departmentId, managerId, levelId,
     });
     if (result.errors) return res.status(422).json({ errors: result.errors });
-    res.status(201).json({ employee: publicEmployee(result.employee) });
+    res.status(201).json({ employee: publicEmployee(result.employee), tempPassword: result.password });
   } catch (err) {
     next(err);
   }
@@ -494,9 +496,8 @@ async function importEmployees(req, res, next) {
         continue;
       }
 
-      const password = `Temp-${crypto.randomBytes(6).toString('base64url')}`;
       const result = await createEmployeeRow(req.user, co[0].email_domain, {
-        firstName: r.firstname, lastName: r.lastname, email: r.email, password,
+        firstName: r.firstname, lastName: r.lastname, email: r.email,
         phone: r.phone || null,
         birthdate: r.birthdate || null,
         gender: r.gender || null,
@@ -523,16 +524,25 @@ async function importEmployees(req, res, next) {
   }
 }
 
-// PATCH /employees/{id} — edit name / phone / department
+// PATCH /employees/{id} — edit name / phone / birthdate / gender / worker
+// type / department / level / weekly rest day. Phone, birthdate, gender, and
+// worker type are required at creation (I8) — an edit may change them to
+// another valid value but never clear them to blank; weeklyRestDay is the
+// one still-optional field here and keeps its own null-clearing shape.
 router.patch('/:id', async (req, res, next) => {
   try {
     const emp = await loadEmployee(Number(req.params.id), req.user);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
-    const { name, phone, departmentId, levelId, weeklyRestDay } = req.body || {};
+    const { name, phone, birthdate, gender, workerType, departmentId, levelId, weeklyRestDay } = req.body || {};
     const errors = {};
     if (name !== undefined && (typeof name !== 'string' || !name.trim())) errors.name = 'Name cannot be empty';
-    if (phone !== undefined && phone !== null && typeof phone !== 'string') errors.phone = 'Phone must be text';
+    if (phone !== undefined && (typeof phone !== 'string' || !phone.trim())) errors.phone = 'Phone is required';
+    if (birthdate !== undefined && (!birthdate || Number.isNaN(Date.parse(birthdate)))) {
+      errors.birthdate = 'A valid birthdate is required';
+    }
+    if (gender !== undefined && !GENDERS.has(gender)) errors.gender = 'Gender is required';
+    if (workerType !== undefined && !WORKER_TYPES.has(workerType)) errors.workerType = 'Worker type is required';
     if (departmentId !== undefined && !Number.isInteger(departmentId)) errors.departmentId = 'Invalid department';
     if (weeklyRestDay !== undefined && weeklyRestDay !== null && !isValidWeeklyRestDay(weeklyRestDay)) {
       errors.weeklyRestDay = 'Must be 0 (Sunday) through 6 (Saturday)';
@@ -569,15 +579,20 @@ router.patch('/:id', async (req, res, next) => {
       await tx.query(
         `UPDATE users SET
            name = COALESCE($1, name),
-           phone = CASE WHEN $2::boolean THEN $3 ELSE phone END,
-           department_id = COALESCE($4, department_id),
-           level_id = CASE WHEN $5::boolean THEN $6 ELSE level_id END,
-           weekly_rest_day = CASE WHEN $7::boolean THEN $8 ELSE weekly_rest_day END
-         WHERE id = $9`,
+           phone = COALESCE($2, phone),
+           birthdate = COALESCE($3, birthdate),
+           gender = COALESCE($4, gender),
+           worker_type = COALESCE($5, worker_type),
+           department_id = COALESCE($6, department_id),
+           level_id = CASE WHEN $7::boolean THEN $8 ELSE level_id END,
+           weekly_rest_day = CASE WHEN $9::boolean THEN $10 ELSE weekly_rest_day END
+         WHERE id = $11`,
         [
           name === undefined ? null : name.trim(),
-          phone !== undefined,
-          phone === undefined ? null : phone,
+          phone === undefined ? null : phone.trim(),
+          birthdate === undefined ? null : birthdate,
+          gender === undefined ? null : gender,
+          workerType === undefined ? null : workerType,
           departmentId === undefined ? null : departmentId,
           applyLevelId,
           resolvedLevelId,
@@ -589,6 +604,9 @@ router.patch('/:id', async (req, res, next) => {
       await logAudit(tx, req.user.id, 'employee.updated', 'user', emp.id, {
         ...(name !== undefined ? { name: name.trim() } : {}),
         ...(phone !== undefined ? { phone } : {}),
+        ...(birthdate !== undefined ? { birthdate } : {}),
+        ...(gender !== undefined ? { gender } : {}),
+        ...(workerType !== undefined ? { workerType } : {}),
         ...(departmentId !== undefined ? { departmentId } : {}),
         ...(applyLevelId ? { levelId: resolvedLevelId } : {}),
         ...(weeklyRestDay !== undefined ? { weeklyRestDay } : {}),

@@ -404,12 +404,15 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 - **users** — id, name (computed `${firstName} ${lastName}` for employees created
   through the extended Add Employee form — see §5's login_identifier note), email
   (nullable, unique), password_hash, role
-  (`admin`/`employee`/`user`), phone (nullable), department_id (FK, nullable),
+  (`admin`/`employee`/`user`), phone (nullable — required at creation/edit for a
+  new employee since 2026-08-21, §13; column stays nullable so pre-existing rows
+  aren't broken), department_id (FK, nullable),
   **login_identifier** (unique — an email, a generated employee login email, or a
   legacy 4-digit employee number — see §4), first_name, last_name, birthdate (date,
-  nullable), gender, worker_type (both plain TEXT machine keys, i18n-translated
-  client-side like `priority` — not a bilingual JSONB catalogue, since I5 doesn't
-  require one for small fixed system enums), weekly_rest_day (nullable smallint
+  nullable — same required-for-new-hires/nullable-column split as phone), gender,
+  worker_type (both plain TEXT machine keys, i18n-translated client-side like
+  `priority` — not a bilingual JSONB catalogue, since I5 doesn't require one for
+  small fixed system enums; also required-for-new-hires/nullable-column), weekly_rest_day (nullable smallint
   0–6, JS weekday convention — one fixed day off/week, `/schedule/suggest`'s
   input, §13), **manager_id** (self-FK,
   nullable — the reporting tree), **level_id** (FK → employee_level, nullable),
@@ -922,6 +925,34 @@ registered into the lookup as the loop goes. Web: `emp_import` button on
 → a results table of failed rows only, since the good ones are already
 visible in the list once it reloads).
 
+**Re-scoped 2026-08-21, same session: Add Employee's required fields.**
+User-directed — now that credentials are always emailed (above), an
+admin-typed initial password is redundant; phone/birthdate/gender/
+worker-type were optional and, before this, effectively write-only (captured
+at hire, never shown or editable again). `createEmployeeRow` (shared by
+`POST /employees` and the CSV import path, above) now requires
+firstName/lastName/email/**phone/birthdate/gender/workerType**, and never
+accepts a client-supplied password — one is always generated and delivered
+only by the credentials email, returned once more as `tempPassword` in the
+201 response (same reveal-once shape as `loginIdentifier`) as a fallback if
+mail is slow or down. `PATCH /employees/{id}` gained phone/birthdate/gender/
+workerType as editable — they may change to another valid value but not
+clear to null (422), unlike `weeklyRestDay`, which stays the one genuinely
+optional field here. DB columns stay nullable (`users.phone/birthdate/
+gender/worker_type` — I8, app-level enforcement, not a `NOT NULL`
+constraint) so pre-existing rows hired before this change aren't broken by
+a migration; only new creates/edits are held to it. **Worker type now has a
+real use** (user-asked "how can we use it"): `GET /employees?workerType=`
+filters the list (same shape as `departmentId`), and the Employees table
+shows it as a column. Birthdate and gender still have **no** display/report
+surface yet (deliberately not built this session — age display, birthday
+reminders, and demographic reporting were discussed as options but nothing
+was requested beyond making the field required); `weeklyRestDay` stays
+optional on purpose — CLAUDE.md's own reasoning above still holds: it's an
+*exception* field for staff working fewer days than the company's week, not
+something every hire needs, so requiring it would misfit a simple
+single-schedule company.
+
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
 `audit_event`) · **bilingual auto-fill** (Gemini, above) · **AI auto-assign
@@ -965,7 +996,9 @@ missing/out-of-range location → 422 · forgot-password on a real vs. fake
 identifier → identical response · expired/reused/unknown reset token → 422 ·
 CSV import: a bad row alongside good ones → good ones created, bad one
 reported, neither blocks the other · unknown department/manager/level name
-in a row → that row only fails · import row count over the limit → 422.
+in a row → that row only fails · import row count over the limit → 422 ·
+hire missing phone/birthdate/gender/workerType → 422 field-keyed, no
+password error · edit clearing a required field (e.g. `gender: null`) → 422.
 
 ---
 

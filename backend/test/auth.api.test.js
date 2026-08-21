@@ -2,7 +2,7 @@
 // login and JWT validation, login rate limiting.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { setup, stopServer, api, login, loginAll, WHO, fixtures } = require('../testlib/harness');
+const { setup, stopServer, api, login, loginAll, WHO, PASSWORDS, fixtures } = require('../testlib/harness');
 
 let tokens;
 
@@ -20,13 +20,13 @@ test('a deactivated employee cannot sign in', async () => {
   assert.equal(deactivate.status, 200, JSON.stringify(deactivate.body));
 
   const res = await api('POST', '/auth/login', {
-    body: { identifier: WHO.field2, password: 'Password123!' },
+    body: { identifier: WHO.field2, password: PASSWORDS.field2 },
   });
   assert.equal(res.status, 401);
 });
 
 test('deactivated account: an already-issued JWT is rejected on the next call', async () => {
-  const staleToken = await login(WHO.field1);
+  const staleToken = await login(WHO.field1, PASSWORDS.field1);
   const deactivate = await api('PATCH', `/employees/${fixtures.employeeIds.field1}/deactivate`, {
     token: tokens.root,
   });

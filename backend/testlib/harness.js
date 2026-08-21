@@ -105,6 +105,12 @@ async function startServer() {
       // Documented test hook (src/index.js): no background sweep firing
       // notifications underneath assertions.
       ESCALATION_SWEEP_MS: '0',
+      // Force lib/mailer.js's "log instead of send" fallback regardless of
+      // what a developer's real .env has configured — every fixture hire
+      // triggers a credentials email, and the suite would otherwise fire
+      // real SMTP sends on every run (slow, rate-limited by the provider,
+      // and not what "test environment" should mean).
+      SMTP_HOST: '',
     },
     // See run(): no shell, or kill() cannot reach the server process.
     stdio: ['ignore', 'ignore', 'pipe'],
@@ -166,6 +172,14 @@ const OWNER_PASSWORD = process.env.SEED_OWNER_PASSWORD || 'Password123!';
 // and `resident` sign in with a plain email.
 const WHO = {};
 
+// Real per-role password, when it differs from SEED_PASSWORD. POST /employees
+// no longer accepts an admin-typed password (CLAUDE.md §13 — credentials are
+// always server-generated and email-delivered) — buildFixtures()'s hire()
+// captures each employee's real tempPassword here. `admin` (seed.js) and
+// `resident` (POST /auth/register, unaffected by that change) still use
+// SEED_PASSWORD and never get an entry.
+const PASSWORDS = {};
+
 // Ids and other identifiers a test might need beyond a login — also populated
 // by buildFixtures().
 const fixtures = {};
@@ -182,7 +196,7 @@ async function login(identifier, password = SEED_PASSWORD) {
 async function loginAll() {
   const tokens = {};
   for (const [role, identifier] of Object.entries(WHO)) {
-    tokens[role] = await login(identifier);
+    tokens[role] = await login(identifier, PASSWORDS[role] || SEED_PASSWORD);
   }
   return tokens;
 }
@@ -278,6 +292,8 @@ async function buildFixtures() {
   const { rows: depts } = await query(`SELECT id FROM department LIMIT 1`);
   const departmentId = depts[0].id;
 
+  // Phone/birthdate/gender/workerType are required at creation now (CLAUDE.md
+  // §13) — every fixture hire needs a value, so a fixed one covers all of them.
   async function hire(firstName, lastName, { levelId = null, managerId = null } = {}) {
     const res = await api('POST', '/employees', {
       token: ownerToken,
@@ -285,14 +301,19 @@ async function buildFixtures() {
         firstName,
         lastName,
         email: `${firstName}.${lastName}@fixture.test`.toLowerCase(),
-        password: SEED_PASSWORD,
+        phone: '0590000000',
+        birthdate: '1995-01-01',
+        gender: 'female',
+        workerType: 'full_time',
         departmentId,
         levelId,
         managerId,
       },
     });
     if (res.status !== 201) throw new Error(`hire ${firstName}: ${res.status} ${JSON.stringify(res.body)}`);
-    return res.body.employee; // { id, loginIdentifier, ... }
+    // The server always generates the password now (never admin-typed) —
+    // callers that need to log this employee in read .tempPassword.
+    return { ...res.body.employee, tempPassword: res.body.tempPassword };
   }
 
   // Two independent subtrees (root/field1/field2 vs head2 alone), mirroring
@@ -307,6 +328,10 @@ async function buildFixtures() {
   WHO.head2 = head2.loginIdentifier;
   WHO.field1 = field1.loginIdentifier;
   WHO.field2 = field2.loginIdentifier;
+  PASSWORDS.root = root.tempPassword;
+  PASSWORDS.head2 = head2.tempPassword;
+  PASSWORDS.field1 = field1.tempPassword;
+  PASSWORDS.field2 = field2.tempPassword;
 
   fixtures.departmentId = departmentId;
   fixtures.levelIds = { manager: managerLevelId, staff: staffLevelId };
@@ -410,6 +435,6 @@ async function setup(name) {
 const apiUrl = (pathname) => `${BASE}${pathname}`;
 
 module.exports = {
-  setup, stopServer, api, apiUrl, login, loginAll, WHO, fixtures, SEED_PASSWORD, testDbUrl, query,
+  setup, stopServer, api, apiUrl, login, loginAll, WHO, PASSWORDS, fixtures, SEED_PASSWORD, testDbUrl, query,
   formPayload, submitRequest,
 };

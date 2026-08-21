@@ -56,11 +56,12 @@ test('no file -> 422; header-only file -> 422', async () => {
 });
 
 test('partial success: good rows are created, a bad row is reported, neither blocks the other', async () => {
+  const REQ = '0590000000,1995-01-01,female,full_time';
   const csv =
     'firstName,lastName,email,phone,birthdate,gender,workerType,weeklyRestDay\n' +
-    'Import,One,import.one@fixture.test,,,,,\n' +
-    'Import,Bad,not-an-email,,,,,\n' +
-    'Import,Two,import.two@fixture.test,,,,,Friday\n';
+    `Import,One,import.one@fixture.test,${REQ},\n` +
+    `Import,Bad,not-an-email,${REQ},\n` +
+    `Import,Two,import.two@fixture.test,${REQ},Friday\n`;
   const res = await importCsv(tokens.root, csv);
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.totalRows, 3);
@@ -93,9 +94,9 @@ test('admin importer resolves department/manager/level by name; an unknown one f
   const deptName = deptRow[0].name;
 
   const csv =
-    'firstName,lastName,email,department\n' +
-    `Import,Admin1,import.admin1@fixture.test,${deptName}\n` +
-    'Import,Admin2,import.admin2@fixture.test,Not A Real Department\n';
+    'firstName,lastName,email,phone,birthdate,gender,workerType,department\n' +
+    `Import,Admin1,import.admin1@fixture.test,0590000000,1995-01-01,female,full_time,${deptName}\n` +
+    'Import,Admin2,import.admin2@fixture.test,0590000000,1995-01-01,female,full_time,Not A Real Department\n';
   const res = await importCsv(tokens.admin, csv);
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.createdCount, 1);
@@ -107,10 +108,11 @@ test('admin importer resolves department/manager/level by name; an unknown one f
 });
 
 test('a later row can reference an employee created earlier in the same import as their manager', async () => {
+  const deptName = (await query("SELECT name->>'en' AS n FROM department LIMIT 1")).rows[0].n;
   const csv =
-    'firstName,lastName,email,department,manager\n' +
-    `Import,Boss,import.boss@fixture.test,${(await query('SELECT name->>\'en\' AS n FROM department LIMIT 1')).rows[0].n},\n` +
-    `Import,Report,import.report@fixture.test,${(await query('SELECT name->>\'en\' AS n FROM department LIMIT 1')).rows[0].n},import.boss@fixture.test\n`;
+    'firstName,lastName,email,phone,birthdate,gender,workerType,department,manager\n' +
+    `Import,Boss,import.boss@fixture.test,0590000000,1995-01-01,female,full_time,${deptName},\n` +
+    `Import,Report,import.report@fixture.test,0590000000,1995-01-01,female,full_time,${deptName},import.boss@fixture.test\n`;
   const res = await importCsv(tokens.admin, csv);
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.createdCount, 2, JSON.stringify(res.body.failed));
@@ -121,6 +123,21 @@ test('a later row can reference an employee created earlier in the same import a
      WHERE u.email = 'import.report@fixture.test'`
   );
   assert.equal(rows[0].manager_email, 'import.boss@fixture.test');
+});
+
+test('a row missing a required column (phone/birthdate/gender/workerType) fails just that row', async () => {
+  const csv =
+    'firstName,lastName,email,phone,birthdate,gender,workerType\n' +
+    'Import,Complete,import.complete@fixture.test,0590000000,1995-01-01,female,full_time\n' +
+    'Import,Incomplete,import.incomplete@fixture.test,,,,\n';
+  const res = await importCsv(tokens.root, csv);
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.createdCount, 1);
+  assert.equal(res.body.failedCount, 1);
+  const failedErrors = res.body.failed[0].errors;
+  for (const field of ['phone', 'birthdate', 'gender', 'workerType']) {
+    assert.ok(failedErrors[field], `expected a ${field} error`);
+  }
 });
 
 test('row count over the limit -> 422', async () => {

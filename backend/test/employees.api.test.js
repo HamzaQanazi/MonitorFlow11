@@ -71,11 +71,12 @@ test('deactivated account: JWT rejected on the next call, not just at login', as
 });
 
 test('weeklyRestDay: invalid value rejected on create, valid value round-trips, and PATCH can change or clear it', async () => {
+  const REQUIRED_EXTRAS = { phone: '0590000000', birthdate: '1995-01-01', gender: 'female', workerType: 'full_time' };
   const bad = await api('POST', '/employees', {
     token: tokens.root,
     body: {
       firstName: 'Rest', lastName: 'Bad', email: 'rest.bad@fixture.test',
-      password: 'Password123!', weeklyRestDay: 7,
+      ...REQUIRED_EXTRAS, weeklyRestDay: 7,
     },
   });
   assert.equal(bad.status, 422);
@@ -85,7 +86,7 @@ test('weeklyRestDay: invalid value rejected on create, valid value round-trips, 
     token: tokens.root,
     body: {
       firstName: 'Rest', lastName: 'Good', email: 'rest.good@fixture.test',
-      password: 'Password123!', weeklyRestDay: 5,
+      ...REQUIRED_EXTRAS, weeklyRestDay: 5,
     },
   });
   assert.equal(created.status, 201, JSON.stringify(created.body));
@@ -104,6 +105,70 @@ test('weeklyRestDay: invalid value rejected on create, valid value round-trips, 
   });
   assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
   assert.equal(cleared.body.employee.weeklyRestDay, null);
+});
+
+test('phone/birthdate/gender/workerType are required; the server always generates the password', async () => {
+  const missing = await api('POST', '/employees', {
+    token: tokens.root,
+    body: { firstName: 'Missing', lastName: 'Fields', email: 'missing.fields@fixture.test' },
+  });
+  assert.equal(missing.status, 422);
+  for (const field of ['phone', 'birthdate', 'gender', 'workerType']) {
+    assert.ok(missing.body.errors[field], `expected a ${field} error`);
+  }
+  // No password/email errors here — the client never supplies a password,
+  // and email/firstName/lastName ARE present and valid in this body.
+  assert.equal(missing.body.errors.password, undefined);
+
+  const res = await api('POST', '/employees', {
+    token: tokens.root,
+    body: {
+      firstName: 'Full', lastName: 'Fields', email: 'full.fields@fixture.test',
+      phone: '0590000001', birthdate: '1990-05-01', gender: 'male', workerType: 'part_time',
+    },
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal(typeof res.body.tempPassword, 'string');
+  assert.ok(res.body.tempPassword.length >= 8);
+  // The generated password actually works to log in.
+  const login = await api('POST', '/auth/login', {
+    body: { identifier: res.body.employee.loginIdentifier, password: res.body.tempPassword },
+  });
+  assert.equal(login.status, 200, JSON.stringify(login.body));
+});
+
+test('PATCH can change birthdate/gender/workerType to another valid value, but not clear them', async () => {
+  const created = await api('POST', '/employees', {
+    token: tokens.root,
+    body: {
+      firstName: 'Edit', lastName: 'Me', email: 'edit.me@fixture.test',
+      phone: '0590000002', birthdate: '1988-02-02', gender: 'male', workerType: 'contractor',
+    },
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const id = created.body.employee.id;
+
+  const changed = await api('PATCH', `/employees/${id}`, {
+    token: tokens.root,
+    body: { birthdate: '1999-09-09', gender: 'female', workerType: 'full_time', phone: '0590000003' },
+  });
+  assert.equal(changed.status, 200, JSON.stringify(changed.body));
+  // Compare against the stored value directly (::text) rather than the JSON
+  // response's date string — a DATE column round-tripped through JS Date/
+  // JSON.stringify can shift a day depending on the server's local timezone,
+  // a serialization quirk unrelated to what's actually correct in storage.
+  const { rows: stored } = await query('SELECT birthdate::text AS birthdate FROM users WHERE id = $1', [id]);
+  assert.equal(stored[0].birthdate, '1999-09-09');
+  assert.equal(changed.body.employee.gender, 'female');
+  assert.equal(changed.body.employee.workerType, 'full_time');
+  assert.equal(changed.body.employee.phone, '0590000003');
+
+  const cleared = await api('PATCH', `/employees/${id}`, {
+    token: tokens.root,
+    body: { gender: null },
+  });
+  assert.equal(cleared.status, 422);
+  assert.ok(cleared.body.errors.gender);
 });
 
 test('hire past the plan employee cap → 409', async () => {

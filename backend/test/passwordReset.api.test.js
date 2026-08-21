@@ -6,7 +6,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
-const { setup, stopServer, api, loginAll, fixtures, query, WHO, SEED_PASSWORD } = require('../testlib/harness');
+const { setup, stopServer, api, loginAll, fixtures, query, WHO, PASSWORDS } = require('../testlib/harness');
 
 let tokens;
 
@@ -66,7 +66,7 @@ test('full round trip: request a reset, use the token, log in with the new passw
   const reused = await api('POST', '/auth/reset-password', { body: { token: rawToken, newPassword: 'AnotherOne123!' } });
   assert.equal(reused.status, 422);
 
-  const loginOld = await api('POST', '/auth/login', { body: { identifier: WHO.root, password: SEED_PASSWORD } });
+  const loginOld = await api('POST', '/auth/login', { body: { identifier: WHO.root, password: PASSWORDS.root } });
   assert.equal(loginOld.status, 401);
 
   const loginNew = await api('POST', '/auth/login', { body: { identifier: WHO.root, password: 'BrandNewPass123!' } });

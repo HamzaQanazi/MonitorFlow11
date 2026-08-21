@@ -708,24 +708,26 @@ paths:
         Gate-1 power). login_identifier is NOT supplied by the client — the
         server generates it as two letters of firstName + '.' + lastName +
         '@' + the company's email_domain (step 5 of onboarding), with a
-        numeric suffix on collision (lib/employeeEmail.js), and returns it,
-        since that is the only place it's ever shown.
+        numeric suffix on collision (lib/employeeEmail.js). No password field
+        either — the server always generates one and emails it (CLAUDE.md
+        §13); it's also returned once here as `tempPassword`, same
+        reveal-once shape as `login_identifier`, as a fallback if mail
+        delivery is slow or down.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [firstName, lastName, email, password]
+              required: [firstName, lastName, email, phone, birthdate, gender, workerType]
               properties:
                 firstName: { type: string }
                 lastName: { type: string }
                 email: { type: string, format: email }
-                password: { type: string, format: password, minLength: 8 }
-                phone: { type: string, nullable: true }
-                birthdate: { type: string, format: date, nullable: true }
-                gender: { type: string, nullable: true }
-                workerType: { type: string, nullable: true }
+                phone: { type: string }
+                birthdate: { type: string, format: date }
+                gender: { type: string }
+                workerType: { type: string }
                 weeklyRestDay: { type: integer, nullable: true, minimum: 0, maximum: 6 }
                 departmentId: { type: integer, description: required when the caller is the admin }
                 managerId: { type: integer, nullable: true, description: admin-only; omitted makes the hire a tree root }
@@ -739,6 +741,7 @@ paths:
                 type: object
                 properties:
                   employee: { $ref: '#/components/schemas/Employee' }
+                  tempPassword: { type: string, description: shown once — also emailed to the employee }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/Validation' }
 
@@ -808,8 +811,12 @@ paths:
     patch:
       tags: [people]
       summary: >
-        Edit an employee's name, phone, department, level, or weekly rest
-        day. departmentId, if given, must equal the caller's own department
+        Edit an employee's name, phone, birthdate, gender, worker type,
+        department, level, or weekly rest day. phone/birthdate/gender/
+        workerType are required at creation (I8) — if given here they may
+        change to another valid value but not to null (422). weeklyRestDay
+        is the one still-optional field and keeps its null-clears-it shape.
+        departmentId, if given, must equal the caller's own department
         (cross-department moves need an org-level actor that does not exist
         today). levelId is admin-only — silently ignored for any other
         caller, same as at creation (POST /employees) — and, if given, must
@@ -823,7 +830,10 @@ paths:
               type: object
               properties:
                 name: { type: string }
-                phone: { type: string, nullable: true }
+                phone: { type: string }
+                birthdate: { type: string, format: date }
+                gender: { type: string }
+                workerType: { type: string }
                 departmentId: { type: integer }
                 levelId: { type: integer, nullable: true, description: admin-only }
                 weeklyRestDay: { type: integer, nullable: true, minimum: 0, maximum: 6 }
@@ -2052,12 +2062,12 @@ components:
         firstName: { type: string, nullable: true }
         lastName: { type: string, nullable: true }
         email: { type: string, nullable: true }
-        phone: { type: string, nullable: true }
+        phone: { type: string, nullable: true, description: "required on new hires (POST/PATCH); nullable only for rows created before that rule" }
         loginIdentifier: { type: string, description: the generated sign-in email (or, for pre-existing rows, the legacy 4-digit number) }
         isActive: { type: boolean }
-        birthdate: { type: string, format: date, nullable: true }
-        gender: { type: string, nullable: true, description: machine key, e.g. 'male'/'female' }
-        workerType: { type: string, nullable: true, description: machine key, e.g. 'full_time'/'part_time'/'contractor' }
+        birthdate: { type: string, format: date, nullable: true, description: "required on new hires (POST/PATCH); nullable only for rows created before that rule" }
+        gender: { type: string, nullable: true, description: "machine key, e.g. 'male'/'female' — required on new hires (POST/PATCH); nullable only for rows created before that rule" }
+        workerType: { type: string, nullable: true, description: "machine key, e.g. 'full_time'/'part_time'/'contractor' — required on new hires (POST/PATCH); nullable only for rows created before that rule" }
         weeklyRestDay: { type: integer, nullable: true, minimum: 0, maximum: 6, description: "one fixed day off/week, 0=Sunday..6=Saturday — respected by /schedule/suggest" }
         departmentId: { type: integer, nullable: true }
         departmentName: { $ref: '#/components/schemas/LocalizedText' }

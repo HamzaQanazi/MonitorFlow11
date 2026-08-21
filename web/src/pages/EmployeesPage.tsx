@@ -69,8 +69,9 @@ export default function EmployeesPage() {
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
   const departmentId = params.get('department') ?? ''
+  const workerType = params.get('workerType') ?? ''
   const q = params.get('q') ?? ''
-  const hasFilters = Boolean(departmentId || q)
+  const hasFilters = Boolean(departmentId || workerType || q)
 
   const [data, setData] = useState<ListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -115,11 +116,12 @@ export default function EmployeesPage() {
   const load = useCallback(async () => {
     const qs = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) })
     if (departmentId) qs.set('departmentId', departmentId)
+    if (workerType) qs.set('workerType', workerType)
     if (q) qs.set('q', q)
     const res = await apiFetch<ListResponse>(`/employees?${qs.toString()}`)
     setData(res)
     setError(null)
-  }, [page, departmentId, q])
+  }, [page, departmentId, workerType, q])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- setError fires only in the async catch, not synchronously
@@ -202,6 +204,19 @@ export default function EmployeesPage() {
               </option>
             ))}
           </select>
+          <select
+            className="req-select"
+            aria-label={t('emp_filter_worker_type')}
+            value={workerType}
+            onChange={(e) => setFilter('workerType', e.target.value)}
+          >
+            <option value="">{t('emp_all_worker_types')}</option>
+            {WORKER_TYPES.map((w) => (
+              <option key={w} value={w}>
+                {t(`worker_type_${w}`)}
+              </option>
+            ))}
+          </select>
           {hasFilters && (
             <button type="button" className="req-clear" onClick={clearFilters}>
               {t('clear_filters')}
@@ -253,6 +268,7 @@ export default function EmployeesPage() {
                   <th scope="col">{t('col_login')}</th>
                   <th scope="col">{t('col_email')}</th>
                   <th scope="col">{t('col_department')}</th>
+                  <th scope="col">{t('col_worker_type')}</th>
                   <th scope="col">{t('col_avg_resolution')}</th>
                   <th scope="col">{t('col_status')}</th>
                   <th scope="col" className="emp-actions-col">
@@ -278,6 +294,7 @@ export default function EmployeesPage() {
                       {L(e.departmentName)}
                       {e.branchName && <span className="emp-branch"> · {L(e.branchName)}</span>}
                     </td>
+                    <td>{e.workerType ? t(`worker_type_${e.workerType}`) : ''}</td>
                     <td>{formatDuration(e.avgResolutionMinutes, t)}</td>
                     <td>
                       <span className={`emp-badge${e.isActive ? ' is-active' : ' is-inactive'}`}>
@@ -409,18 +426,17 @@ function EmployeeForm({
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [phone, setPhone] = useState(employee?.phone ?? '')
-  const [birthdate, setBirthdate] = useState('')
-  const [gender, setGender] = useState('')
-  const [workerType, setWorkerType] = useState('')
+  const [birthdate, setBirthdate] = useState(employee?.birthdate?.slice(0, 10) ?? '')
+  const [gender, setGender] = useState(employee?.gender ?? '')
+  const [workerType, setWorkerType] = useState(employee?.workerType ?? '')
   const [weeklyRestDay, setWeeklyRestDay] = useState(employee?.weeklyRestDay != null ? String(employee.weeklyRestDay) : '')
   const [depId, setDepId] = useState(String(employee?.departmentId ?? departments[0]?.id ?? ''))
   const [managerId, setManagerId] = useState('')
   const [levelId, setLevelId] = useState(employee?.levelId ? String(employee.levelId) : '')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
-  const [createdLogin, setCreatedLogin] = useState<string | null>(null)
+  const [created, setCreated] = useState<{ loginIdentifier: string; tempPassword: string } | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -438,7 +454,10 @@ function EmployeeForm({
           method: 'PATCH',
           body: {
             name,
-            phone: phone || null,
+            phone,
+            birthdate,
+            gender,
+            workerType,
             departmentId: Number(depId),
             weeklyRestDay: weeklyRestDay === '' ? null : Number(weeklyRestDay),
             ...(isAdmin ? { levelId: levelId ? Number(levelId) : null } : {}),
@@ -446,17 +465,16 @@ function EmployeeForm({
         })
         onDone()
       } else {
-        const res = await apiFetch<{ employee: Employee }>('/employees', {
+        const res = await apiFetch<{ employee: Employee; tempPassword: string }>('/employees', {
           method: 'POST',
           body: {
             firstName,
             lastName,
             email,
-            password,
-            phone: phone || null,
-            birthdate: birthdate || null,
-            gender: gender || null,
-            workerType: workerType || null,
+            phone,
+            birthdate,
+            gender,
+            workerType,
             weeklyRestDay: weeklyRestDay === '' ? null : Number(weeklyRestDay),
             ...(isAdmin
               ? {
@@ -467,9 +485,10 @@ function EmployeeForm({
               : { departmentId: Number(depId) }),
           },
         })
-        // Reveal the generated login once instead of closing immediately —
-        // there's no other way to look it up afterward.
-        setCreatedLogin(res.employee.loginIdentifier)
+        // Reveal the generated login + password once instead of closing
+        // immediately — there's no other way to look either up afterward
+        // (the password is also emailed, but mail delivery can lag or fail).
+        setCreated({ loginIdentifier: res.employee.loginIdentifier, tempPassword: res.tempPassword })
       }
     } catch (err) {
       const fe = fieldErrorsOf(err)
@@ -480,13 +499,20 @@ function EmployeeForm({
     }
   }
 
-  if (createdLogin) {
+  if (created) {
     return (
       <div className="dialog-backdrop" onClick={onDone}>
         <div className="dialog" onClick={(e) => e.stopPropagation()}>
           <h4>{t('emp_created_h')}</h4>
           <p className="req-status-msg">{t('emp_created_login_p')}</p>
-          <code className="temp-pass">{createdLogin}</code>
+          <label className="field">
+            <span>{t('emp_created_login_label')}</span>
+            <code className="temp-pass">{created.loginIdentifier}</code>
+          </label>
+          <label className="field">
+            <span>{t('emp_created_password_label')}</span>
+            <code className="temp-pass">{created.tempPassword}</code>
+          </label>
           <div className="dialog-actions">
             <button type="button" className="req-retry" onClick={onDone}>
               {t('done')}
@@ -511,59 +537,58 @@ function EmployeeForm({
           <>
             <label className="field">
               <span>{t('emp_first_name')}</span>
-              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} autoFocus />
+              <input value={firstName} onChange={(e) => setFirstName(e.target.value)} autoFocus required />
               {errors.firstName && <em className="field-err">{errors.firstName}</em>}
             </label>
             <label className="field">
               <span>{t('emp_last_name')}</span>
-              <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+              <input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
               {errors.lastName && <em className="field-err">{errors.lastName}</em>}
             </label>
             <label className="field">
               <span>{t('emp_email')}</span>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
               {errors.email && <em className="field-err">{errors.email}</em>}
-            </label>
-            <label className="field">
-              <span>{t('emp_initial_password')}</span>
-              <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} />
-              {errors.password && <em className="field-err">{errors.password}</em>}
-            </label>
-            <label className="field">
-              <span>{t('emp_birthdate_optional')}</span>
-              <input type="date" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
-              {errors.birthdate && <em className="field-err">{errors.birthdate}</em>}
-            </label>
-            <label className="field">
-              <span>{t('emp_gender_optional')}</span>
-              <select className="req-select" value={gender} onChange={(e) => setGender(e.target.value)}>
-                <option value="">{t('ob_select')}</option>
-                {GENDERS.map((g) => (
-                  <option key={g} value={g}>
-                    {t(`gender_${g}`)}
-                  </option>
-                ))}
-              </select>
-              {errors.gender && <em className="field-err">{errors.gender}</em>}
-            </label>
-            <label className="field">
-              <span>{t('emp_worker_type_optional')}</span>
-              <select className="req-select" value={workerType} onChange={(e) => setWorkerType(e.target.value)}>
-                <option value="">{t('ob_select')}</option>
-                {WORKER_TYPES.map((w) => (
-                  <option key={w} value={w}>
-                    {t(`worker_type_${w}`)}
-                  </option>
-                ))}
-              </select>
-              {errors.workerType && <em className="field-err">{errors.workerType}</em>}
             </label>
           </>
         )}
         <label className="field">
-          <span>{t('emp_phone_optional')}</span>
-          <input value={phone ?? ''} onChange={(e) => setPhone(e.target.value)} />
+          <span>{t('emp_phone')}</span>
+          <input value={phone ?? ''} onChange={(e) => setPhone(e.target.value)} required />
           {errors.phone && <em className="field-err">{errors.phone}</em>}
+        </label>
+        <label className="field">
+          <span>{t('emp_birthdate')}</span>
+          <input type="date" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} required />
+          {errors.birthdate && <em className="field-err">{errors.birthdate}</em>}
+        </label>
+        <label className="field">
+          <span>{t('emp_gender')}</span>
+          <select className="req-select" value={gender} onChange={(e) => setGender(e.target.value)} required>
+            <option value="" disabled>
+              {t('ob_select')}
+            </option>
+            {GENDERS.map((g) => (
+              <option key={g} value={g}>
+                {t(`gender_${g}`)}
+              </option>
+            ))}
+          </select>
+          {errors.gender && <em className="field-err">{errors.gender}</em>}
+        </label>
+        <label className="field">
+          <span>{t('emp_worker_type')}</span>
+          <select className="req-select" value={workerType} onChange={(e) => setWorkerType(e.target.value)} required>
+            <option value="" disabled>
+              {t('ob_select')}
+            </option>
+            {WORKER_TYPES.map((w) => (
+              <option key={w} value={w}>
+                {t(`worker_type_${w}`)}
+              </option>
+            ))}
+          </select>
+          {errors.workerType && <em className="field-err">{errors.workerType}</em>}
         </label>
         <label className="field">
           <span>{t('emp_weekly_rest_day_optional')}</span>
