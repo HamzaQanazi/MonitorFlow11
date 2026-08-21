@@ -28,6 +28,7 @@ interface Employee {
   birthdate: string | null
   gender: string | null
   workerType: string | null
+  weeklyRestDay: number | null
   departmentId: number
   departmentName: Loc
   branchId: number | null
@@ -363,10 +364,17 @@ export default function EmployeesPage() {
 
 const GENDERS = ['male', 'female']
 const WORKER_TYPES = ['full_time', 'part_time', 'contractor']
+// 0=Sunday..6=Saturday (JS Date#getUTCDay() convention, same as
+// SchedulePage's suggest dialog) — a single fixed day off /schedule/suggest
+// respects when the company's working week is wider than this employee's.
+const REST_DAYS = [1, 2, 3, 4, 5, 6, 0].map((value) => ({
+  value,
+  key: ['day_sun', 'day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat'][value],
+}))
 
 // Create (no employee) or edit (employee given). Create sends the initial
-// password + the extended fields; edit still only changes name/phone/
-// department (the backend PATCH route's scope hasn't grown). Create shows
+// password + the extended fields; edit changes name/phone/department/
+// weeklyRestDay (the backend PATCH route's scope). Create shows
 // the server-generated login email once, on success — there's no other way
 // to look it up (mirrors ResetPasswordDialog's reveal-once pattern).
 function EmployeeForm({
@@ -397,6 +405,7 @@ function EmployeeForm({
   const [birthdate, setBirthdate] = useState('')
   const [gender, setGender] = useState('')
   const [workerType, setWorkerType] = useState('')
+  const [weeklyRestDay, setWeeklyRestDay] = useState(employee?.weeklyRestDay != null ? String(employee.weeklyRestDay) : '')
   const [depId, setDepId] = useState(String(employee?.departmentId ?? departments[0]?.id ?? ''))
   const [managerId, setManagerId] = useState('')
   const [levelId, setLevelId] = useState(employee?.levelId ? String(employee.levelId) : '')
@@ -422,6 +431,7 @@ function EmployeeForm({
             name,
             phone: phone || null,
             departmentId: Number(depId),
+            weeklyRestDay: weeklyRestDay === '' ? null : Number(weeklyRestDay),
             ...(isAdmin ? { levelId: levelId ? Number(levelId) : null } : {}),
           },
         })
@@ -438,6 +448,7 @@ function EmployeeForm({
             birthdate: birthdate || null,
             gender: gender || null,
             workerType: workerType || null,
+            weeklyRestDay: weeklyRestDay === '' ? null : Number(weeklyRestDay),
             ...(isAdmin
               ? {
                   departmentId: Number(depId),
@@ -544,6 +555,18 @@ function EmployeeForm({
           <span>{t('emp_phone_optional')}</span>
           <input value={phone ?? ''} onChange={(e) => setPhone(e.target.value)} />
           {errors.phone && <em className="field-err">{errors.phone}</em>}
+        </label>
+        <label className="field">
+          <span>{t('emp_weekly_rest_day_optional')}</span>
+          <select className="req-select" value={weeklyRestDay} onChange={(e) => setWeeklyRestDay(e.target.value)}>
+            <option value="">{t('emp_no_fixed_rest_day')}</option>
+            {REST_DAYS.map((d) => (
+              <option key={d.value} value={d.value}>
+                {t(d.key)}
+              </option>
+            ))}
+          </select>
+          {errors.weeklyRestDay && <em className="field-err">{errors.weeklyRestDay}</em>}
         </label>
         <label className="field">
           <span>{t('emp_department')}</span>

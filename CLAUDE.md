@@ -401,7 +401,9 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
   legacy 4-digit employee number — see §4), first_name, last_name, birthdate (date,
   nullable), gender, worker_type (both plain TEXT machine keys, i18n-translated
   client-side like `priority` — not a bilingual JSONB catalogue, since I5 doesn't
-  require one for small fixed system enums), **manager_id** (self-FK,
+  require one for small fixed system enums), weekly_rest_day (nullable smallint
+  0–6, JS weekday convention — one fixed day off/week, `/schedule/suggest`'s
+  input, §13), **manager_id** (self-FK,
   nullable — the reporting tree), **level_id** (FK → employee_level, nullable),
   **company_id** (FK → company, nullable — the account's company; nullable so the
   Owner, created before the company row, and self-registered users stay valid),
@@ -809,12 +811,29 @@ a chosen shift template across chosen weekdays in a date range, for the
 caller's subtree (or an explicit subset), rotated fairly when `perDay` caps
 who's picked each day by who has worked the fewest shifts in a trailing
 30-day lookback (a local heuristic over existing data, same reasoning as
-auto-assign's ranking — no vendor call, no new schema). Deliberately
-**preview-only**: it has no write path of its own and never overwrites an
-existing entry — the manager applies the result through the unchanged
-`PUT /schedule/roster`, so a human stays in the loop on every write, unlike
-auto-assign's opt-in-and-fire pattern. Web: `SuggestDialog` on the Roster
-tab (`SchedulePage.tsx`), generate → review a count/list preview → apply.
+auto-assign's ranking — no vendor call). Deliberately **preview-only**: it
+has no write path of its own and never overwrites an existing entry — the
+manager applies the result through the unchanged `PUT /schedule/roster`, so
+a human stays in the loop on every write, unlike auto-assign's
+opt-in-and-fire pattern. Web: `SuggestDialog` on the Roster tab
+(`SchedulePage.tsx`), generate → review a count/list preview → apply.
+
+**Added 2026-08-21, same session: `users.weekly_rest_day`** (nullable
+smallint 0–6, `030_employee_weekly_rest_day.sql`) — one fixed day off per
+week per employee, set on hire or edit (Add/Edit Employee web form,
+`PATCH /employees/{id}` now accepts it alongside name/phone/department/
+level). Answers a real gap the AI-suggested scheduling design surfaced: the
+weekday checkboxes on `/schedule/suggest` are a **company**-level working
+pattern (5-day, 6-day, any subset), but nothing previously captured an
+**employee** working fewer days than that — e.g. a 6-day company week where
+staff are individually contracted for 5 and rotate which day they're off.
+`/schedule/suggest` now skips a candidate on their `weekly_rest_day` before
+ranking (`restDaySkipped` in the response, surfaced in the web preview).
+Deliberately scoped small, not the general availability/preference table
+this AI feature track originally flagged as a blocker — a single static
+day, not rotating rest days, not multiple days off, not per-week variation.
+Extend to a real availability table only if one of those turns out to
+matter in practice.
 
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write

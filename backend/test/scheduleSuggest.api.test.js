@@ -100,3 +100,27 @@ test('an employee already scheduled that day is skipped, not overwritten', async
     [field2]
   );
 });
+
+test('an employee with a matching weekly_rest_day is skipped, not double-booked', async () => {
+  const { field1, field2 } = fixtures.employeeIds;
+  await query('UPDATE users SET weekly_rest_day = 3 WHERE id = $1', [field1]); // Wednesday off
+
+  const res = await api('POST', '/schedule/suggest', {
+    token: tokens.root,
+    body: {
+      from: '2026-09-16', // Wednesday
+      to: '2026-09-16',
+      templateId,
+      weekdays: [3],
+      employeeIds: [field1, field2],
+    },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.restDaySkipped, 1);
+  assert.deepEqual(
+    res.body.entries.map((e) => e.employeeId),
+    [field2]
+  );
+
+  await query('UPDATE users SET weekly_rest_day = NULL WHERE id = $1', [field1]);
+});

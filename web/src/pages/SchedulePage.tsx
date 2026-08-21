@@ -638,7 +638,7 @@ function SuggestDialog({
   const [templateId, setTemplateId] = useState(templates[0] ? String(templates[0].id) : '')
   const [days, setDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5]))
   const [perDay, setPerDay] = useState('')
-  const [preview, setPreview] = useState<{ entries: SuggestEntry[]; alreadyScheduledSkipped: number } | null>(null)
+  const [preview, setPreview] = useState<{ entries: SuggestEntry[]; alreadyScheduledSkipped: number; restDaySkipped: number } | null>(null)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
 
@@ -664,7 +664,7 @@ function SuggestDialog({
     try {
       const body: Record<string, unknown> = { from, to, templateId: Number(templateId), weekdays: Array.from(days) }
       if (perDay.trim()) body.perDay = Number(perDay)
-      const res = await apiFetch<{ entries: SuggestEntry[]; alreadyScheduledSkipped: number }>('/schedule/suggest', {
+      const res = await apiFetch<{ entries: SuggestEntry[]; alreadyScheduledSkipped: number; restDaySkipped: number }>('/schedule/suggest', {
         method: 'POST',
         body,
       })
@@ -775,6 +775,12 @@ function SuggestDialog({
                 <>
                   {' · '}
                   {preview.alreadyScheduledSkipped} {t('sc_suggest_skipped')}
+                </>
+              )}
+              {preview.restDaySkipped > 0 && (
+                <>
+                  {' · '}
+                  {preview.restDaySkipped} {t('sc_suggest_rest_day_skipped')}
                 </>
               )}
             </p>

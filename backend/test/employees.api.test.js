@@ -70,6 +70,42 @@ test('deactivated account: JWT rejected on the next call, not just at login', as
   assert.equal(res.status, 401);
 });
 
+test('weeklyRestDay: invalid value rejected on create, valid value round-trips, and PATCH can change or clear it', async () => {
+  const bad = await api('POST', '/employees', {
+    token: tokens.root,
+    body: {
+      firstName: 'Rest', lastName: 'Bad', email: 'rest.bad@fixture.test',
+      password: 'Password123!', weeklyRestDay: 7,
+    },
+  });
+  assert.equal(bad.status, 422);
+  assert.ok(bad.body.errors.weeklyRestDay);
+
+  const created = await api('POST', '/employees', {
+    token: tokens.root,
+    body: {
+      firstName: 'Rest', lastName: 'Good', email: 'rest.good@fixture.test',
+      password: 'Password123!', weeklyRestDay: 5,
+    },
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(created.body.employee.weeklyRestDay, 5);
+
+  const changed = await api('PATCH', `/employees/${created.body.employee.id}`, {
+    token: tokens.root,
+    body: { weeklyRestDay: 0 },
+  });
+  assert.equal(changed.status, 200, JSON.stringify(changed.body));
+  assert.equal(changed.body.employee.weeklyRestDay, 0);
+
+  const cleared = await api('PATCH', `/employees/${created.body.employee.id}`, {
+    token: tokens.root,
+    body: { weeklyRestDay: null },
+  });
+  assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
+  assert.equal(cleared.body.employee.weeklyRestDay, null);
+});
+
 test('hire past the plan employee cap → 409', async () => {
   const { rows: co } = await query('SELECT id FROM company LIMIT 1');
   const companyId = co[0].id;

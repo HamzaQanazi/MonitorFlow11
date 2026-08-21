@@ -223,8 +223,11 @@ router.put('/roster', requireCapabilityOrAdmin('manage_employees'), async (req, 
 // heuristic over existing data, no vendor call, same reasoning as autoAssign's
 // ranking: fill one template across the chosen weekdays for the chosen (or
 // whole-subtree) employee pool, balanced by who has worked the fewest shifts
-// recently when `perDay` caps who's picked each day. Never overwrites an
-// existing schedule_entry — the manager applies the result via the existing
+// recently when `perDay` caps who's picked each day. Skips an employee on
+// their `users.weekly_rest_day` if set — lets a 5-day contract inside a
+// wider company working week (e.g. a 6-day week) come out right without the
+// manager hand-editing afterward. Never overwrites an existing
+// schedule_entry — the manager applies the result via the existing
 // PUT /schedule/roster, so this has no write path of its own.
 router.post('/suggest', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
@@ -262,10 +265,12 @@ router.post('/suggest', requireCapabilityOrAdmin('manage_employees'), async (req
     const poolIds = employeeIds?.length ? employeeIds : subtree;
 
     const { rows: employees } = await pool.query(
-      `SELECT id, name FROM users WHERE id = ANY($1::int[]) AND role = 'employee' AND is_active ORDER BY id`,
+      `SELECT id, name, weekly_rest_day FROM users WHERE id = ANY($1::int[]) AND role = 'employee' AND is_active ORDER BY id`,
       [poolIds]
     );
-    if (!employees.length) return res.json({ entries: [], template: serializeTemplate(template), alreadyScheduledSkipped: 0 });
+    if (!employees.length) {
+      return res.json({ entries: [], template: serializeTemplate(template), alreadyScheduledSkipped: 0, restDaySkipped: 0 });
+    }
 
     const [{ rows: existing }, { rows: recent }] = await Promise.all([
       pool.query(`SELECT employee_id, date::text AS date FROM schedule_entry WHERE employee_id = ANY($1::int[]) AND date BETWEEN $2 AND $3`, [
@@ -289,13 +294,16 @@ router.post('/suggest', requireCapabilityOrAdmin('manage_employees'), async (req
     const cap = Number.isInteger(perDay) ? perDay : employees.length;
     const entries = [];
     let alreadyScheduledSkipped = 0;
+    let restDaySkipped = 0;
     for (let d = from; d <= to; d = addDaysIso(d, 1)) {
-      if (!days.has(new Date(`${d}T00:00:00Z`).getUTCDay())) continue;
-      const candidates = employees.filter((e) => {
-        if (alreadyScheduled.has(`${e.id}|${d}`)) return false;
-        return true;
-      });
-      alreadyScheduledSkipped += employees.length - candidates.length;
+      const weekday = new Date(`${d}T00:00:00Z`).getUTCDay();
+      if (!days.has(weekday)) continue;
+      const onRestDay = employees.filter((e) => e.weekly_rest_day === weekday && !alreadyScheduled.has(`${e.id}|${d}`));
+      restDaySkipped += onRestDay.length;
+      const candidates = employees.filter(
+        (e) => e.weekly_rest_day !== weekday && !alreadyScheduled.has(`${e.id}|${d}`)
+      );
+      alreadyScheduledSkipped += employees.length - onRestDay.length - candidates.length;
       candidates.sort((a, b) => load.get(a.id) - load.get(b.id) || a.id - b.id);
       for (const e of candidates.slice(0, cap)) {
         entries.push({ employeeId: e.id, employeeName: e.name, date: d, templateId: template.id });
@@ -304,7 +312,7 @@ router.post('/suggest', requireCapabilityOrAdmin('manage_employees'), async (req
       if (entries.length > 500) return res.status(422).json({ errors: { to: 'Suggestion is too large — narrow the range or weekdays' } });
     }
 
-    res.json({ entries, template: serializeTemplate(template), alreadyScheduledSkipped });
+    res.json({ entries, template: serializeTemplate(template), alreadyScheduledSkipped, restDaySkipped });
   } catch (err) {
     next(err);
   }

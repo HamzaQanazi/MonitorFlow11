@@ -21,6 +21,14 @@ router.use(requireCapabilityOrAdmin('manage_employees'));
 // translated client-side, not stored bilingual.
 const GENDERS = new Set(['male', 'female']);
 const WORKER_TYPES = new Set(['full_time', 'part_time', 'contractor']);
+// One fixed day off per week (0=Sunday..6=Saturday, JS Date#getUTCDay()
+// convention, same as schedule.js's weekday filter) — lets /schedule/suggest
+// skip this employee on their day off when the company's working week (picked
+// per-suggestion) is wider than what they're contracted for. Not a general
+// availability system (CLAUDE.md §13) — a single static day, nothing more.
+function isValidWeeklyRestDay(v) {
+  return Number.isInteger(v) && v >= 0 && v <= 6;
+}
 
 function publicEmployee(r) {
   return {
@@ -37,6 +45,7 @@ function publicEmployee(r) {
     birthdate: r.birthdate,
     gender: r.gender,
     workerType: r.worker_type,
+    weeklyRestDay: r.weekly_rest_day,
     departmentId: r.department_id,
     departmentName: r.department_name,
     branchId: r.branch_id,
@@ -63,7 +72,7 @@ async function loadEmployee(id, actor) {
   const { rows } = await pool.query(
     `${sub}
      SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
-            u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type,
+            u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type, u.weekly_rest_day,
             u.department_id, d.name AS department_name, d.branch_id, b.name AS branch_name,
             u.level_id, l.name AS level_name, u.manager_id
      FROM users u
@@ -109,7 +118,7 @@ router.get('/', async (req, res, next) => {
     // key in code (same mechanism as the deactivate guard below).
     const { rows } = await pool.query(
       `SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
-              u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type,
+              u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type, u.weekly_rest_day,
               u.department_id, d.name AS department_name, d.branch_id, b.name AS branch_name,
               u.level_id, l.name AS level_name,
               (SELECT COUNT(*)::int
@@ -167,6 +176,7 @@ router.get('/', async (req, res, next) => {
         birthdate: r.birthdate,
         gender: r.gender,
         workerType: r.worker_type,
+        weeklyRestDay: r.weekly_rest_day,
         departmentId: r.department_id,
         departmentName: r.department_name,
         branchId: r.branch_id,
@@ -189,7 +199,7 @@ router.get('/', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const b = req.body || {};
-    const { firstName, lastName, email, password, phone, birthdate, gender, workerType } = b;
+    const { firstName, lastName, email, password, phone, birthdate, gender, workerType, weeklyRestDay } = b;
     const errors = {};
     if (!firstName || typeof firstName !== 'string' || !firstName.trim()) errors.firstName = 'First name is required';
     if (!lastName || typeof lastName !== 'string' || !lastName.trim()) errors.lastName = 'Last name is required';
@@ -205,6 +215,9 @@ router.post('/', async (req, res, next) => {
     if (gender !== undefined && gender !== null && !GENDERS.has(gender)) errors.gender = 'Invalid gender';
     if (workerType !== undefined && workerType !== null && !WORKER_TYPES.has(workerType)) {
       errors.workerType = 'Invalid worker type';
+    }
+    if (weeklyRestDay !== undefined && weeklyRestDay !== null && !isValidWeeklyRestDay(weeklyRestDay)) {
+      errors.weeklyRestDay = 'Must be 0 (Sunday) through 6 (Saturday)';
     }
 
     // Gate 2: an oversight actor's new hire becomes their direct report
@@ -270,12 +283,12 @@ router.post('/', async (req, res, next) => {
         const fullName = `${firstName.trim()} ${lastName.trim()}`;
         const { rows } = await tx.query(
           `INSERT INTO users (name, first_name, last_name, email, password_hash, role, phone,
-                              birthdate, gender, worker_type, department_id, manager_id, level_id,
+                              birthdate, gender, worker_type, weekly_rest_day, department_id, manager_id, level_id,
                               login_identifier, company_id)
-           VALUES ($1, $2, $3, $4, $5, 'employee', $6, $7, $8, $9, $10, $11, $12, $13, $14)
+           VALUES ($1, $2, $3, $4, $5, 'employee', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            RETURNING id, name, email, phone, is_active, department_id`,
           [fullName, firstName.trim(), lastName.trim(), email.toLowerCase(), password_hash, phone || null,
-           birthdate || null, gender || null, workerType || null, departmentId, managerId, levelId,
+           birthdate || null, gender || null, workerType || null, weeklyRestDay ?? null, departmentId, managerId, levelId,
            loginIdentifier, req.user.company_id]
         );
         await logAudit(tx, req.user.id, 'employee.created', 'user', rows[0].id, { email: rows[0].email });
@@ -299,11 +312,14 @@ router.patch('/:id', async (req, res, next) => {
     const emp = await loadEmployee(Number(req.params.id), req.user);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
-    const { name, phone, departmentId, levelId } = req.body || {};
+    const { name, phone, departmentId, levelId, weeklyRestDay } = req.body || {};
     const errors = {};
     if (name !== undefined && (typeof name !== 'string' || !name.trim())) errors.name = 'Name cannot be empty';
     if (phone !== undefined && phone !== null && typeof phone !== 'string') errors.phone = 'Phone must be text';
     if (departmentId !== undefined && !Number.isInteger(departmentId)) errors.departmentId = 'Invalid department';
+    if (weeklyRestDay !== undefined && weeklyRestDay !== null && !isValidWeeklyRestDay(weeklyRestDay)) {
+      errors.weeklyRestDay = 'Must be 0 (Sunday) through 6 (Saturday)';
+    }
     if (Object.keys(errors).length) return res.status(422).json({ errors });
 
     // Spec v4: an oversight employee cannot move a report out of their own
@@ -338,8 +354,9 @@ router.patch('/:id', async (req, res, next) => {
            name = COALESCE($1, name),
            phone = CASE WHEN $2::boolean THEN $3 ELSE phone END,
            department_id = COALESCE($4, department_id),
-           level_id = CASE WHEN $5::boolean THEN $6 ELSE level_id END
-         WHERE id = $7`,
+           level_id = CASE WHEN $5::boolean THEN $6 ELSE level_id END,
+           weekly_rest_day = CASE WHEN $7::boolean THEN $8 ELSE weekly_rest_day END
+         WHERE id = $9`,
         [
           name === undefined ? null : name.trim(),
           phone !== undefined,
@@ -347,6 +364,8 @@ router.patch('/:id', async (req, res, next) => {
           departmentId === undefined ? null : departmentId,
           applyLevelId,
           resolvedLevelId,
+          weeklyRestDay !== undefined,
+          weeklyRestDay === undefined ? null : weeklyRestDay,
           emp.id,
         ]
       );
@@ -355,6 +374,7 @@ router.patch('/:id', async (req, res, next) => {
         ...(phone !== undefined ? { phone } : {}),
         ...(departmentId !== undefined ? { departmentId } : {}),
         ...(applyLevelId ? { levelId: resolvedLevelId } : {}),
+        ...(weeklyRestDay !== undefined ? { weeklyRestDay } : {}),
       });
     });
     res.json({ employee: publicEmployee(await loadEmployee(emp.id, req.user)) });
