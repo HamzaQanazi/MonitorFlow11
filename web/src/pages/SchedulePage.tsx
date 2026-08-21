@@ -336,6 +336,7 @@ function RosterView() {
   const [cell, setCell] = useState<{ employeeId: number; employeeName: string; date: string; current: RosterEntry | undefined } | null>(null)
   const [copying, setCopying] = useState(false)
   const [copyConfirm, setCopyConfirm] = useState(false)
+  const [suggestOpen, setSuggestOpen] = useState(false)
 
   async function load() {
     const [rosterRes, templatesRes] = await Promise.all([
@@ -397,6 +398,9 @@ function RosterView() {
           </label>
           <button type="button" className="req-retry emp-add" onClick={() => setCopyConfirm(true)} disabled={copying || !employees}>
             {copying ? t('sc_copying') : t('sc_copy_last_week')}
+          </button>
+          <button type="button" className="req-retry emp-add" onClick={() => setSuggestOpen(true)} disabled={!employees}>
+            {t('sc_suggest')}
           </button>
         </div>
       </div>
@@ -477,6 +481,19 @@ function RosterView() {
           templates={templates}
           onClose={() => setCell(null)}
           onDone={onCellDone}
+        />
+      )}
+
+      {suggestOpen && (
+        <SuggestDialog
+          weekStart={weekStart}
+          weekEnd={weekEnd}
+          templates={templates}
+          onClose={() => setSuggestOpen(false)}
+          onDone={() => {
+            setSuggestOpen(false)
+            load().catch((err: Error) => setError(err.message))
+          }}
         />
       )}
 
@@ -574,6 +591,210 @@ function RosterCellDialog({
             {busy ? t('tc_saving') : t('save')}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// AI Suggest — generates a preview via POST /schedule/suggest (a local
+// fairness heuristic, no vendor call — CLAUDE.md §13) and only ever writes
+// through the same PUT /schedule/roster a manual edit uses, once the manager
+// reviews and applies it. Employee-subset picking isn't exposed here yet
+// (the API already supports it via employeeIds) — add a picker if "whole
+// subtree" stops being the common case.
+const WEEKDAYS: { value: number; key: string }[] = [
+  { value: 1, key: 'day_mon' },
+  { value: 2, key: 'day_tue' },
+  { value: 3, key: 'day_wed' },
+  { value: 4, key: 'day_thu' },
+  { value: 5, key: 'day_fri' },
+  { value: 6, key: 'day_sat' },
+  { value: 0, key: 'day_sun' },
+]
+
+interface SuggestEntry {
+  employeeId: number
+  employeeName: string
+  date: string
+  templateId: number
+}
+
+function SuggestDialog({
+  weekStart,
+  weekEnd,
+  templates,
+  onClose,
+  onDone,
+}: {
+  weekStart: string
+  weekEnd: string
+  templates: ShiftTemplate[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const { t, L } = useI18n()
+  const [from, setFrom] = useState(weekStart)
+  const [to, setTo] = useState(weekEnd)
+  const [templateId, setTemplateId] = useState(templates[0] ? String(templates[0].id) : '')
+  const [days, setDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5]))
+  const [perDay, setPerDay] = useState('')
+  const [preview, setPreview] = useState<{ entries: SuggestEntry[]; alreadyScheduledSkipped: number } | null>(null)
+  const [errors, setErrors] = useState<FieldErrors>({})
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  function toggleDay(d: number) {
+    setDays((prev) => {
+      const next = new Set(prev)
+      if (next.has(d)) next.delete(d)
+      else next.add(d)
+      return next
+    })
+  }
+
+  async function generate(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setErrors({})
+    try {
+      const body: Record<string, unknown> = { from, to, templateId: Number(templateId), weekdays: Array.from(days) }
+      if (perDay.trim()) body.perDay = Number(perDay)
+      const res = await apiFetch<{ entries: SuggestEntry[]; alreadyScheduledSkipped: number }>('/schedule/suggest', {
+        method: 'POST',
+        body,
+      })
+      setPreview(res)
+    } catch (err) {
+      const fe = fieldErrorsOf(err)
+      if (Object.keys(fe).length) setErrors(fe)
+      else setErrors({ _: (err as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function apply() {
+    if (!preview) return
+    setBusy(true)
+    setErrors({})
+    try {
+      await apiFetch('/schedule/roster', {
+        method: 'PUT',
+        body: { entries: preview.entries.map((e) => ({ employeeId: e.employeeId, date: e.date, templateId: e.templateId })) },
+      })
+      onDone()
+    } catch (err) {
+      setErrors({ _: (err as Error).message })
+      setBusy(false)
+    }
+  }
+
+  const distinctEmployees = preview ? new Set(preview.entries.map((e) => e.employeeId)).size : 0
+
+  return (
+    <div className="dialog-backdrop" onClick={onClose}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <h4>{preview ? t('sc_suggest_preview_h') : t('sc_suggest_h')}</h4>
+        {errors._ && <p className="assign-error">{errors._}</p>}
+
+        {!preview ? (
+          <form onSubmit={generate}>
+            <label className="field">
+              <span>{t('sc_suggest_from')}</span>
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} required />
+              {errors.from && <em className="field-err">{errors.from}</em>}
+            </label>
+            <label className="field">
+              <span>{t('sc_suggest_to')}</span>
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} required />
+              {errors.to && <em className="field-err">{errors.to}</em>}
+            </label>
+            <label className="field">
+              <span>{t('sc_suggest_template')}</span>
+              <select className="req-select" value={templateId} onChange={(e) => setTemplateId(e.target.value)} required>
+                <option value="" disabled>
+                  {t('sc_pick_template')}
+                </option>
+                {templates.map((tpl) => (
+                  <option key={tpl.id} value={tpl.id}>
+                    {L(tpl.name)} ({tpl.startTime.slice(0, 5)}–{tpl.endTime.slice(0, 5)})
+                  </option>
+                ))}
+              </select>
+              {errors.templateId && <em className="field-err">{errors.templateId}</em>}
+            </label>
+            <fieldset className="field">
+              <legend>{t('sc_suggest_days')}</legend>
+              <div className="control-row">
+                {WEEKDAYS.map((d) => (
+                  <label key={d.value} className="check-field">
+                    <input type="checkbox" checked={days.has(d.value)} onChange={() => toggleDay(d.value)} />
+                    <span>{t(d.key)}</span>
+                  </label>
+                ))}
+              </div>
+              {errors.weekdays && <em className="field-err">{errors.weekdays}</em>}
+            </fieldset>
+            <label className="field">
+              <span>{t('sc_suggest_per_day')}</span>
+              <input type="number" min={1} value={perDay} onChange={(e) => setPerDay(e.target.value)} />
+              <em className="field-hint">{t('sc_suggest_per_day_hint')}</em>
+              {errors.perDay && <em className="field-err">{errors.perDay}</em>}
+            </label>
+            <div className="dialog-actions">
+              <button type="button" className="detail-close-text" onClick={onClose}>
+                {t('cancel')}
+              </button>
+              <button type="submit" className="req-retry" disabled={busy || !templateId || !days.size}>
+                {busy ? t('sc_suggest_generating') : t('sc_suggest_generate')}
+              </button>
+            </div>
+          </form>
+        ) : preview.entries.length === 0 ? (
+          <>
+            <p className="req-status-msg">{t('sc_suggest_empty')}</p>
+            <div className="dialog-actions">
+              <button type="button" className="detail-close-text" onClick={() => setPreview(null)}>
+                {t('sc_suggest_back')}
+              </button>
+              <button type="button" className="req-retry" onClick={onClose}>
+                {t('cancel')}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="req-status-msg">
+              {preview.entries.length} {t('sc_suggest_count')} {distinctEmployees} {t('sc_suggest_employees')}
+              {preview.alreadyScheduledSkipped > 0 && (
+                <>
+                  {' · '}
+                  {preview.alreadyScheduledSkipped} {t('sc_suggest_skipped')}
+                </>
+              )}
+            </p>
+            <ul className="sc-suggest-list">
+              {preview.entries.map((e, i) => (
+                <li key={i}>
+                  {e.date} — {e.employeeName}
+                </li>
+              ))}
+            </ul>
+            <div className="dialog-actions">
+              <button type="button" className="detail-close-text" onClick={() => setPreview(null)} disabled={busy}>
+                {t('sc_suggest_back')}
+              </button>
+              <button type="button" className="req-retry" onClick={apply} disabled={busy}>
+                {busy ? t('sc_suggest_applying') : t('sc_suggest_apply')}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

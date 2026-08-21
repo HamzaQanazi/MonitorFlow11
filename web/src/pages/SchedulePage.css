@@ -9,3 +9,34 @@
   text-align: start;
   white-space: normal;
 }
+
+/* AI Suggest dialog */
+.check-field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.field-hint {
+  font-size: 12.5px;
+  font-style: normal;
+  color: var(--muted);
+}
+
+.sc-suggest-list {
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  list-style: none;
+  font-size: 13px;
+}
+
+.sc-suggest-list li {
+  padding: 3px 0;
+}

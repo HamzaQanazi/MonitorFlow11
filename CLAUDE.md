@@ -802,9 +802,24 @@ translated and it stays naturally rate-limit-friendly. Not added to the
 two-field forms (Knowledge Base, Events, Levels, Departments, Onboarding) —
 one click is already trivial there.
 
+**Added 2026-08-21 (deliberate, same AI feature track as auto-assign ranking):
+AI-suggested scheduling.** `POST /schedule/suggest` (`routes/schedule.js`,
+`manage_employees`) proposes `schedule_entry` rows for a manager to review —
+a chosen shift template across chosen weekdays in a date range, for the
+caller's subtree (or an explicit subset), rotated fairly when `perDay` caps
+who's picked each day by who has worked the fewest shifts in a trailing
+30-day lookback (a local heuristic over existing data, same reasoning as
+auto-assign's ranking — no vendor call, no new schema). Deliberately
+**preview-only**: it has no write path of its own and never overwrites an
+existing entry — the manager applies the result through the unchanged
+`PUT /schedule/roster`, so a human stays in the loop on every write, unlike
+auto-assign's opt-in-and-fire pattern. Web: `SuggestDialog` on the Roster
+tab (`SchedulePage.tsx`), generate → review a count/list preview → apply.
+
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
-`audit_event`) · **bilingual auto-fill** (Gemini, above). GPS tracking stays
+`audit_event`) · **bilingual auto-fill** (Gemini, above) · **AI auto-assign
+ranking** (§5) · **AI-suggested scheduling** (above). GPS tracking stays
 out (I10).
 
 ---

@@ -217,6 +217,105 @@ router.put('/roster', requireCapabilityOrAdmin('manage_employees'), async (req, 
   }
 });
 
+// POST /schedule/suggest — preview-only: proposes roster entries for a manager
+// to review, never writes schedule_entry itself (AI scheduling track, CLAUDE.md
+// §13 — a human stays in the loop, unlike auto-assign's opt-in-and-fire). Local
+// heuristic over existing data, no vendor call, same reasoning as autoAssign's
+// ranking: fill one template across the chosen weekdays for the chosen (or
+// whole-subtree) employee pool, balanced by who has worked the fewest shifts
+// recently when `perDay` caps who's picked each day. Never overwrites an
+// existing schedule_entry — the manager applies the result via the existing
+// PUT /schedule/roster, so this has no write path of its own.
+router.post('/suggest', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
+  try {
+    const { from, to, templateId, weekdays, employeeIds, perDay } = req.body || {};
+    const errors = {};
+    if (!DATE_RE.test(from || '')) errors.from = 'from must be YYYY-MM-DD';
+    if (!DATE_RE.test(to || '')) errors.to = 'to must be YYYY-MM-DD';
+    if (!Number.isInteger(templateId)) errors.templateId = 'templateId is required';
+    // JS Date#getUTCDay() convention: 0=Sunday … 6=Saturday.
+    const days = new Set(Array.isArray(weekdays) ? weekdays.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6) : []);
+    if (!days.size) errors.weekdays = 'Pick at least one weekday';
+    if (employeeIds !== undefined && !(Array.isArray(employeeIds) && employeeIds.every(Number.isInteger))) {
+      errors.employeeIds = 'employeeIds must be an array of ids';
+    }
+    if (perDay !== undefined && !(Number.isInteger(perDay) && perDay > 0)) errors.perDay = 'perDay must be a positive integer';
+    if (Object.keys(errors).length) return res.status(422).json({ errors });
+    if (from > to) return res.status(422).json({ errors: { to: 'to must be on or after from' } });
+    if ((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000 > 90) {
+      return res.status(422).json({ errors: { to: 'Range is limited to 90 days' } });
+    }
+
+    const template = (
+      await pool.query('SELECT id, name, start_time, end_time FROM shift_template WHERE id = $1 AND company_id = $2', [
+        templateId,
+        req.user.company_id,
+      ])
+    ).rows[0];
+    if (!template) return res.status(404).json({ error: 'Not found' });
+
+    const subtree = await subtreeIds(req.user.id);
+    if (employeeIds?.length) {
+      const allowed = new Set(subtree);
+      if (employeeIds.some((id) => !allowed.has(id))) return res.status(404).json({ error: 'Not found' });
+    }
+    const poolIds = employeeIds?.length ? employeeIds : subtree;
+
+    const { rows: employees } = await pool.query(
+      `SELECT id, name FROM users WHERE id = ANY($1::int[]) AND role = 'employee' AND is_active ORDER BY id`,
+      [poolIds]
+    );
+    if (!employees.length) return res.json({ entries: [], template: serializeTemplate(template), alreadyScheduledSkipped: 0 });
+
+    const [{ rows: existing }, { rows: recent }] = await Promise.all([
+      pool.query(`SELECT employee_id, date::text AS date FROM schedule_entry WHERE employee_id = ANY($1::int[]) AND date BETWEEN $2 AND $3`, [
+        poolIds,
+        from,
+        to,
+      ]),
+      // Trailing 30-day lookback ending the day before the range starts —
+      // "who's worked the fewest shifts recently" for rotation fairness.
+      pool.query(
+        `SELECT employee_id, COUNT(*)::int AS count FROM schedule_entry
+         WHERE employee_id = ANY($1::int[]) AND date >= $2::date - INTERVAL '30 days' AND date < $2::date
+         GROUP BY employee_id`,
+        [poolIds, from]
+      ),
+    ]);
+    const alreadyScheduled = new Set(existing.map((e) => `${e.employee_id}|${e.date}`));
+    const load = new Map(employees.map((e) => [e.id, 0]));
+    for (const r of recent) load.set(r.employee_id, r.count);
+
+    const cap = Number.isInteger(perDay) ? perDay : employees.length;
+    const entries = [];
+    let alreadyScheduledSkipped = 0;
+    for (let d = from; d <= to; d = addDaysIso(d, 1)) {
+      if (!days.has(new Date(`${d}T00:00:00Z`).getUTCDay())) continue;
+      const candidates = employees.filter((e) => {
+        if (alreadyScheduled.has(`${e.id}|${d}`)) return false;
+        return true;
+      });
+      alreadyScheduledSkipped += employees.length - candidates.length;
+      candidates.sort((a, b) => load.get(a.id) - load.get(b.id) || a.id - b.id);
+      for (const e of candidates.slice(0, cap)) {
+        entries.push({ employeeId: e.id, employeeName: e.name, date: d, templateId: template.id });
+        load.set(e.id, load.get(e.id) + 1);
+      }
+      if (entries.length > 500) return res.status(422).json({ errors: { to: 'Suggestion is too large — narrow the range or weekdays' } });
+    }
+
+    res.json({ entries, template: serializeTemplate(template), alreadyScheduledSkipped });
+  } catch (err) {
+    next(err);
+  }
+});
+
+function addDaysIso(iso, n) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 // ---- Self-service ----
 
 // GET /schedule/mine?from&to — the caller's own upcoming schedule. Employee
