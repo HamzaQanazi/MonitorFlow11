@@ -78,4 +78,14 @@ async function ownerScopeIds(user, db = pool) {
   return subtreeIds(user.id, db);
 }
 
-module.exports = { subtreeIds, ownerInScope, ownerScopeIds, ancestorIds };
+// Single-target counterpart of ownerScopeIds, for the per-resource 404 scope
+// checks: same admin rule (no subtree, sees the whole company), otherwise the
+// recursive subtree walk. Use this instead of ownerInScope wherever the route
+// admits the admin via requireCapabilityOrAdmin, or the Owner 404s on their
+// own company's rows.
+async function inOwnerScope(user, targetId, db = pool) {
+  if (user.role === 'admin') return targetId != null;
+  return ownerInScope(user.id, targetId, db);
+}
+
+module.exports = { subtreeIds, ownerInScope, ownerScopeIds, inOwnerScope, ancestorIds };

@@ -522,6 +522,10 @@ const dict: Record<string, Loc> = {
   tc_col_weekly_overtime: { en: 'Weekly overtime', ar: 'الوقت الإضافي الأسبوعي' },
   tc_day_shifts_h: { en: 'Shifts', ar: 'الورديات' },
   tc_status_pending: { en: 'Pending approval', ar: 'بانتظار الموافقة' },
+  tc_unclosed: {
+    en: 'A shift was never clocked out — hours are capped at 24h until it is corrected.',
+    ar: 'لم يُسجّل انصراف لإحدى الورديات — الساعات محدودة بـ 24 ساعة حتى يتم تصحيحها.',
+  },
   tc_status_approved: { en: 'Approved', ar: 'مُعتمد' },
   tc_status_edited: { en: 'Edited', ar: 'مُعدَّل' },
   tc_approve: { en: 'Approve', ar: 'اعتماد' },

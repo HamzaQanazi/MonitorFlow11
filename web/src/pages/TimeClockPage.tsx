@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { apiFetch, ApiError, getToken } from '../lib/api'
+import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import LocationPin from '../components/LocationPin'
 import './RequestsPage.css'
@@ -11,8 +12,14 @@ import './TimeClockPage.css'
 // (weekly grid with review/edit/approve/export) share this page and the tab
 // strip; each tab owns its own query-param slice of the URL.
 
+// The viewer's own calendar day, not UTC's — toISOString() would hand a
+// Gaza manager yesterday's date any time before 03:00 local. The backend
+// buckets by COMPANY_TZ; the browser's zone is the closest thing the client
+// has to it, and for a manager sitting in the company it is the same zone.
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 function fmtHours(n: number | null, t: (k: string) => string): string {
   return n == null ? '—' : `${Number(n.toFixed(1))}${t('tc_hrs')}`
@@ -304,6 +311,7 @@ interface DayShift {
 interface TimesheetDay {
   totalHours: number
   overtimeHours: number
+  unclosed: boolean
   shifts: DayShift[]
 }
 interface TimesheetRow {
@@ -343,12 +351,19 @@ function dayLabel(weekStart: string, i: number): string {
 
 function TimesheetsView() {
   const { t } = useI18n()
+  const { user } = useAuth()
+  // export.csv needs the `export` capability on top of view_all, so a manager
+  // without it would otherwise click an enabled button and get a 403.
+  const canExport = !!user?.capabilities.includes('export')
   const [params, setParams] = useSearchParams()
   const weekStart = params.get('weekStart') || mondayOf(todayIso())
 
   const [data, setData] = useState<TimesheetsResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  // Separate from the page-load `error` on purpose (same split as ReportsPage):
+  // a failed export must not replace the timesheet grid with an error block.
+  const [exportError, setExportError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<{ employeeName: string; dayIndex: number; shifts: DayShift[] } | null>(null)
 
   async function load() {
@@ -373,6 +388,7 @@ function TimesheetsView() {
 
   async function exportCsv() {
     setExporting(true)
+    setExportError(null)
     try {
       const res = await fetch(`/api/v1/timeclock/timesheets/export.csv?weekStart=${weekStart}`, {
         headers: { Authorization: `Bearer ${getToken() ?? ''}` },
@@ -385,9 +401,8 @@ function TimesheetsView() {
       a.download = `timesheets-${weekStart}.csv`
       a.click()
       URL.revokeObjectURL(url)
-      setError(null)
     } catch (err) {
-      setError((err as Error).message)
+      setExportError((err as Error).message)
     } finally {
       setExporting(false)
     }
@@ -408,10 +423,21 @@ function TimesheetsView() {
             <span>{t('tc_week_start')}</span>
             <input type="date" className="req-select" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
           </label>
-          <button type="button" className="req-retry emp-add" onClick={exportCsv} disabled={exporting || !data || rows.length === 0}>
+          <button
+            type="button"
+            className="req-retry emp-add"
+            onClick={exportCsv}
+            disabled={!canExport || exporting || !data || rows.length === 0}
+            title={canExport ? undefined : t('rep_export_no_cap')}
+          >
             {exporting ? t('rep_exporting') : t('rep_export')}
           </button>
         </div>
+        {exportError && (
+          <p className="assign-error" role="alert">
+            {t('rep_export_err')} {exportError}
+          </p>
+        )}
       </div>
 
       {error ? (
@@ -472,6 +498,9 @@ function TimesheetsView() {
                             onClick={() => setDialog({ employeeName: row.name, dayIndex: i, shifts: day.shifts })}
                           >
                             {fmtHours(day.totalHours, t)}
+                            {/* An unclosed shift's hours are capped at 24h server-side
+                                and are a correction to make, not a real total. */}
+                            {day.unclosed && <i className="tc-unclosed-dot" aria-hidden="true" title={t('tc_unclosed')} />}
                             {pending && <i className="tc-pending-dot" aria-hidden="true" title={t('tc_status_pending')} />}
                           </button>
                         ) : (

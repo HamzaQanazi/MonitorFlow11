@@ -107,6 +107,18 @@
   background: var(--surface);
 }
 
+/* Same affordance as the pending-approval dot, different colour: this day
+   holds a shift that was never clocked out. */
+.tc-unclosed-dot {
+  position: absolute;
+  top: 4px;
+  inset-inline-start: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--error);
+}
+
 .tc-pending-dot {
   position: absolute;
   top: 4px;

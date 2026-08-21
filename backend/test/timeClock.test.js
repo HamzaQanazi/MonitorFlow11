@@ -2,6 +2,11 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { validateManualShift, validateClockInLocation, computeAttendance, computeTimesheetDay } = require('../src/lib/timeClock');
 
+// COMPANY_TZ is read at require() time and defaults to UTC, so every case here
+// reasons in UTC. The timezone behaviour itself is covered in
+// timeClockTz.test.js, which sets the env before requiring the module (node
+// --test gives each file its own process).
+
 test('accepts a well-formed past shift', () => {
   const clockInAt = new Date(Date.now() - 2 * 3600e3).toISOString();
   const clockOutAt = new Date(Date.now() - 1 * 3600e3).toISOString();
@@ -57,11 +62,23 @@ test('rejects out-of-range or malformed coordinates', () => {
 
 // computeAttendance — the Today tab's per-employee math.
 
-test('no shift, a schedule entry exists for the date → absent', () => {
+test('no shift, a schedule entry exists and the start time has passed → absent', () => {
   const defaultShift = { expectedStartTime: '09:00:00', expectedEndTime: '17:00:00' };
-  const r = computeAttendance({ shift: null, defaultShift });
+  const r = computeAttendance({ shift: null, defaultShift, date: '2026-08-03', now: new Date('2026-08-03T09:30:00Z') });
   assert.equal(r.absent, true);
   assert.equal(r.totalHours, null);
+});
+
+test('no shift, but the scheduled start has not arrived yet → not absent', () => {
+  const defaultShift = { expectedStartTime: '09:00:00', expectedEndTime: '17:00:00' };
+  const r = computeAttendance({ shift: null, defaultShift, date: '2026-08-03', now: new Date('2026-08-03T08:00:00Z') });
+  assert.equal(r.absent, false);
+});
+
+test('no shift on a past scheduled day → absent regardless of the time of day', () => {
+  const defaultShift = { expectedStartTime: '09:00:00', expectedEndTime: '17:00:00' };
+  const r = computeAttendance({ shift: null, defaultShift, date: '2026-08-02', now: new Date('2026-08-03T00:30:00Z') });
+  assert.equal(r.absent, true);
 });
 
 test('no shift, no schedule entry for the date → never absent', () => {
@@ -121,4 +138,26 @@ test('no shifts that day → zero hours', () => {
   const r = computeTimesheetDay({ shifts: [], defaultShift: null });
   assert.equal(r.totalHours, 0);
   assert.equal(r.overtimeHours, 0);
+});
+
+// Open-shift accrual cap — a forgotten clock-out used to grow against now()
+// forever and land in the weekly total and the payroll CSV (96h by Friday).
+
+test('an open shift stops accruing after 24 hours', () => {
+  const clockInAt = new Date('2026-08-03T09:00:00Z').toISOString();
+  const now = new Date('2026-08-07T09:00:00Z'); // four days later
+  const r = computeTimesheetDay({ shifts: [{ clockInAt, clockOutAt: null, breakSeconds: 0 }], defaultShift: null, now });
+  assert.equal(r.totalHours, 24);
+  assert.equal(r.unclosed, true);
+});
+
+test('a still-running shift inside 24h still accrues live', () => {
+  const shift = { clockInAt: '2026-08-03T09:00:00Z', clockOutAt: null, status: 'active' };
+  const r = computeAttendance({ shift, now: new Date('2026-08-03T13:00:00Z') });
+  assert.equal(r.totalHours, 4);
+});
+
+test('a closed day is never flagged unclosed', () => {
+  const shifts = [{ clockInAt: '2026-08-03T09:00:00Z', clockOutAt: '2026-08-03T17:00:00Z', breakSeconds: 0 }];
+  assert.equal(computeTimesheetDay({ shifts, defaultShift: null }).unclosed, false);
 });

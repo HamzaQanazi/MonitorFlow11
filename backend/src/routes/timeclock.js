@@ -6,9 +6,12 @@ const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole, requireCapabilityOrAdmin, requireFeature } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
-const { subtreeIds, ownerInScope } = require('../lib/scope');
+const { ownerScopeIds, inOwnerScope } = require('../lib/scope');
 const { csvCell } = require('../lib/csv');
 const {
+  COMPANY_TZ,
+  companyDate,
+  companyDayIndex,
   validateManualShift,
   validateClockInLocation,
   validateOptionalLocation,
@@ -291,8 +294,9 @@ router.post('/shifts/:id/entries', requireRole('employee'), async (req, res, nex
 });
 
 // ---- Manager surface (Gate 1: view_all to read, manage_employees to write;
-// Gate 2: subtree via subtreeIds/ownerInScope). Employees only (I2) — an
-// oversight employee is one whose level grants view_all, same as reports.js.
+// Gate 2: company scope via ownerScopeIds/inOwnerScope). An oversight
+// employee is one whose level grants view_all (same as reports.js); the Owner
+// is an admin with no subtree (I2), so their scope is the whole company.
 
 // GET /timeclock/today?date=YYYY-MM-DD — one row per subtree employee: their
 // most recent shift that day, plus the 5 counters the web Today tab renders
@@ -300,11 +304,15 @@ router.post('/shifts/:id/entries', requireRole('employee'), async (req, res, nex
 // (thin renderer, I4) — no separate filter param.
 router.get('/today', requireCapabilityOrAdmin('view_all'), async (req, res, next) => {
   try {
-    const date = req.query.date || new Date().toISOString().slice(0, 10);
+    const date = req.query.date || companyDate(new Date());
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
     }
-    const ids = await subtreeIds(req.user.id);
+    // ownerScopeIds, not subtreeIds: the Owner is an admin with no subtree
+    // (I2), so a raw subtree walk returned only themselves — and they're not
+    // role 'employee', so both tabs rendered empty for the person who bought
+    // the deployment. Same helper dashboard.js/checklists.js already use.
+    const ids = await ownerScopeIds(req.user);
 
     const { rows } = await pool.query(
       `SELECT u.id AS employee_id, u.name,
@@ -316,13 +324,13 @@ router.get('/today', requireCapabilityOrAdmin('view_all'), async (req, res, next
        FROM users u
        LEFT JOIN schedule_entry se ON se.employee_id = u.id AND se.date = $2::date
        LEFT JOIN shift_template st ON st.id = se.shift_template_id
-       -- AT TIME ZONE 'UTC' forces the day boundary to match the UTC calendar
-       -- math in lib/timeClock.js — a bare ::date cast uses the DB session's
-       -- timezone (this deployment runs Asia/Gaza), which silently shifts
-       -- shifts near midnight onto the wrong day.
+       -- AT TIME ZONE $3 buckets each shift by the COMPANY's calendar day,
+       -- matching lib/timeClock.js's companyDate(). A bare ::date cast would
+       -- use whatever timezone the DB session happens to run in, and plain
+       -- 'UTC' put a 01:00 local shift on the previous day.
        LEFT JOIN LATERAL (
          SELECT * FROM time_shift s
-         WHERE s.employee_id = u.id AND (s.clock_in_at AT TIME ZONE 'UTC')::date = $2::date
+         WHERE s.employee_id = u.id AND (s.clock_in_at AT TIME ZONE $3)::date = $2::date
          ORDER BY s.clock_in_at DESC LIMIT 1
        ) sh ON true
        LEFT JOIN LATERAL (
@@ -338,7 +346,7 @@ router.get('/today', requireCapabilityOrAdmin('view_all'), async (req, res, next
        ) fb ON true
        WHERE u.id = ANY($1::int[]) AND u.role = 'employee' AND u.is_active
        ORDER BY u.name`,
-      [ids, date]
+      [ids, date, COMPANY_TZ]
     );
 
     const employees = rows.map((r) => {
@@ -348,7 +356,7 @@ router.get('/today', requireCapabilityOrAdmin('view_all'), async (req, res, next
       const defaultShift = r.expected_start_time
         ? { expectedStartTime: r.expected_start_time, expectedEndTime: r.expected_end_time }
         : null;
-      const attendance = computeAttendance({ shift, breakSeconds: r.break_seconds, defaultShift });
+      const attendance = computeAttendance({ shift, breakSeconds: r.break_seconds, defaultShift, date });
       return {
         employeeId: r.employee_id,
         name: r.name,
@@ -398,12 +406,12 @@ async function buildTimesheets(weekStart, ids) {
          SELECT SUM(EXTRACT(EPOCH FROM (COALESCE(break_end_at, now()) - break_start_at)))::int AS break_seconds
          FROM time_break WHERE shift_id = s.id
        ) b ON true
-       -- Same UTC-boundary fix as /today: $2::date compared straight against a
-       -- timestamptz would cast through the DB session's local timezone.
+       -- Same company-timezone bucketing as /today: the week runs from local
+       -- midnight to local midnight, not UTC's.
        WHERE s.employee_id = ANY($1::int[])
-         AND s.clock_in_at >= ($2::date)::timestamp AT TIME ZONE 'UTC'
-         AND s.clock_in_at < ($2::date + 7)::timestamp AT TIME ZONE 'UTC'`,
-      [ids, weekStart]
+         AND s.clock_in_at >= ($2::date)::timestamp AT TIME ZONE $3
+         AND s.clock_in_at < ($2::date + 7)::timestamp AT TIME ZONE $3`,
+      [ids, weekStart, COMPANY_TZ]
     ),
     pool.query(
       `SELECT se.employee_id, se.date::text AS date, st.start_time AS expected_start_time, st.end_time AS expected_end_time
@@ -418,7 +426,7 @@ async function buildTimesheets(weekStart, ids) {
   const weekStartMs = new Date(`${weekStart}T00:00:00Z`).getTime();
   const shiftsByEmployeeDay = new Map();
   for (const s of shiftRows) {
-    const dayIndex = Math.floor((new Date(s.clock_in_at).getTime() - weekStartMs) / 86400000);
+    const dayIndex = companyDayIndex(weekStart, s.clock_in_at);
     const key = `${s.employee_id}:${dayIndex}`;
     if (!shiftsByEmployeeDay.has(key)) shiftsByEmployeeDay.set(key, []);
     shiftsByEmployeeDay.get(key).push({
@@ -448,10 +456,11 @@ async function buildTimesheets(weekStart, ids) {
     for (let i = 0; i < 7; i++) {
       const dayShifts = shiftsByEmployeeDay.get(`${emp.id}:${i}`) || [];
       const defaultShift = scheduleByEmployeeDay.get(`${emp.id}:${i}`) || null;
-      const { totalHours, overtimeHours } = computeTimesheetDay({ shifts: dayShifts, defaultShift });
+      const { totalHours, overtimeHours, unclosed } = computeTimesheetDay({ shifts: dayShifts, defaultShift });
       days.push({
         totalHours,
         overtimeHours,
+        unclosed,
         shifts: dayShifts.map((s) => ({
           id: s.id,
           clockInAt: s.clockInAt,
@@ -483,7 +492,7 @@ router.get('/timesheets', requireCapabilityOrAdmin('view_all'), async (req, res,
     if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart || '')) {
       return res.status(400).json({ error: 'weekStart must be YYYY-MM-DD' });
     }
-    const timesheets = await buildTimesheets(weekStart, await subtreeIds(req.user.id));
+    const timesheets = await buildTimesheets(weekStart, await ownerScopeIds(req.user));
     res.json({ weekStart, timesheets });
   } catch (err) {
     next(err);
@@ -501,7 +510,7 @@ router.get(
       if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart || '')) {
         return res.status(400).json({ error: 'weekStart must be YYYY-MM-DD' });
       }
-      const timesheets = await buildTimesheets(weekStart, await subtreeIds(req.user.id));
+      const timesheets = await buildTimesheets(weekStart, await ownerScopeIds(req.user));
 
       const header = ['employee_name', 'day_1', 'day_2', 'day_3', 'day_4', 'day_5', 'day_6', 'day_7', 'weekly_total_hours', 'weekly_overtime_hours'];
       const lines = [header.join(',')];
@@ -522,11 +531,13 @@ router.get(
 
 // Loads a shift for a manager acting on a subtree member (not necessarily
 // themselves) — same 404-over-403 shape as loadOwnShift, scoped by Gate 2
-// instead of strict self-ownership.
-async function loadScopedShift(id, actorId, db = pool) {
+// instead of strict self-ownership. inOwnerScope, not ownerInScope: these
+// routes admit the admin, who has no subtree and would otherwise 404 on
+// every shift in their own company.
+async function loadScopedShift(id, actor, db = pool) {
   if (!Number.isInteger(id)) return null;
   const detail = await loadShiftDetail(id, db);
-  if (!detail || !(await ownerInScope(actorId, detail._employeeId, db))) return null;
+  if (!detail || !(await inOwnerScope(actor, detail._employeeId, db))) return null;
   return detail;
 }
 
@@ -534,7 +545,7 @@ async function loadScopedShift(id, actorId, db = pool) {
 // (same shape/validation as a manual entry) and always lands 'edited'/'completed'.
 router.patch('/shifts/:id', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
-    const detail = await loadScopedShift(Number(req.params.id), req.user.id);
+    const detail = await loadScopedShift(Number(req.params.id), req.user);
     if (!detail) return res.status(404).json({ error: 'Not found' });
 
     const { clockInAt, clockOutAt, note } = req.body || {};
@@ -565,7 +576,7 @@ router.patch('/shifts/:id', requireCapabilityOrAdmin('manage_employees'), async 
 // POST /timeclock/shifts/:id/approve — clears a manual entry's 'pending' approval.
 router.post('/shifts/:id/approve', requireCapabilityOrAdmin('manage_employees'), async (req, res, next) => {
   try {
-    const detail = await loadScopedShift(Number(req.params.id), req.user.id);
+    const detail = await loadScopedShift(Number(req.params.id), req.user);
     if (!detail) return res.status(404).json({ error: 'Not found' });
     if (detail.approvalStatus !== 'pending') {
       return res.status(409).json({ error: 'Shift is not pending approval' });

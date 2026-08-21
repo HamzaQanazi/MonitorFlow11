@@ -1715,11 +1715,13 @@ paths:
     get:
       tags: [timeclock]
       summary: >
-        Manager Today view — one row per subtree employee (their most recent
+        Manager Today view — one row per in-scope employee (their most recent
         shift on `date`) plus the 5 counters the web Today tab renders as
-        clickable filters. Requires view_all (Gate 1) + subtree scope (Gate 2).
+        clickable filters. Requires view_all (Gate 1) + scope (Gate 2: an
+        oversight employee's subtree, or the whole company for the Owner, who
+        has no subtree). Days are bucketed by the deployment's COMPANY_TZ.
       parameters:
-        - { name: date, in: query, schema: { type: string, format: date }, description: "defaults to today" }
+        - { name: date, in: query, schema: { type: string, format: date }, description: "defaults to today in COMPANY_TZ" }
       responses:
         '200':
           description: OK
@@ -1743,7 +1745,10 @@ paths:
   /timeclock/timesheets:
     get:
       tags: [timeclock]
-      summary: Manager weekly timesheet grid — one row per subtree employee, 7 daily totals + weekly total/overtime.
+      summary: >
+        Manager weekly timesheet grid — one row per in-scope employee (subtree, or
+        the whole company for the Owner), 7 daily totals + weekly total/overtime.
+        The week runs local-midnight to local-midnight in COMPANY_TZ.
       parameters:
         - { name: weekStart, in: query, required: true, schema: { type: string, format: date } }
       responses:
@@ -2335,7 +2340,7 @@ components:
 
     Timesheet:
       type: object
-      description: One subtree employee's weekly row — 7 daily totals plus weekly aggregates.
+      description: One in-scope employee's weekly row — 7 daily totals plus weekly aggregates.
       properties:
         employeeId: { type: integer }
         name: { type: string }
@@ -2348,6 +2353,12 @@ components:
             properties:
               totalHours: { type: number }
               overtimeHours: { type: number }
+              unclosed:
+                type: boolean
+                description: >-
+                  True when a shift on this day was never clocked out. Its hours
+                  are capped at 24h rather than accruing against now(), and the
+                  web grid marks the cell so a manager can correct the clock-out.
               shifts:
                 type: array
                 description: The shift(s) that landed on this day — drives the edit/approve actions in the web Timesheets tab.
