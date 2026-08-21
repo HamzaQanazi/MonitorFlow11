@@ -7,7 +7,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  setup, stopServer, api, loginAll, WHO, fixtures, submitRequest,
+  setup, stopServer, api, loginAll, WHO, fixtures, submitRequest, query,
 } = require('../testlib/harness');
 
 let tokens;
@@ -153,4 +153,49 @@ test('cancel-vs-assign race: assign wins, requester cancel afterward → 409', a
 
   const cancel = await api('PATCH', `/requests/${req.id}/cancel`, { token: tokens.resident });
   assert.equal(cancel.status, 409);
+});
+
+// Dashboard's SLA-breach / reopen-rate tiles link to GET /requests with these
+// two filters (requestQuery.js) — same definitions as GET /dashboard/stats'
+// slaBreaches count and reopenRate.
+test('GET /requests?slaBreached=true — only open requests past their sla_minutes', async () => {
+  const fresh = await submitRequest(tokens.resident, fixtures.serviceTypeId);
+  const stale = await submitRequest(tokens.resident, fixtures.serviceTypeId);
+  // "requested" carries sla_minutes: 240 (harness.js) — backdate past it.
+  await query('UPDATE request SET updated_at = now() - INTERVAL \'5 hours\' WHERE id = $1', [stale.id]);
+
+  const res = await api('GET', '/requests?slaBreached=true', { token: tokens.root });
+  assert.equal(res.status, 200);
+  const ids = res.body.requests.map((r) => r.id);
+  assert.ok(ids.includes(stale.id));
+  assert.ok(!ids.includes(fresh.id));
+});
+
+test('GET /requests?reopened=true — only requests that went terminal back to non-terminal', async () => {
+  // The workflow schema forbids authoring a transition out of a terminal
+  // status (workflowSchema.js) — the only way a request actually moves
+  // terminal → non-terminal is the oversight override endpoint (§7's
+  // "reopening past a terminal status" comment on PATCH /:id/status).
+  const reopened = await submitRequest(tokens.resident, fixtures.serviceTypeId);
+  const stillOpen = await submitRequest(tokens.resident, fixtures.serviceTypeId);
+
+  const cancel = await api('PATCH', `/requests/${reopened.id}/cancel`, {
+    token: tokens.resident,
+    body: { note: 'changed my mind' },
+  });
+  assert.equal(cancel.status, 200, JSON.stringify(cancel.body));
+
+  // 'requested' is the initial status — override refuses a target that's
+  // initial, so reopen onto 'scheduled' instead.
+  const override = await api('PATCH', `/requests/${reopened.id}/status`, {
+    token: tokens.root,
+    body: { to: 'scheduled', note: 'reopening after all' },
+  });
+  assert.equal(override.status, 200, JSON.stringify(override.body));
+
+  const res = await api('GET', '/requests?reopened=true', { token: tokens.root });
+  assert.equal(res.status, 200);
+  const ids = res.body.requests.map((r) => r.id);
+  assert.ok(ids.includes(reopened.id));
+  assert.ok(!ids.includes(stillOpen.id));
 });
