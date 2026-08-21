@@ -48,6 +48,12 @@ export default function LevelsPage() {
   const [dialog, setDialog] = useState<
     { kind: 'create' } | { kind: 'delete'; level: Level } | null
   >(null)
+  // Confirmed before firing — this is bulk (every holder of the level) and
+  // immediate (no per-employee step like the Employees page's level picker),
+  // so a plain hint isn't enough here the way it was there.
+  const [pendingToggle, setPendingToggle] = useState<{ level: Level; key: string; willEnable: boolean } | null>(
+    null
+  )
 
   const load = useCallback(async () => {
     const res = await apiFetch<{ levels: Level[] }>('/employee-levels')
@@ -65,16 +71,18 @@ export default function LevelsPage() {
     load().catch((err: Error) => setError(err.message))
   }
 
-  async function toggleCapability(level: Level, key: string) {
+  async function confirmToggle() {
+    if (!pendingToggle) return
+    const { level, key, willEnable } = pendingToggle
     setToggleBusy(level.id)
-    const next = level.capabilities.includes(key)
-      ? level.capabilities.filter((c) => c !== key)
-      : [...level.capabilities, key]
+    const next = willEnable ? [...level.capabilities, key] : level.capabilities.filter((c) => c !== key)
     try {
       await apiFetch(`/employee-levels/${level.id}`, { method: 'PATCH', body: { capabilities: next } })
+      setPendingToggle(null)
       await load()
     } catch (err) {
       setError((err as Error).message)
+      setPendingToggle(null)
     } finally {
       setToggleBusy(null)
     }
@@ -137,7 +145,11 @@ export default function LevelsPage() {
                             type="checkbox"
                             checked={lvl.capabilities.includes(key)}
                             disabled={toggleBusy === lvl.id}
-                            onChange={() => toggleCapability(lvl, key)}
+                            onChange={() => {}}
+                            onClick={(e) => {
+                              e.preventDefault()
+                              setPendingToggle({ level: lvl, key, willEnable: !lvl.capabilities.includes(key) })
+                            }}
                           />
                           <code>{key}</code>
                         </label>
@@ -167,6 +179,63 @@ export default function LevelsPage() {
       {dialog?.kind === 'delete' && (
         <DeleteDialog level={dialog.level} onClose={() => setDialog(null)} onDone={onDone} />
       )}
+      {pendingToggle && (
+        <ToggleConfirmDialog
+          pending={pendingToggle}
+          busy={toggleBusy === pendingToggle.level.id}
+          onCancel={() => setPendingToggle(null)}
+          onConfirm={confirmToggle}
+        />
+      )}
+    </div>
+  )
+}
+
+function ToggleConfirmDialog({
+  pending,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  pending: { level: Level; key: string; willEnable: boolean }
+  busy: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const { t, L } = useI18n()
+  const { level, key, willEnable } = pending
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onCancel()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel, busy])
+
+  return (
+    <div className="dialog-backdrop" onClick={() => !busy && onCancel()}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <h4>
+          {willEnable ? t('lvl_toggle_grant_h') : t('lvl_toggle_revoke_h')} <code>{key}</code>
+        </h4>
+        <p className="req-status-msg">
+          {(willEnable ? t('lvl_toggle_grant_p') : t('lvl_toggle_revoke_p'))
+            .replace('{level}', L(level.name))
+            .replace('{count}', String(level.holderCount))}
+        </p>
+        <div className="dialog-actions">
+          <button type="button" className="detail-close-text" onClick={onCancel} disabled={busy}>
+            {t('cancel')}
+          </button>
+          <button
+            type="button"
+            className={`req-retry${willEnable ? '' : ' is-danger'}`}
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? t('tc_saving') : willEnable ? t('lvl_toggle_grant_btn') : t('lvl_toggle_revoke_btn')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
