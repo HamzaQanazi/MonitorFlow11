@@ -13,21 +13,14 @@ import './EmployeesPage.css'
 
 const PAGE_SIZE = 20
 
-// The known audit actions (lib/audit.js writers). The select is a closed
-// list so a typo can't silently filter to nothing. Account writes target
-// employees (leads and field techs); operational writes target requests.
-const ACTIONS = [
-  ...['created', 'updated', 'activated', 'deactivated', 'password_reset'].map((w) => `employee.${w}`),
-  'request.status_changed',
-  'request.assigned',
-  'request.priority_changed',
-  'service.created',
-  'service.updated',
-  'level.created',
-  'level.updated',
-  'level.deleted',
-  'employee.level_changed',
-]
+// The action filter's options come from the server (the distinct actions
+// actually present in the log), the same way the actor list already does.
+// They used to be hardcoded here and had drifted hard: four of the options —
+// level.created/updated/deleted and employee.level_changed — matched no writer
+// at all (they are employee_level.*), so they filtered to nothing, while every
+// department, event, knowledge-base, schedule, shift-template, time-shift and
+// company action was missing entirely. An action key is exactly what I4 says a
+// client must not hardcode.
 
 interface AuditEvent {
   id: number
@@ -42,6 +35,7 @@ interface AuditEvent {
 interface ListResponse {
   events: AuditEvent[]
   actors: { id: number; name: string }[]
+  actions: string[]
   page: number
   pageSize: number
   total: number
@@ -156,7 +150,7 @@ export default function AuditPage() {
             onChange={(e) => setFilter('action', e.target.value)}
           >
             <option value="">{t('audit_all_actions')}</option>
-            {ACTIONS.map((a) => (
+            {(data?.actions ?? []).map((a) => (
               <option key={a} value={a}>
                 {actionLabel(a, t)}
               </option>

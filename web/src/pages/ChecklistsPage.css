@@ -149,3 +149,34 @@
 .cl-save-btn:disabled {
   opacity: 0.6;
 }
+
+/* The counts link to the requests behind them — same click-through the
+   Dashboard's alert tiles got. Links, but they must still read as the stat
+   blocks they were. */
+.cl-card-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cl-card-title a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--amber-600);
+  text-underline-offset: 3px;
+}
+
+a.cl-stat {
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  margin: -6px -8px;
+}
+
+a.cl-stat:hover {
+  background: var(--surface);
+}
+
+a.cl-stat:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

@@ -5,6 +5,7 @@ const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { DATE_RE } = require('../lib/requestQuery');
+const { COMPANY_TZ } = require('../lib/timeClock');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -32,8 +33,16 @@ router.get('/', async (req, res, next) => {
     };
     if (q.action) add('a.action = ?', q.action);
     if (q.actorId !== undefined) add('a.actor_id = ?', Number(q.actorId));
-    if (q.dateFrom !== undefined) add('a.created_at >= ?::date', q.dateFrom);
-    if (q.dateTo !== undefined) add("a.created_at < ?::date + INTERVAL '1 day'", q.dateTo);
+    // Day boundaries in the company's zone, not the DB session's — the same
+    // basis Time Clock buckets by, so "1 March" means one thing everywhere.
+    if (q.dateFrom !== undefined) {
+      params.push(q.dateFrom, COMPANY_TZ);
+      where.push(`a.created_at >= ($${params.length - 1}::date)::timestamp AT TIME ZONE $${params.length}`);
+    }
+    if (q.dateTo !== undefined) {
+      params.push(q.dateTo, COMPANY_TZ);
+      where.push(`a.created_at < ($${params.length - 1}::date + 1)::timestamp AT TIME ZONE $${params.length}`);
+    }
 
     params.push(pageSize, (page - 1) * pageSize);
     const { rows } = await pool.query(
@@ -60,6 +69,17 @@ router.get('/', async (req, res, next) => {
        ORDER BY u.name`
     );
 
+    // The action filter's options, derived from the log the same way. The
+    // client used to hardcode this list and it had drifted hard: it offered
+    // level.created/updated/deleted and employee.level_changed, none of which
+    // any writer produces (they are employee_level.*), while every department,
+    // event, knowledge-base, schedule, shift-template, time-shift and company
+    // action was missing entirely. An action key is exactly the kind of thing
+    // I4 says a client must not hardcode.
+    const { rows: actions } = await pool.query(
+      'SELECT DISTINCT action FROM audit_event ORDER BY action'
+    );
+
     res.json({
       events: rows.map((r) => ({
         id: r.id,
@@ -72,6 +92,7 @@ router.get('/', async (req, res, next) => {
         actor: { id: r.actor_id, name: r.actor_name },
       })),
       actors: actors.map((a) => ({ id: a.id, name: a.name })),
+      actions: actions.map((a) => a.action),
       page,
       pageSize,
       total: rows.length ? rows[0].total : 0,

@@ -94,6 +94,7 @@ tags:
   - name: events          # company calendar + self-service RSVP (communication feature group)
   - name: translate       # bilingual auto-fill assist (Gemini proxy) — CLAUDE.md §13, 2026-08-21 exception
   - name: dashboard       # oversight overview: stats + 30-day chart (view_all/admin)
+  - name: audit           # audit_event read surface for the Audit Log page (admin-only)
 
 paths:
   # ── Auth ───────────────────────────────────────────────────────────────────
@@ -1692,6 +1693,70 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
 
   # ── Notifications ────────────────────────────────────────────────────────────
+  /audit-events:
+    get:
+      tags: [audit]
+      summary: >
+        The filterable audit_event feed behind the Audit Log page (admin-only).
+        Writes happen inline in the routes that make the change, via
+        lib/audit.js, in the same transaction as the change itself (I9).
+        Alongside the page of events it returns the option lists for both
+        filters - the distinct actors and the distinct actions PRESENT IN THE
+        LOG. The action list used to be hardcoded in the client and had drifted
+        from what the writers produce; deriving it is what I4 requires, since an
+        action key is not something a thin client may invent.
+        dateFrom/dateTo are inclusive calendar days in the deployment's
+        COMPANY_TZ, the same basis Time Clock buckets by.
+      parameters:
+        - { name: action, in: query, schema: { type: string } }
+        - { name: actorId, in: query, schema: { type: integer } }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        action: { type: string }
+                        entityType: { type: string }
+                        entityId: { type: integer, nullable: true }
+                        entityName: { type: string, nullable: true }
+                        detail: { type: object, nullable: true }
+                        createdAt: { type: string, format: date-time }
+                        actor:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            name: { type: string }
+                  actors:
+                    type: array
+                    description: distinct actors present in the log, for the actor filter
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        name: { type: string }
+                  actions:
+                    type: array
+                    description: distinct action keys present in the log, for the action filter
+                    items: { type: string }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  total: { type: integer }
+        '400': { description: Invalid query params }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /notifications:
     get:
       tags: [notifications]

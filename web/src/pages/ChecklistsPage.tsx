@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
@@ -122,16 +123,18 @@ export default function ChecklistsPage() {
             <div className="cl-grid">
               {data.templates.map((tpl) => (
                 <div className="cl-card" key={tpl.serviceTypeId}>
-                  <h3 className="cl-card-title">{tpl.name[lang] ?? tpl.name.en}</h3>
+                  <h3 className="cl-card-title">
+                    <Link to={`/requests?service=${tpl.serviceTypeId}`}>{tpl.name[lang] ?? tpl.name.en}</Link>
+                  </h3>
                   <div className="cl-card-stats">
-                    <div className="cl-stat">
+                    <Link className="cl-stat" to={`/requests?service=${tpl.serviceTypeId}`}>
                       <span className="cl-stat-num">{tpl.submittedToday}</span>
                       <span className="cl-stat-label">{t('cl_submitted_today')}</span>
-                    </div>
-                    <div className="cl-stat">
+                    </Link>
+                    <Link className="cl-stat" to={`/requests?service=${tpl.serviceTypeId}&state=closed`}>
                       <span className="cl-stat-num">{tpl.loggedToday}</span>
                       <span className="cl-stat-label">{t('cl_logged_today')}</span>
-                    </div>
+                    </Link>
                   </div>
                   <p className="cl-card-foot">
                     {t('cl_all_time')} {tpl.loggedTotal}/{tpl.submittedTotal}

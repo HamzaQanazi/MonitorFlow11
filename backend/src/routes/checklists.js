@@ -12,6 +12,7 @@ const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireCapabilityOrAdmin, requireFeature } = require('../middleware/auth');
 const { ownerScopeIds } = require('../lib/scope');
+const { COMPANY_TZ, companyDate } = require('../lib/timeClock');
 
 const router = express.Router();
 router.use(requireAuth, requireFeature('forms_checklists'), requireCapabilityOrAdmin('view_all'));
@@ -21,8 +22,8 @@ router.get('/stats', async (req, res, next) => {
     const scope = await ownerScopeIds(req.user);
     const { rows } = await pool.query(
       `SELECT st.id, st.name,
-              COUNT(r.id) FILTER (WHERE r.created_at::date = CURRENT_DATE)::int AS submitted_today,
-              COUNT(r.id) FILTER (WHERE r.created_at::date = CURRENT_DATE AND lat.is_terminal)::int AS logged_today,
+              COUNT(r.id) FILTER (WHERE (r.created_at AT TIME ZONE $2)::date = $3::date)::int AS submitted_today,
+              COUNT(r.id) FILTER (WHERE (r.created_at AT TIME ZONE $2)::date = $3::date AND lat.is_terminal)::int AS logged_today,
               COUNT(r.id)::int AS submitted_total,
               COUNT(r.id) FILTER (WHERE lat.is_terminal)::int AS logged_total,
               MAX(r.created_at) AS last_submitted_at
@@ -38,7 +39,10 @@ router.get('/stats', async (req, res, next) => {
        WHERE st.enabled AND st.feature_key = 'forms_checklists' AND st.owner_id = ANY($1)
        GROUP BY st.id, st.name
        ORDER BY st.id`,
-      [scope]
+      // "Today" in the company's zone rather than the DB session's — the same
+      // basis lib/timeClock.js uses, so a submission near midnight lands on
+      // the day the company thinks it did.
+      [scope, COMPANY_TZ, companyDate(new Date())]
     );
     res.json({
       templates: rows.map((r) => ({
