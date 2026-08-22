@@ -5,7 +5,7 @@ import { useI18n, type Loc } from '../i18n'
 import { TranslateButton } from '../components/TranslateButton'
 import './RequestsPage.css'
 import './EmployeesPage.css'
-import './OnboardingWizard.css'
+import './SettingsPage.css'
 
 // Company settings — the post-onboarding editor for the same row the wizard
 // writes. CLAUDE.md §15 listed "onboarding is one-shot with no in-app edit" as
@@ -13,8 +13,8 @@ import './OnboardingWizard.css'
 // because features, logo and branches were otherwise permanent and the
 // documented workaround was a hand-edit of a live database.
 //
-// Deliberately not a re-run of the wizard: one flat form, one save, and
-// onboarding_completed is never touched.
+// Deliberately not a re-run of the wizard: one page of grouped sections, one
+// save, and onboarding_completed is never touched.
 
 interface Options {
   employeeRanges: string[]
@@ -47,7 +47,7 @@ interface CompanyResponse {
 
 export default function SettingsPage() {
   const { t, L } = useI18n()
-  const { markOnboarded } = useAuth()
+  const { user, markOnboarded } = useAuth()
 
   const [options, setOptions] = useState<Options | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -92,6 +92,9 @@ export default function SettingsPage() {
         setSubIndustry(c.subIndustry ?? '')
         setEmailDomain(c.emailDomain ?? '')
         setPlan(c.plan ?? '')
+        // Keys for modules removed since onboarding (§13's Directory and
+        // Training) are still stored but no longer in the catalogue — they
+        // simply don't render, and the next save drops them.
         setFeatures(c.features)
         setOriginalFeatures(c.features)
         setHasLogo(!!c.logoFileId)
@@ -108,6 +111,7 @@ export default function SettingsPage() {
 
   function toggleFeature(key: string) {
     setFeatures((prev) => (prev.includes(key) ? prev.filter((f) => f !== key) : [...prev, key]))
+    setSaved(false)
   }
 
   async function uploadLogo(file: File): Promise<string> {
@@ -124,11 +128,15 @@ export default function SettingsPage() {
   }
 
   // Turning a module off hides it for everyone including the Owner, so it gets
-  // the same confirmation any destructive-looking action does (§11's UI rule).
+  // the same confirmation any destructive action does (§11's UI rule).
   function submit() {
     const removed = originalFeatures.filter((f) => !features.includes(f))
-    if (removed.length) {
-      setConfirmOff(removed)
+    // Only warn about modules that still exist in the catalogue — a stored key
+    // for a removed module isn't something the Owner is choosing to turn off.
+    const known = new Set(options?.featureGroups.flatMap((g) => g.features.map((f) => f.key)) ?? [])
+    const meaningful = removed.filter((f) => known.has(f))
+    if (meaningful.length) {
+      setConfirmOff(meaningful)
       return
     }
     void save()
@@ -190,6 +198,7 @@ export default function SettingsPage() {
   if (!loaded || !options) {
     return (
       <div className="req-skeleton" aria-busy="true">
+        <span className="visually-hidden">{t('loading')}</span>
         {Array.from({ length: 6 }, (_, i) => (
           <div className="skel-row" aria-hidden="true" key={i} />
         ))}
@@ -203,159 +212,205 @@ export default function SettingsPage() {
         <h1>{t('set_title')}</h1>
       </header>
 
-      <div className="ob-body set-body">
-        <Field label={t('ob_company_name_en')} error={errors.name}>
-          <input value={nameEn} onChange={(e) => setNameEn(e.target.value)} />
-        </Field>
-        <Field label={t('ob_company_name_ar')}>
-          <input dir="rtl" value={nameAr} onChange={(e) => setNameAr(e.target.value)} />
-        </Field>
-        <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
+      <div className="set-page">
+        <section className="set-section">
+          <header>
+            <h2>{t('set_sec_company')}</h2>
+          </header>
+          <div className="set-pair">
+            <SetField label={t('ob_company_name_en')} error={errors.name}>
+              <input value={nameEn} onChange={(e) => setNameEn(e.target.value)} aria-invalid={!!errors.name || undefined} />
+            </SetField>
+            <SetField label={t('ob_company_name_ar')}>
+              <input dir="rtl" value={nameAr} onChange={(e) => setNameAr(e.target.value)} />
+            </SetField>
+          </div>
+          <div className="set-pair-action">
+            <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
+          </div>
 
-        <Field label={t('ob_company_address_en')} error={errors.address}>
-          <input value={addressEn} onChange={(e) => setAddressEn(e.target.value)} />
-        </Field>
-        <Field label={t('ob_company_address_ar')}>
-          <input dir="rtl" value={addressAr} onChange={(e) => setAddressAr(e.target.value)} />
-        </Field>
-        <TranslateButton en={addressEn} ar={addressAr} setEn={setAddressEn} setAr={setAddressAr} />
+          <div className="set-pair">
+            <SetField label={t('ob_company_address_en')} error={errors.address}>
+              <input value={addressEn} onChange={(e) => setAddressEn(e.target.value)} aria-invalid={!!errors.address || undefined} />
+            </SetField>
+            <SetField label={t('ob_company_address_ar')}>
+              <input dir="rtl" value={addressAr} onChange={(e) => setAddressAr(e.target.value)} />
+            </SetField>
+          </div>
+          <div className="set-pair-action">
+            <TranslateButton en={addressEn} ar={addressAr} setEn={setAddressEn} setAr={setAddressAr} />
+          </div>
 
-        <Field label={t('ob_job_title_en')} error={errors.ownerJobTitle}>
-          <input value={jobEn} onChange={(e) => setJobEn(e.target.value)} />
-        </Field>
-        <Field label={t('ob_job_title_ar')}>
-          <input dir="rtl" value={jobAr} onChange={(e) => setJobAr(e.target.value)} />
-        </Field>
-        <TranslateButton en={jobEn} ar={jobAr} setEn={setJobEn} setAr={setJobAr} />
+          <div className="set-pair">
+            <SetField label={t('ob_job_title_en')} error={errors.ownerJobTitle}>
+              <input value={jobEn} onChange={(e) => setJobEn(e.target.value)} aria-invalid={!!errors.ownerJobTitle || undefined} />
+            </SetField>
+            <SetField label={t('ob_job_title_ar')}>
+              <input dir="rtl" value={jobAr} onChange={(e) => setJobAr(e.target.value)} />
+            </SetField>
+          </div>
+          <div className="set-pair-action">
+            <TranslateButton en={jobEn} ar={jobAr} setEn={setJobEn} setAr={setJobAr} />
+          </div>
 
-        <Field label={t('ob_phone')} error={errors.phone}>
-          <input value={phone} inputMode="tel" onChange={(e) => setPhone(e.target.value)} />
-        </Field>
+          <div className="set-pair">
+            <SetField label={t('ob_phone')} error={errors.phone}>
+              <input value={phone} inputMode="tel" onChange={(e) => setPhone(e.target.value)} aria-invalid={!!errors.phone || undefined} />
+            </SetField>
+          </div>
+        </section>
 
-        <Field label={t('ob_employee_count')} error={errors.employeeRange}>
-          <select value={employeeRange} onChange={(e) => setEmployeeRange(e.target.value)}>
-            <option value="">{t('ob_select')}</option>
-            {options.employeeRanges.map((r) => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label={t('ob_industry')} error={errors.industry}>
-          <select
-            value={industry}
-            onChange={(e) => {
-              setIndustry(e.target.value)
-              setSubIndustry('')
-            }}
-          >
-            <option value="">{t('ob_select')}</option>
-            {options.industries.map((i) => (
-              <option key={i.key} value={i.key}>{L(i.label)}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label={t('ob_sub_industry')} error={errors.subIndustry}>
-          <select value={subIndustry} onChange={(e) => setSubIndustry(e.target.value)} disabled={!industry}>
-            <option value="">{t('ob_select')}</option>
-            {subs.map((sub) => (
-              <option key={sub.key} value={sub.key}>{L(sub.label)}</option>
-            ))}
-          </select>
-        </Field>
+        <section className="set-section">
+          <header>
+            <h2>{t('set_sec_profile')}</h2>
+          </header>
+          <div className="set-pair">
+            <SetField label={t('ob_industry')} error={errors.industry}>
+              <select
+                value={industry}
+                onChange={(e) => {
+                  setIndustry(e.target.value)
+                  setSubIndustry('')
+                }}
+              >
+                <option value="">{t('ob_select')}</option>
+                {options.industries.map((i) => (
+                  <option key={i.key} value={i.key}>{L(i.label)}</option>
+                ))}
+              </select>
+            </SetField>
+            <SetField label={t('ob_sub_industry')} error={errors.subIndustry}>
+              <select value={subIndustry} onChange={(e) => setSubIndustry(e.target.value)} disabled={!industry}>
+                <option value="">{t('ob_select')}</option>
+                {subs.map((sub) => (
+                  <option key={sub.key} value={sub.key}>{L(sub.label)}</option>
+                ))}
+              </select>
+            </SetField>
+            <SetField label={t('ob_employee_count')} error={errors.employeeRange}>
+              <select value={employeeRange} onChange={(e) => setEmployeeRange(e.target.value)}>
+                <option value="">{t('ob_select')}</option>
+                {options.employeeRanges.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </SetField>
+          </div>
+        </section>
 
-        <Field label={t('ob_email_domain')} error={errors.emailDomain}>
-          <input value={emailDomain} onChange={(e) => setEmailDomain(e.target.value)} />
-          <span className="ob-hint">{t('ob_email_domain_hint')}</span>
-        </Field>
+        <section className="set-section">
+          <header>
+            <h2>{t('set_sec_branding')}</h2>
+          </header>
+          <div className="set-logo">
+            {user?.companyLogo && !logoFile && (
+              <img className="set-logo-preview" src={user.companyLogo} alt="" />
+            )}
+            <label className="set-file">
+              <input
+                type="file"
+                accept="image/png,image/jpeg"
+                onChange={(e) => {
+                  setLogoFile(e.target.files?.[0] ?? null)
+                  setSaved(false)
+                }}
+              />
+              <span>{logoFile ? logoFile.name : hasLogo ? t('set_logo_replace') : t('ob_choose_file')}</span>
+            </label>
+            {errors.logoFileId && <span className="set-error">{errors.logoFileId}</span>}
+          </div>
+          <div className="set-pair">
+            <SetField label={t('ob_email_domain')} error={errors.emailDomain} hint={t('ob_email_domain_hint')}>
+              <input value={emailDomain} onChange={(e) => setEmailDomain(e.target.value)} aria-invalid={!!errors.emailDomain || undefined} />
+            </SetField>
+          </div>
+        </section>
 
-        <Field label={t('ob_logo')} error={errors.logoFileId}>
-          <label className="ob-file">
-            <input
-              type="file"
-              accept="image/png,image/jpeg"
-              onChange={(e) => setLogoFile(e.target.files?.[0] ?? null)}
-            />
-            <span>{logoFile ? logoFile.name : hasLogo ? t('set_logo_replace') : t('ob_choose_file')}</span>
-          </label>
-          {hasLogo && !logoFile && <span className="ob-hint">{t('set_logo_current')}</span>}
-        </Field>
-
-        <fieldset className="ob-feature-group">
-          <legend>{t('set_branches_h')}</legend>
-          {errors.branches && <span className="ob-field-error">{errors.branches}</span>}
+        <section className="set-section">
+          <header>
+            <h2>{t('set_branches_h')}</h2>
+            <p>{branches.length}</p>
+          </header>
+          {errors.branches && <span className="set-error">{errors.branches}</span>}
           {branches.map((b, i) => (
-            <div key={b.id ?? `new${i}`} className="ob-branch-pair">
-              <Field label={`${t('ob_branch_name_en')} ${i + 1}`}>
+            <div key={b.id ?? `new${i}`} className="set-branch">
+              <SetField label={`${t('ob_branch_name_en')} ${i + 1}`}>
                 <input
                   value={b.en}
-                  onChange={(e) =>
-                    setBranches((prev) => prev.map((r, j) => (j === i ? { ...r, en: e.target.value } : r)))
-                  }
+                  onChange={(e) => setBranches((prev) => prev.map((r, j) => (j === i ? { ...r, en: e.target.value } : r)))}
                 />
-              </Field>
-              <Field label={`${t('ob_branch_name_ar')} ${i + 1}`}>
+              </SetField>
+              <SetField label={`${t('ob_branch_name_ar')} ${i + 1}`}>
                 <input
                   dir="rtl"
                   value={b.ar}
-                  onChange={(e) =>
-                    setBranches((prev) => prev.map((r, j) => (j === i ? { ...r, ar: e.target.value } : r)))
-                  }
+                  onChange={(e) => setBranches((prev) => prev.map((r, j) => (j === i ? { ...r, ar: e.target.value } : r)))}
                 />
-              </Field>
-              <TranslateButton
-                en={b.en}
-                ar={b.ar}
-                setEn={(v) => setBranches((prev) => prev.map((r, j) => (j === i ? { ...r, en: v } : r)))}
-                setAr={(v) => setBranches((prev) => prev.map((r, j) => (j === i ? { ...r, ar: v } : r)))}
-              />
-              {branches.length > 1 && (
-                <button
-                  type="button"
-                  className="action-btn is-danger"
-                  disabled={b.inUse}
-                  title={b.inUse ? t('set_branch_in_use') : undefined}
-                  onClick={() => setBranches((prev) => prev.filter((_, j) => j !== i))}
-                >
-                  {t('svc_remove')}
-                </button>
-              )}
+              </SetField>
+              <div className="set-branch-actions">
+                <TranslateButton
+                  en={b.en}
+                  ar={b.ar}
+                  setEn={(v) => setBranches((prev) => prev.map((r, j) => (j === i ? { ...r, en: v } : r)))}
+                  setAr={(v) => setBranches((prev) => prev.map((r, j) => (j === i ? { ...r, ar: v } : r)))}
+                />
+                {branches.length > 1 && (
+                  <button
+                    type="button"
+                    className="action-btn is-danger"
+                    disabled={b.inUse}
+                    title={b.inUse ? t('set_branch_in_use') : undefined}
+                    onClick={() => setBranches((prev) => prev.filter((_, j) => j !== i))}
+                  >
+                    {t('svc_remove')}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
-          <button
-            type="button"
-            className="action-btn"
-            onClick={() => setBranches((prev) => [...prev, { id: null, en: '', ar: '', inUse: false }])}
-          >
-            {t('set_add_branch')}
-          </button>
-        </fieldset>
+          <div>
+            <button
+              type="button"
+              className="action-btn"
+              onClick={() => setBranches((prev) => [...prev, { id: null, en: '', ar: '', inUse: false }])}
+            >
+              {t('set_add_branch')}
+            </button>
+          </div>
+        </section>
 
-        <fieldset className="ob-feature-group">
-          <legend>{t('set_features_h')}</legend>
-          <p className="ob-hint">{t('set_features_hint')}</p>
-          {errors.features && <span className="ob-field-error">{errors.features}</span>}
+        <section className="set-section">
+          <header>
+            <h2>{t('set_features_h')}</h2>
+            <p>{t('set_features_hint')}</p>
+          </header>
+          {errors.features && <span className="set-error">{errors.features}</span>}
           {options.featureGroups.map((g) => (
-            <fieldset key={g.key} className="ob-feature-group">
+            <fieldset key={g.key} className="set-feature-group">
               <legend>{L(g.label)}</legend>
-              {g.features.map((f) => (
-                <label key={f.key} className="ob-check">
-                  <input type="checkbox" checked={features.includes(f.key)} onChange={() => toggleFeature(f.key)} />
-                  <span>{L(f.label)}</span>
-                </label>
-              ))}
+              <div className="set-feature-grid">
+                {g.features.map((f) => (
+                  <label key={f.key} className={features.includes(f.key) ? 'set-check is-on' : 'set-check'}>
+                    <input type="checkbox" checked={features.includes(f.key)} onChange={() => toggleFeature(f.key)} />
+                    <span>{L(f.label)}</span>
+                  </label>
+                ))}
+              </div>
             </fieldset>
           ))}
-        </fieldset>
+        </section>
 
-        <fieldset className="ob-feature-group">
-          <legend>{t('set_plan_h')}</legend>
-          {errors.plan && <span className="ob-field-error">{errors.plan}</span>}
-          <div className="ob-plan-list" role="radiogroup" aria-label={t('set_plan_h')}>
+        <section className="set-section">
+          <header>
+            <h2>{t('set_plan_h')}</h2>
+          </header>
+          {errors.plan && <span className="set-error">{errors.plan}</span>}
+          <div className="set-plans" role="radiogroup" aria-label={t('set_plan_h')}>
             {options.plans.map((p) => (
-              <label key={p.key} className={p.key === plan ? 'ob-plan-card ob-plan-card-on' : 'ob-plan-card'}>
+              <label key={p.key} className={p.key === plan ? 'set-plan is-on' : 'set-plan'}>
                 <input type="radio" name="plan" checked={p.key === plan} onChange={() => setPlan(p.key)} />
-                <span className="ob-plan-name">{L(p.name)}</span>
-                <span className="ob-plan-cap">
+                <span className="set-plan-name">{L(p.name)}</span>
+                <span className="set-plan-cap">
                   {p.employeeCap == null
                     ? t('ob_plan_unlimited')
                     : `${t('ob_plan_up_to')} ${p.employeeCap} ${t('ob_plan_employees')}`}
@@ -363,21 +418,28 @@ export default function SettingsPage() {
               </label>
             ))}
           </div>
-        </fieldset>
+        </section>
 
-        {saveError && <p className="ob-error" role="alert">{saveError}</p>}
-        {saved && <p className="req-status-msg" role="status">{t('set_saved')}</p>}
-
-        <div className="dialog-actions">
+        <div className="set-bar">
           <button type="button" className="req-retry" onClick={submit} disabled={busy}>
             {busy ? t('ob_saving') : t('set_save')}
           </button>
+          {saveError && (
+            <span className="set-bar-status is-error" role="alert">
+              {saveError}
+            </span>
+          )}
+          {saved && !saveError && (
+            <span className="set-bar-status" role="status">
+              {t('set_saved')}
+            </span>
+          )}
         </div>
       </div>
 
       {confirmOff && (
         <div className="dialog-backdrop" onClick={() => setConfirmOff(null)}>
-          <div className="dialog" onClick={(e) => e.stopPropagation()}>
+          <div className="dialog" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h4>{t('set_confirm_features_h')}</h4>
             <ul>
               {confirmOff.map((key) => {
@@ -401,12 +463,23 @@ export default function SettingsPage() {
   )
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+function SetField({
+  label,
+  error,
+  hint,
+  children,
+}: {
+  label: string
+  error?: string
+  hint?: string
+  children: React.ReactNode
+}) {
   return (
-    <div className="ob-field">
+    <div className="set-field">
       <label>{label}</label>
       {children}
-      {error && <span className="ob-field-error">{error}</span>}
+      {hint && <span className="set-hint">{hint}</span>}
+      {error && <span className="set-error">{error}</span>}
     </div>
   )
 }

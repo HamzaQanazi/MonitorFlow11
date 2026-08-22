@@ -33,27 +33,36 @@ export default function KnowledgeBasePage() {
   const [articles, setArticles] = useState<Article[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const [query, setQuery] = useState('')
+
   const [dialog, setDialog] = useState<
     | { kind: 'create' }
+    | { kind: 'read'; article: Article }
     | { kind: 'edit'; article: Article }
     | { kind: 'delete'; article: Article }
     | null
   >(null)
 
-  const load = useCallback(async () => {
-    const res = await apiFetch<{ articles: Article[] }>('/knowledge-base')
+  const load = useCallback(async (q: string) => {
+    const res = await apiFetch<{ articles: Article[] }>(
+      `/knowledge-base${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`,
+    )
     setArticles(res.articles)
     setError(null)
   }, [])
 
+  // Server-side search (both languages, title and body) rather than filtering
+  // the loaded page: an article is worth finding by what it says.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- setError fires only in the async catch, not synchronously
-    load().catch((err: Error) => setError(err.message))
-  }, [load])
+    const handle = setTimeout(() => {
+      load(query).catch((err: Error) => setError(err.message))
+    }, query ? 250 : 0)
+    return () => clearTimeout(handle)
+  }, [load, query])
 
   function onDone() {
     setDialog(null)
-    load().catch((err: Error) => setError(err.message))
+    load(query).catch((err: Error) => setError(err.message))
   }
 
   return (
@@ -70,6 +79,19 @@ export default function KnowledgeBasePage() {
         </button>
       </header>
 
+      <div className="req-filters">
+        <div className="control-row">
+          <input
+            type="search"
+            className="req-select"
+            placeholder={t('kb_search')}
+            aria-label={t('kb_search')}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
       {error ? (
         <div className="req-status">
           <p className="req-status-msg">
@@ -80,7 +102,7 @@ export default function KnowledgeBasePage() {
             className="req-retry"
             onClick={() => {
               setError(null)
-              load().catch((err: Error) => setError(err.message))
+              load(query).catch((err: Error) => setError(err.message))
             }}
           >
             {t('try_again')}
@@ -95,8 +117,14 @@ export default function KnowledgeBasePage() {
         </div>
       ) : articles.length === 0 ? (
         <div className="req-empty">
-          <h2>{t('kb_none_h')}</h2>
-          <p>{t('kb_none_p')}</p>
+          <h2>{query.trim() ? t('kb_no_match_h') : t('kb_none_h')}</h2>
+          {query.trim() ? (
+            <button type="button" className="req-retry" onClick={() => setQuery('')}>
+              {t('clear_filters')}
+            </button>
+          ) : (
+            <p>{t('kb_none_p')}</p>
+          )}
         </div>
       ) : (
         <div className="req-tablewrap">
@@ -114,10 +142,17 @@ export default function KnowledgeBasePage() {
             <tbody>
               {articles.map((a) => (
                 <tr key={a.id}>
-                  <td className="req-service">{L(a.title)}</td>
+                  <td className="req-service">
+                    <button type="button" className="kb-title-btn" onClick={() => setDialog({ kind: 'read', article: a })}>
+                      {L(a.title)}
+                    </button>
+                  </td>
                   <td>{a.createdByName}</td>
                   <td>{new Date(a.updatedAt).toLocaleDateString()}</td>
                   <td className="emp-actions">
+                    <button type="button" className="action-btn" onClick={() => setDialog({ kind: 'read', article: a })}>
+                      {t('kb_read')}
+                    </button>
                     <button type="button" className="action-btn" onClick={() => setDialog({ kind: 'edit', article: a })}>
                       {t('kb_edit')}
                     </button>
@@ -136,6 +171,13 @@ export default function KnowledgeBasePage() {
         </div>
       )}
 
+      {dialog?.kind === 'read' && (
+        <ReadDialog
+          article={dialog.article}
+          onClose={() => setDialog(null)}
+          onEdit={() => setDialog({ kind: 'edit', article: dialog.article })}
+        />
+      )}
       {dialog?.kind === 'create' && <ArticleForm onClose={() => setDialog(null)} onDone={onDone} />}
       {dialog?.kind === 'edit' && (
         <ArticleForm article={dialog.article} onClose={() => setDialog(null)} onDone={onDone} />
@@ -143,6 +185,52 @@ export default function KnowledgeBasePage() {
       {dialog?.kind === 'delete' && (
         <DeleteDialog article={dialog.article} onClose={() => setDialog(null)} onDone={onDone} />
       )}
+    </div>
+  )
+}
+
+// Reading an article was impossible in the console: the list showed a title,
+// an author and a date, and the only way to see the text was to open the edit
+// form. The body already rides along in the list payload, so this needs no
+// extra fetch.
+function ReadDialog({
+  article,
+  onClose,
+  onEdit,
+}: {
+  article: Article
+  onClose: () => void
+  onEdit: () => void
+}) {
+  const { t, L, lang } = useI18n()
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="dialog-backdrop" onClick={onClose}>
+      <div className="dialog kb-read" role="dialog" aria-modal="true" aria-label={L(article.title)} onClick={(e) => e.stopPropagation()}>
+        <h4>{L(article.title)}</h4>
+        <p className="kb-read-meta">
+          {article.createdByName} · {new Date(article.updatedAt).toLocaleDateString()}
+        </p>
+        {/* dir follows the console language so an Arabic body reads correctly
+            inside an English shell and vice versa (I6). */}
+        <div className="kb-read-body" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+          {L(article.body)}
+        </div>
+        <div className="dialog-actions">
+          <button type="button" className="action-btn" onClick={onEdit}>
+            {t('kb_edit')}
+          </button>
+          <button type="button" className="req-retry" onClick={onClose}>
+            {t('close')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

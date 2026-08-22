@@ -1472,6 +1472,15 @@ paths:
     get:
       tags: [knowledge-base]
       summary: All of this company's articles, newest-updated first.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+          description: >
+            Case-insensitive search across BOTH languages of the title and the
+            body, so an article is found by what it says rather than only by
+            what it is called.
       responses:
         '200':
           description: OK
@@ -1624,7 +1633,12 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
     patch:
       tags: [events]
-      summary: Edit an event (view_all or admin).
+      summary: >
+        Edit an event (view_all or admin). Partial update - any field omitted
+        keeps its stored value. A start/end pair is validated against the
+        STORED row as well as the payload, so moving only one of them past the
+        other is refused (422) rather than saving an event that ends before it
+        begins.
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true

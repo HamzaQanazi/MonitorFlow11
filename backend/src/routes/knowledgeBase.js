@@ -46,14 +46,25 @@ function publicArticle(r) {
 router.get('/', async (req, res, next) => {
   try {
     if (req.user.role === 'user') return res.status(403).json({ error: 'Forbidden' });
+    // ?q= searches both languages of the title and the body — an article is
+    // found by what it says, not only by what it's called. Same ILIKE shape as
+    // employees.js's own ?q=.
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const params = [req.user.company_id];
+    let search = '';
+    if (q) {
+      params.push(`%${q}%`);
+      search = `AND (a.title->>'en' ILIKE $2 OR a.title->>'ar' ILIKE $2
+                     OR a.body->>'en' ILIKE $2 OR a.body->>'ar' ILIKE $2)`;
+    }
     const { rows } = await pool.query(
       `SELECT a.id, a.title, a.body, a.created_by, u.name AS created_by_name,
               a.created_at, a.updated_at
        FROM kb_article a
        JOIN users u ON u.id = a.created_by
-       WHERE a.company_id = $1
+       WHERE a.company_id = $1 ${search}
        ORDER BY a.updated_at DESC`,
-      [req.user.company_id]
+      params
     );
     res.json({ articles: rows.map(publicArticle) });
   } catch (err) {

@@ -43,7 +43,10 @@ function publicEvent(r, extra = {}) {
   };
 }
 
-function validateBody(b, { partial }) {
+// `existing` is the stored row on a partial update: without it a PATCH that
+// sends only endsAt has no startsAt to compare against, and an event could be
+// saved ending before it starts.
+function validateBody(b, { partial, existing = null }) {
   const errors = {};
   if (!partial || b.title !== undefined) {
     if (!isBilingual(b.title)) errors.title = 'Bilingual title (en + ar) is required';
@@ -56,11 +59,16 @@ function validateBody(b, { partial }) {
     startsAt = new Date(b.startsAt);
     if (!b.startsAt || Number.isNaN(startsAt.getTime())) errors.startsAt = 'A valid start date/time is required';
   }
+  const effectiveStart = startsAt ?? (existing && existing.starts_at ? new Date(existing.starts_at) : null);
   let endsAt;
   if (b.endsAt !== undefined && b.endsAt !== null) {
     endsAt = new Date(b.endsAt);
     if (Number.isNaN(endsAt.getTime())) errors.endsAt = 'Invalid end date/time';
-    else if (startsAt && endsAt < startsAt) errors.endsAt = 'End must be after start';
+    else if (effectiveStart && endsAt < effectiveStart) errors.endsAt = 'End must be after start';
+  } else if (startsAt && !b.endsAt && existing && existing.ends_at) {
+    // Moving only the start, past an end that stays put, is the same mistake
+    // from the other side.
+    if (new Date(existing.ends_at) < startsAt) errors.startsAt = 'Start must be before the end';
   }
   return { errors, startsAt, endsAt };
 }
@@ -150,7 +158,7 @@ router.patch('/:id', canWrite, async (req, res, next) => {
     if (!existing) return res.status(404).json({ error: 'Not found' });
 
     const b = req.body || {};
-    const { errors, startsAt, endsAt } = validateBody(b, { partial: true });
+    const { errors, startsAt, endsAt } = validateBody(b, { partial: true, existing });
     if (Object.keys(errors).length) return res.status(422).json({ errors });
 
     const title = b.title !== undefined ? b.title : existing.title;

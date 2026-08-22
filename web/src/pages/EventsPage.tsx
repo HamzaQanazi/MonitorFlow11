@@ -46,6 +46,7 @@ export default function EventsPage() {
   const [rsvpBusy, setRsvpBusy] = useState<number | null>(null)
 
   const [dialog, setDialog] = useState<
+    | { kind: 'view'; event: Event }
     | { kind: 'create' }
     | { kind: 'edit'; event: Event }
     | { kind: 'delete'; event: Event }
@@ -86,12 +87,21 @@ export default function EventsPage() {
   // eslint-disable-next-line react-hooks/purity -- see comment above
   const now = Date.now()
   const upcoming = (events ?? []).filter((e) => new Date(e.startsAt).getTime() >= now)
-  const past = (events ?? []).filter((e) => new Date(e.startsAt).getTime() < now)
+  // Newest first for what's already happened — the server sorts ascending,
+  // which is right for what's coming and backwards for what's gone.
+  const past = (events ?? [])
+    .filter((e) => new Date(e.startsAt).getTime() < now)
+    .slice()
+    .reverse()
 
   function row(ev: Event) {
     return (
       <tr key={ev.id}>
-        <td className="req-service">{L(ev.title)}</td>
+        <td className="req-service">
+          <button type="button" className="kb-title-btn" onClick={() => setDialog({ kind: 'view', event: ev })}>
+            {L(ev.title)}
+          </button>
+        </td>
         <td>{new Date(ev.startsAt).toLocaleString()}</td>
         <td>{ev.location ?? '—'}</td>
         <td>{ev.attendeeCount}</td>
@@ -174,12 +184,28 @@ export default function EventsPage() {
               </thead>
               <tbody>{upcoming.map(row)}</tbody>
             </table>
+            {upcoming.length === 0 && (
+              <div className="req-empty">
+                <h2>{t('ev_none_upcoming_h')}</h2>
+              </div>
+            )}
           </div>
           {past.length > 0 && (
             <>
               <h2 className="lvl-h2">{t('ev_past')}</h2>
               <div className="req-tablewrap">
                 <table className="req-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">{t('col_title')}</th>
+                      <th scope="col">{t('ev_col_when')}</th>
+                      <th scope="col">{t('ev_col_where')}</th>
+                      <th scope="col">{t('ev_col_going')}</th>
+                      <th scope="col" className="emp-actions-col">
+                        {t('col_actions')}
+                      </th>
+                    </tr>
+                  </thead>
                   <tbody>{past.map(row)}</tbody>
                 </table>
               </div>
@@ -188,6 +214,13 @@ export default function EventsPage() {
         </>
       )}
 
+      {dialog?.kind === 'view' && (
+        <EventDetail
+          event={dialog.event}
+          onClose={() => setDialog(null)}
+          onEdit={() => setDialog({ kind: 'edit', event: dialog.event })}
+        />
+      )}
       {dialog?.kind === 'create' && <EventForm onClose={() => setDialog(null)} onDone={onDone} />}
       {dialog?.kind === 'edit' && (
         <EventForm event={dialog.event} onClose={() => setDialog(null)} onDone={onDone} />
@@ -195,6 +228,66 @@ export default function EventsPage() {
       {dialog?.kind === 'delete' && (
         <DeleteDialog event={dialog.event} onClose={() => setDialog(null)} onDone={onDone} />
       )}
+    </div>
+  )
+}
+
+// The description and the attendee list were both stored and both invisible:
+// the table showed a count, and GET /events/:id (which returns the names) had
+// no caller at all. Fetches on open so the names are current.
+function EventDetail({ event, onClose, onEdit }: { event: Event; onClose: () => void; onEdit: () => void }) {
+  const { t, L, lang } = useI18n()
+  const [attendees, setAttendees] = useState<string[] | null>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  useEffect(() => {
+    apiFetch<{ event: { attendeeNames?: string[] } }>(`/events/${event.id}`)
+      .then((res) => setAttendees(res.event.attendeeNames ?? []))
+      .catch(() => setAttendees([]))
+  }, [event.id])
+
+  return (
+    <div className="dialog-backdrop" onClick={onClose}>
+      <div className="dialog kb-read" role="dialog" aria-modal="true" aria-label={L(event.title)} onClick={(e) => e.stopPropagation()}>
+        <h4>{L(event.title)}</h4>
+        <p className="kb-read-meta">
+          {new Date(event.startsAt).toLocaleString()}
+          {event.endsAt ? ` – ${new Date(event.endsAt).toLocaleString()}` : ''}
+          {event.location ? ` · ${event.location}` : ''}
+        </p>
+        {event.description && (
+          <div className="kb-read-body" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+            {L(event.description)}
+          </div>
+        )}
+        <p className="kb-read-meta">
+          {t('ev_col_going')}: {event.attendeeCount}
+        </p>
+        {attendees === null ? (
+          <p className="kb-read-meta">{t('ev_loading')}</p>
+        ) : attendees.length > 0 ? (
+          <ul className="ev-attendees">
+            {attendees.map((name, i) => (
+              <li key={i}>{name}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="kb-read-meta">{t('ev_no_attendees')}</p>
+        )}
+        <div className="dialog-actions">
+          <button type="button" className="action-btn" onClick={onEdit}>
+            {t('kb_edit')}
+          </button>
+          <button type="button" className="req-retry" onClick={onClose}>
+            {t('close')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -10,3 +10,62 @@
   background: var(--bg);
   color: var(--ink);
 }
+
+/* --- Article reader. The console could author articles but never display
+   one; the only way to read the text was to open the edit form. --- */
+
+.kb-title-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.kb-title-btn:hover {
+  text-decoration-color: var(--amber-600);
+}
+
+.kb-read {
+  max-width: 680px;
+  width: min(680px, 92vw);
+}
+
+.kb-read-meta {
+  font-size: 13px;
+  color: var(--muted);
+  margin-block-end: 12px;
+}
+
+.kb-read-body {
+  white-space: pre-wrap;
+  line-height: 1.65;
+  font-size: 15px;
+  max-height: 55vh;
+  overflow-y: auto;
+  padding-block: 4px;
+  padding-inline-end: 6px;
+}
+
+.ev-attendees {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ev-attendees li {
+  font-size: 13px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+}
