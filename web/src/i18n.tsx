@@ -1000,7 +1000,8 @@ const dict: Record<string, Loc> = {
     en: 'An oversight employee handles this — a request can be rejected before anyone is assigned to it.',
     ar: 'يتولى هذا موظف إشرافي — يمكن رفض الطلب قبل إسناده إلى أي شخص.',
   },
-  svc_owner_matches: { en: 'matches', ar: 'نتيجة' },
+  svc_owner_change: { en: 'Change', ar: 'تغيير' },
+  svc_owner_no_match: { en: 'No employees match that search.', ar: 'لا يوجد موظفون مطابقون لهذا البحث.' },
   svc_first_step_assign_note: {
     en: 'This is the assignment step — an oversight employee picks who works the request here.',
     ar: 'هذه مرحلة الإسناد — يختار الموظف الإشرافي من سيتولى الطلب هنا.',

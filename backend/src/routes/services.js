@@ -180,9 +180,12 @@ router.get('/:id', requireRole('admin'), async (req, res, next) => {
 
     const [{ rows: svc }, { rows: forms }, { rows: wf }, { rows: used }] = await Promise.all([
       pool.query(
-        `SELECT id, key, name, department_id, default_priority, enabled, owner_id,
-                accepts_external_users, accepts_employee_submitters, auto_assign, feature_key
-         FROM service_type WHERE id = $1`,
+        `SELECT st.id, st.key, st.name, st.department_id, st.default_priority, st.enabled,
+                st.owner_id, o.name AS owner_name,
+                st.accepts_external_users, st.accepts_employee_submitters, st.auto_assign, st.feature_key
+         FROM service_type st
+         JOIN users o ON o.id = st.owner_id
+         WHERE st.id = $1`,
         [id]
       ),
       pool.query('SELECT form_type, field_schema FROM form_definition WHERE service_type_id = $1', [id]),
@@ -201,6 +204,7 @@ router.get('/:id', requireRole('admin'), async (req, res, next) => {
         defaultPriority: r.default_priority,
         enabled: r.enabled,
         ownerId: r.owner_id,
+        ownerName: r.owner_name,
         acceptsExternalUsers: r.accepts_external_users,
         acceptsEmployeeSubmitters: r.accepts_employee_submitters,
         autoAssign: r.auto_assign,

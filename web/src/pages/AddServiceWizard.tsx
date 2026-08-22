@@ -345,6 +345,7 @@ interface StoredService {
   departmentId: number
   defaultPriority: (typeof PRIORITIES)[number]
   ownerId: number
+  ownerName: string
   acceptsExternalUsers: boolean
   acceptsEmployeeSubmitters: boolean
   autoAssign: boolean
@@ -505,6 +506,7 @@ export default function AddServiceWizard() {
         setAcceptsEmployeeSubmitters(service.acceptsEmployeeSubmitters)
         setAutoAssign(service.autoAssign)
         setOwnerId(String(service.ownerId))
+        setOwnerName(service.ownerName)
         setRequestFields(storedToRows(service.requestFields))
         setCompletionFields(storedToRows(service.completionFields))
         setStatuses(flow.statuses)
@@ -762,39 +764,57 @@ export default function AddServiceWizard() {
               <span>{t('svc_auto_assign')}</span>
             </label>
             <p className="ob-hint">{t('svc_auto_assign_hint')}</p>
-            <label className="field">
-              <span>{t('svc_owner_search')}</span>
-              <input
-                type="search"
-                value={ownerQuery}
-                onChange={(e) => setOwnerQuery(e.target.value)}
-              />
-            </label>
-            <label className="field">
-              <span>{t('svc_owner')}</span>
-              <select
-                className="req-select"
-                value={ownerId}
-                onChange={(e) => {
-                  const picked = employees.find((emp) => String(emp.id) === e.target.value)
-                  setOwnerId(e.target.value)
-                  setOwnerName(picked ? ownerLabel(picked, L) : '')
-                }}
-              >
-                <option value="">{t('ob_select')}</option>
-                {ownerId && !employees.some((emp) => String(emp.id) === ownerId) && (
-                  <option value={ownerId}>{ownerName || ownerId}</option>
-                )}
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {ownerLabel(emp, L)}
-                  </option>
-                ))}
-              </select>
-              <p className="ob-hint">
-                {employees.length} {t('svc_owner_matches')} · {t('svc_owner_hint')}
-              </p>
-            </label>
+            <div className="field svc-owner">
+              <span className="svc-owner-label" id="svc-owner-label">
+                {t('svc_owner')}
+              </span>
+              {ownerId ? (
+                <div className="svc-owner-picked">
+                  <span>{ownerName || ownerId}</span>
+                  <button
+                    type="button"
+                    className="action-btn"
+                    onClick={() => {
+                      setOwnerId('')
+                      setOwnerName('')
+                      setOwnerQuery('')
+                    }}
+                  >
+                    {t('svc_owner_change')}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <input
+                    type="search"
+                    aria-labelledby="svc-owner-label"
+                    placeholder={t('svc_owner_search')}
+                    value={ownerQuery}
+                    onChange={(e) => setOwnerQuery(e.target.value)}
+                  />
+                  {employees.length === 0 ? (
+                    <p className="ob-hint">{t('svc_owner_no_match')}</p>
+                  ) : (
+                    <ul className="svc-owner-results">
+                      {employees.map((emp) => (
+                        <li key={emp.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOwnerId(String(emp.id))
+                              setOwnerName(ownerLabel(emp, L))
+                            }}
+                          >
+                            {ownerLabel(emp, L)}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              )}
+              <p className="ob-hint">{t('svc_owner_hint')}</p>
+            </div>
           </>
         )}
 
