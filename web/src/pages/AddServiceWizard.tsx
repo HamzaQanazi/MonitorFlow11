@@ -59,6 +59,16 @@ interface Department {
 interface EmployeeOption {
   id: number
   name: string
+  departmentName: Loc | null
+  branchName: Loc | null
+}
+
+// "Maya Chen — Operations · Main branch". owner_id is the Gate-2 visibility
+// anchor, so which team the person sits in is the whole point of the choice;
+// the picker used to show a bare name.
+function ownerLabel(emp: EmployeeOption, L: (v: Loc) => string): string {
+  const where = [emp.departmentName, emp.branchName].filter(Boolean).map((v) => L(v as Loc))
+  return where.length ? `${emp.name} — ${where.join(' · ')}` : emp.name
 }
 interface OptionRow {
   value: string
@@ -213,8 +223,17 @@ function buildFlow(statuses: StatusRow[], allowCancel: boolean, cancelLabelEn: s
   return { statusKeys, cancelKey, statusSchemas, edges }
 }
 
-// Every derived transition is view_all-gated oversight by default — the one
-// override is the per-edge "assignee handles this" checkbox.
+// Every derived transition after the first is gated to the ASSIGNED EMPLOYEE
+// by default — the person doing the work is the one who says it moved. The
+// per-edge checkbox opens a step up to oversight as well, for approval or
+// review steps a manager legitimately handles.
+//
+// The default used to be the other way round (any view_all holder could
+// advance every step, and the checkbox narrowed it to the assignee). Flipped
+// 2026-08-22 on the user's call. The checkbox is deliberately KEPT rather than
+// removed: with every step assignee-only, an assignee who is off sick or has
+// left freezes the request, and the only way out is an `override` holder
+// forcing a status — a break-glass action, not a workflow step.
 //
 // The FIRST edge is always `required_capability: 'assign'`. That is the exact
 // transition both assignment paths look for (requests.js's PATCH
@@ -228,14 +247,16 @@ function edgesToTransitions(
   edges: Edge[],
   statusKeys: string[],
   cancelKey: string | null,
-  assigneeGated: Record<string, boolean>
+  oversightAllowed: Record<string, boolean>
 ) {
   const keyOf = (idx: number) => (idx === -1 ? cancelKey! : statusKeys[idx])
   return edges.map((e) => {
     const fromKey = keyOf(e.fromKeyIndex)
     const toKey = keyOf(e.toKeyIndex)
     const forcedAssign = e.isFirst
-    const gated = !forcedAssign && !!assigneeGated[e.id]
+    const isCancel = e.toKeyIndex === -1
+    // Assignee unless this step was explicitly opened up to oversight.
+    const gated = !forcedAssign && !isCancel && !oversightAllowed[e.id]
     return {
       key: `${fromKey}_to_${toKey}`,
       from: fromKey,
@@ -367,7 +388,7 @@ function storedToRows(fields: StoredField[]): FieldRow[] {
 // something the admin didn't write; the engine still runs those fine, they
 // just can't be round-tripped through this UI.
 function hydrate(svc: StoredService):
-  | { ok: true; statuses: StatusRow[]; allowCancel: boolean; cancelEn: string; cancelAr: string; assigneeGated: Record<string, boolean> }
+  | { ok: true; statuses: StatusRow[]; allowCancel: boolean; cancelEn: string; cancelAr: string; oversightAllowed: Record<string, boolean> }
   | { ok: false } {
   const terminals = svc.statuses.filter((s) => s.is_terminal)
   if (terminals.length > 2 || terminals.length === 0) return { ok: false }
@@ -391,17 +412,17 @@ function hydrate(svc: StoredService):
   // Every transition must be one of the edges buildFlow would have derived.
   const linear = new Map<string, StoredTransition>()
   for (let i = 0; i < chain.length - 1; i++) linear.set(`${chain[i].key}|${chain[i + 1].key}`, null as never)
-  const assigneeGated: Record<string, boolean> = {}
+  const oversightAllowed: Record<string, boolean> = {}
   for (const tr of svc.transitions) {
     const linearKey = `${tr.from}|${tr.to}`
     if (linear.has(linearKey)) {
       const i = chain.findIndex((s) => s.key === tr.from)
-      if (tr.actor === 'assignee') assigneeGated[`${rows[i].rid}->${rows[i + 1].rid}`] = true
+      if (tr.actor !== 'assignee') oversightAllowed[`${rows[i].rid}->${rows[i + 1].rid}`] = true
       linear.set(linearKey, tr)
       continue
     }
     if (cancel && tr.to === cancel.key && chain.some((s, i) => s.key === tr.from && i < chain.length - 1)) {
-      if (tr.actor === 'assignee') assigneeGated[`${rows[chain.findIndex((s) => s.key === tr.from)].rid}->cancel`] = true
+      if (tr.actor !== 'assignee') oversightAllowed[`${rows[chain.findIndex((s) => s.key === tr.from)].rid}->cancel`] = true
       continue
     }
     return { ok: false } // an edge this wizard could not have produced
@@ -414,7 +435,7 @@ function hydrate(svc: StoredService):
     allowCancel,
     cancelEn: cancel?.label.en ?? 'Cancelled',
     cancelAr: cancel?.label.ar ?? 'ملغى',
-    assigneeGated,
+    oversightAllowed,
   }
 }
 
@@ -467,7 +488,7 @@ export default function AddServiceWizard() {
   const [allowCancel, setAllowCancel] = useState(false)
   const [cancelLabelEn, setCancelLabelEn] = useState('Cancelled')
   const [cancelLabelAr, setCancelLabelAr] = useState('ملغى')
-  const [assigneeGated, setAssigneeGated] = useState<Record<string, boolean>>({})
+  const [oversightAllowed, setAssigneeGated] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     apiFetch<{ departments: Department[] }>('/departments')
@@ -502,7 +523,7 @@ export default function AddServiceWizard() {
         setAllowCancel(flow.allowCancel)
         setCancelLabelEn(flow.cancelEn)
         setCancelLabelAr(flow.cancelAr)
-        setAssigneeGated(flow.assigneeGated)
+        setAssigneeGated(flow.oversightAllowed)
       })
       .catch(() => setLoadError(true))
       .finally(() => setHydrating(false))
@@ -527,7 +548,7 @@ export default function AddServiceWizard() {
   }, [ownerQuery])
 
   const { statusKeys, cancelKey, statusSchemas, edges } = buildFlow(statuses, allowCancel, cancelLabelEn, cancelLabelAr)
-  const transitionSchemas = edgesToTransitions(edges, statusKeys, cancelKey, assigneeGated)
+  const transitionSchemas = edgesToTransitions(edges, statusKeys, cancelKey, oversightAllowed)
 
   function moveStatus(i: number, dir: -1 | 1) {
     setStatuses((prev) => {
@@ -754,19 +775,22 @@ export default function AddServiceWizard() {
             </label>
             <p className="ob-hint">{t('svc_auto_assign_hint')}</p>
             <label className="field">
-              <span>{t('svc_owner')}</span>
+              <span>{t('svc_owner_search')}</span>
               <input
                 type="search"
-                placeholder={t('svc_owner_search')}
                 value={ownerQuery}
                 onChange={(e) => setOwnerQuery(e.target.value)}
               />
+            </label>
+            <label className="field">
+              <span>{t('svc_owner')}</span>
               <select
                 className="req-select"
                 value={ownerId}
                 onChange={(e) => {
+                  const picked = employees.find((emp) => String(emp.id) === e.target.value)
                   setOwnerId(e.target.value)
-                  setOwnerName(employees.find((emp) => String(emp.id) === e.target.value)?.name ?? '')
+                  setOwnerName(picked ? ownerLabel(picked, L) : '')
                 }}
               >
                 <option value="">{t('ob_select')}</option>
@@ -775,11 +799,13 @@ export default function AddServiceWizard() {
                 )}
                 {employees.map((emp) => (
                   <option key={emp.id} value={emp.id}>
-                    {emp.name}
+                    {ownerLabel(emp, L)}
                   </option>
                 ))}
               </select>
-              <p className="ob-hint">{t('svc_owner_hint')}</p>
+              <p className="ob-hint">
+                {employees.length} {t('svc_owner_matches')} · {t('svc_owner_hint')}
+              </p>
             </label>
           </>
         )}
@@ -920,18 +946,22 @@ export default function AddServiceWizard() {
                   <span className="svc-edge-label">
                     {e.fromLabelEn || t('svc_untitled')} → {e.toLabelEn || t('svc_untitled')}
                   </span>
-                  {e.isFirst ? (
-                    <p className="ob-hint">{t(autoAssign ? 'svc_auto_assign_note' : 'svc_first_step_assign_note')}</p>
+                  {e.isFirst || e.toKeyIndex === -1 ? (
+                    <p className="ob-hint">
+                      {e.isFirst
+                        ? t(autoAssign ? 'svc_auto_assign_note' : 'svc_first_step_assign_note')
+                        : t('svc_cancel_step_note')}
+                    </p>
                   ) : (
                     <label className="svc-check">
                       <input
                         type="checkbox"
-                        checked={!!assigneeGated[e.id]}
+                        checked={!!oversightAllowed[e.id]}
                         onChange={(ev) =>
                           setAssigneeGated((prev) => ({ ...prev, [e.id]: ev.target.checked }))
                         }
                       />
-                      <span>{t('svc_assignee_handles')}</span>
+                      <span>{t('svc_oversight_can_move')}</span>
                     </label>
                   )}
                 </div>

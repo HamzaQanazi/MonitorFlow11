@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
-import { useI18n } from '../i18n'
+import { useI18n, type Loc } from '../i18n'
 import { TranslateButton } from '../components/TranslateButton'
 import { TranslateAllButton } from '../components/TranslateAllButton'
 import './RequestsPage.css'
@@ -21,6 +21,8 @@ import './ChecklistsPage.css'
 interface ChecklistTemplateStats {
   serviceTypeId: number
   name: { en: string; ar: string }
+  ownerName: string
+  departmentName: Loc
   submittedToday: number
   loggedToday: number
   submittedTotal: number
@@ -126,6 +128,12 @@ export default function ChecklistsPage() {
                   <h3 className="cl-card-title">
                     <Link to={`/requests?service=${tpl.serviceTypeId}`}>{tpl.name[lang] ?? tpl.name.en}</Link>
                   </h3>
+                  {/* Whose checklist this is. The card used to show a name and
+                      two numbers with no way to tell which department it
+                      belonged to or who owns it. */}
+                  <p className="cl-card-owner">
+                    {tpl.departmentName[lang] ?? tpl.departmentName.en} · {tpl.ownerName}
+                  </p>
                   <div className="cl-card-stats">
                     <Link className="cl-stat" to={`/requests?service=${tpl.serviceTypeId}`}>
                       <span className="cl-stat-num">{tpl.submittedToday}</span>

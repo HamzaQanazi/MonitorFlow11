@@ -21,13 +21,16 @@ router.get('/stats', async (req, res, next) => {
   try {
     const scope = await ownerScopeIds(req.user);
     const { rows } = await pool.query(
-      `SELECT st.id, st.name,
+      `SELECT st.id, st.name, st.owner_id, o.name AS owner_name,
+              d.id AS department_id, d.name AS department_name,
               COUNT(r.id) FILTER (WHERE (r.created_at AT TIME ZONE $2)::date = $3::date)::int AS submitted_today,
               COUNT(r.id) FILTER (WHERE (r.created_at AT TIME ZONE $2)::date = $3::date AND lat.is_terminal)::int AS logged_today,
               COUNT(r.id)::int AS submitted_total,
               COUNT(r.id) FILTER (WHERE lat.is_terminal)::int AS logged_total,
               MAX(r.created_at) AS last_submitted_at
        FROM service_type st
+       JOIN users o ON o.id = st.owner_id
+       JOIN department d ON d.id = st.department_id
        LEFT JOIN workflow_definition w ON w.service_type_id = st.id
        LEFT JOIN request r ON r.service_type_id = st.id
        LEFT JOIN LATERAL (
@@ -37,7 +40,7 @@ router.get('/stats', async (req, res, next) => {
          LIMIT 1
        ) lat ON TRUE
        WHERE st.enabled AND st.feature_key = 'forms_checklists' AND st.owner_id = ANY($1)
-       GROUP BY st.id, st.name
+       GROUP BY st.id, st.name, st.owner_id, o.name, d.id, d.name
        ORDER BY st.id`,
       // "Today" in the company's zone rather than the DB session's — the same
       // basis lib/timeClock.js uses, so a submission near midnight lands on
@@ -48,6 +51,10 @@ router.get('/stats', async (req, res, next) => {
       templates: rows.map((r) => ({
         serviceTypeId: r.id,
         name: r.name,
+        ownerId: r.owner_id,
+        ownerName: r.owner_name,
+        departmentId: r.department_id,
+        departmentName: r.department_name,
         submittedToday: r.submitted_today,
         loggedToday: r.logged_today,
         submittedTotal: r.submitted_total,

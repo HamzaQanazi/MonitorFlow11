@@ -985,10 +985,18 @@ const dict: Record<string, Loc> = {
   svc_allow_cancel: { en: 'Allow this to be rejected or cancelled', ar: 'السماح برفض الطلب أو إلغائه' },
   svc_flow_preview_h: { en: 'How it moves forward', ar: 'كيف يتقدّم الطلب' },
   svc_flow_preview_hint: {
-    en: 'By default, any oversight employee can move a request to the next step. Tick a step if the assigned employee should do it instead.',
-    ar: 'بشكل افتراضي، يمكن لأي موظف إشرافي نقل الطلب إلى المرحلة التالية. فعّل الخيار إذا كان يجب أن يقوم الموظف المُكلَّف بذلك بدلًا من ذلك.',
+    en: 'By default only the employee assigned to the request moves it to the next step. Tick a step if an oversight employee should be able to move it too — useful for approval or review steps, and as a way through if the assigned employee is unavailable.',
+    ar: 'بشكل افتراضي، الموظف المُكلَّف بالطلب وحده هو من ينقله إلى المرحلة التالية. فعّل الخيار إذا كان يجب أن يتمكن موظف إشرافي من نقله أيضًا — مفيد لمراحل الموافقة أو المراجعة، وكمخرج إذا كان الموظف المُكلَّف غير متاح.',
   },
-  svc_assignee_handles: { en: 'The assigned employee moves this forward', ar: 'الموظف المُكلَّف هو من ينقل الطلب هنا' },
+  svc_oversight_can_move: {
+    en: 'An oversight employee can also move this step',
+    ar: 'يمكن لموظف إشرافي أيضًا نقل هذه المرحلة',
+  },
+  svc_cancel_step_note: {
+    en: 'An oversight employee handles this — a request can be rejected before anyone is assigned to it.',
+    ar: 'يتولى هذا موظف إشرافي — يمكن رفض الطلب قبل إسناده إلى أي شخص.',
+  },
+  svc_owner_matches: { en: 'matches', ar: 'نتيجة' },
   svc_first_step_assign_note: {
     en: 'This is the assignment step — an oversight employee picks who works the request here.',
     ar: 'هذه مرحلة الإسناد — يختار الموظف الإشرافي من سيتولى الطلب هنا.',
