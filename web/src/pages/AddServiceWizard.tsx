@@ -4,6 +4,7 @@ import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
 import { TranslateButton } from '../components/TranslateButton'
 import { TranslateAllButton } from '../components/TranslateAllButton'
+import { ownerLabel, type EmployeeOption } from '../lib/ownerLabel'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './AddServiceWizard.css'
@@ -56,20 +57,7 @@ interface Department {
   id: number
   name: Loc
 }
-interface EmployeeOption {
-  id: number
-  name: string
-  departmentName: Loc | null
-  branchName: Loc | null
-}
 
-// "Maya Chen — Operations · Main branch". owner_id is the Gate-2 visibility
-// anchor, so which team the person sits in is the whole point of the choice;
-// the picker used to show a bare name.
-function ownerLabel(emp: EmployeeOption, L: (v: Loc) => string): string {
-  const where = [emp.departmentName, emp.branchName].filter(Boolean).map((v) => L(v as Loc))
-  return where.length ? `${emp.name} — ${where.join(' · ')}` : emp.name
-}
 interface OptionRow {
   value: string
   labelEn: string

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n, type Loc } from '../i18n'
+import { ownerLabel, type EmployeeOption } from '../lib/ownerLabel'
 import { TranslateButton } from '../components/TranslateButton'
 import { TranslateAllButton } from '../components/TranslateAllButton'
 import './RequestsPage.css'
@@ -58,10 +59,6 @@ function slugify(s: string, fallback: string): string {
   return base || fallback
 }
 
-interface EmployeeOption {
-  id: number
-  name: string
-}
 interface Department {
   id: number
   name: { en: string; ar: string }
@@ -170,7 +167,7 @@ export default function ChecklistsPage() {
 }
 
 function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
-  const { t } = useI18n()
+  const { t, L } = useI18n()
   const [open, setOpen] = useState(false)
   const [departments, setDepartments] = useState<Department[]>([])
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
@@ -179,6 +176,11 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
   const [nameEn, setNameEn] = useState('')
   const [nameAr, setNameAr] = useState('')
   const [ownerId, setOwnerId] = useState('')
+  // The department was never asked for — it silently used departments[0], so
+  // every checklist landed in whatever department happened to sort first,
+  // however unrelated to the owner. It follows the chosen owner now (their own
+  // department), and stays overridable like the Add Employee manager picker.
+  const [departmentId, setDepartmentId] = useState('')
   const [items, setItems] = useState<ItemRow[]>([newItemRow()])
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -187,7 +189,7 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
     if (!open || departments.length || employees.length) return
     Promise.all([
       apiFetch<{ departments: Department[] }>('/departments'),
-      apiFetch<{ employees: EmployeeOption[] }>('/employees?pageSize=100'),
+      apiFetch<{ employees: EmployeeOption[] }>('/employees?isActive=true&pageSize=100'),
     ])
       .then(([d, e]) => {
         setDepartments(d.departments)
@@ -205,7 +207,7 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
 
   async function save() {
     setSaveError('')
-    if (!nameEn.trim() || !nameAr.trim() || !ownerId || !departments.length) {
+    if (!nameEn.trim() || !nameAr.trim() || !ownerId || !departmentId) {
       setSaveError(t('cl_new_err_required'))
       return
     }
@@ -223,7 +225,7 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
         method: 'POST',
         body: {
           name: { en: nameEn, ar: nameAr },
-          departmentId: departments[0].id,
+          departmentId: Number(departmentId),
           defaultPriority: 'low',
           acceptsExternalUsers: false,
           acceptsEmployeeSubmitters: true,
@@ -253,6 +255,7 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
       setNameEn('')
       setNameAr('')
       setOwnerId('')
+      setDepartmentId('')
       setItems([newItemRow()])
       setOpen(false)
       onCreated()
@@ -301,14 +304,38 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
             <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
             <label className="field">
               <span>{t('svc_owner')}</span>
-              <select className="req-select" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+              <select
+                className="req-select"
+                value={ownerId}
+                onChange={(e) => {
+                  setOwnerId(e.target.value)
+                  const picked = employees.find((emp) => String(emp.id) === e.target.value)
+                  if (picked?.departmentId != null) setDepartmentId(String(picked.departmentId))
+                }}
+              >
                 <option value="">{t('ob_select')}</option>
                 {employees.map((emp) => (
                   <option key={emp.id} value={emp.id}>
-                    {emp.name}
+                    {ownerLabel(emp, L)}
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="field">
+              <span>{t('emp_department')}</span>
+              <select
+                className="req-select"
+                value={departmentId}
+                onChange={(e) => setDepartmentId(e.target.value)}
+              >
+                <option value="">{t('ob_select')}</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {L(d.name)}
+                  </option>
+                ))}
+              </select>
+              <p className="ob-hint">{t('cl_new_department_hint')}</p>
             </label>
           </div>
 

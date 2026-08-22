@@ -611,6 +611,10 @@ const dict: Record<string, Loc> = {
   cl_last: { en: 'Last:', ar: 'آخر:' },
   cl_new_open: { en: '+ New checklist', ar: '+ قائمة جديدة' },
   cl_new_h: { en: 'New checklist template', ar: 'قالب قائمة جديد' },
+  cl_new_department_hint: {
+    en: 'Follows the owner’s own department by default — change it if the checklist belongs elsewhere.',
+    ar: 'يتبع قسم المسؤول افتراضيًا — غيّره إذا كانت القائمة تخصّ قسمًا آخر.',
+  },
   cl_new_err_required: { en: 'Name (both languages) and owner are required.', ar: 'الاسم (باللغتين) والمسؤول مطلوبان.' },
   cl_new_err_save: { en: 'Could not save the checklist.', ar: 'تعذّر حفظ القائمة.' },
   cl_add_item: { en: '+ Add item', ar: '+ إضافة عنصر' },
