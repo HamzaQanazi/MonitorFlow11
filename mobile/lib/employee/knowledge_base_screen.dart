@@ -1,6 +1,10 @@
 // Knowledge Base (communication feature group): read-only on mobile —
-// authoring stays console-only. Flat list, no categories, no search (article
-// counts are expected small; add search when that stops being true).
+// authoring stays console-only. Flat list with server-side search (same
+// GET /knowledge-base?q= the web console uses — matches both languages of
+// title AND body, so an article is found by what it says, not just its
+// title). Debounced the same way the web page debounces (250ms).
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -21,6 +25,9 @@ class KnowledgeBaseScreen extends StatefulWidget {
 class _KnowledgeBaseScreenState extends State<KnowledgeBaseScreen> {
   List<KbArticle>? _articles;
   Object? _error;
+  String _query = '';
+  Timer? _debounce;
+  final _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -28,21 +35,45 @@ class _KnowledgeBaseScreenState extends State<KnowledgeBaseScreen> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() => _error = null);
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) setState(() => _error = null);
     final api = context.read<AuthState>().api;
     try {
-      final json = await api.get('/knowledge-base');
+      final q = _query.trim();
+      final json = await api.get('/knowledge-base', query: q.isEmpty ? null : {'q': q});
       if (!mounted) return;
       setState(() {
         _articles = (json['articles'] as List<dynamic>)
             .map((a) => KbArticle.fromJson(a as Map<String, dynamic>))
             .toList();
+        _error = null;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e);
+      // A search re-fetch never blanks an already-visible list with an
+      // error screen — same "silent" shape used for polling elsewhere.
+      if (!silent || _articles == null) setState(() => _error = e);
     }
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() => _query = value);
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), () => _load(silent: _articles != null));
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _debounce?.cancel();
+    setState(() => _query = '');
+    _load(silent: _articles != null);
   }
 
   @override
@@ -50,7 +81,29 @@ class _KnowledgeBaseScreenState extends State<KnowledgeBaseScreen> {
     final i18n = context.watch<I18n>();
     return Scaffold(
       appBar: AppBar(title: Text(i18n.tr('kb_title'))),
-      body: _body(i18n),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: i18n.tr('kb_search'),
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: _clearSearch,
+                      ),
+              ),
+            ),
+          ),
+          Expanded(child: _body(i18n)),
+        ],
+      ),
     );
   }
 
@@ -63,7 +116,16 @@ class _KnowledgeBaseScreenState extends State<KnowledgeBaseScreen> {
     }
     if (_articles == null) return const LoadingState();
     if (_articles!.isEmpty) {
-      return EmptyState(icon: Icons.menu_book_outlined, title: i18n.tr('kb_none_title'));
+      return _query.trim().isEmpty
+          ? EmptyState(icon: Icons.menu_book_outlined, title: i18n.tr('kb_none_title'))
+          : EmptyState(
+              icon: Icons.search_off_outlined,
+              title: i18n.tr('kb_no_match_title'),
+              action: OutlinedButton(
+                onPressed: _clearSearch,
+                child: Text(i18n.tr('clear_filter')),
+              ),
+            );
     }
 
     return RefreshIndicator(
@@ -71,7 +133,7 @@ class _KnowledgeBaseScreenState extends State<KnowledgeBaseScreen> {
       onRefresh: _load,
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         itemCount: _articles!.length,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (_, i) => _ArticleCard(article: _articles![i]),

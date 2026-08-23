@@ -381,6 +381,8 @@ const Map<String, Map<String, String>> _dict = {
   'kb_title': {'en': 'Knowledge Base', 'ar': 'قاعدة المعرفة'},
   'kb_load_fail': {'en': 'Could not load the knowledge base.', 'ar': 'تعذّر تحميل قاعدة المعرفة.'},
   'kb_none_title': {'en': 'No articles yet', 'ar': 'لا مقالات بعد'},
+  'kb_search': {'en': 'Search articles…', 'ar': 'ابحث في المقالات…'},
+  'kb_no_match_title': {'en': 'No articles match this search', 'ar': 'لا توجد مقالات مطابقة لهذا البحث'},
 
   // events (communication feature group — read + self-service RSVP on mobile)
   'ev_title': {'en': 'Events', 'ar': 'الفعاليات'},
