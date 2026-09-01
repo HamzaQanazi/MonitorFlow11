@@ -8,7 +8,22 @@
   display: grid;
   place-items: center;
   padding: 24px;
+  overflow: hidden;
   background: oklch(0.21 0.02 57 / 0.55);
+}
+
+/* A glimpse of the dashboard the Owner is about to configure, blurred and
+   tinted with the brand scrim so the card stays readable. Oversized + inset
+   negative keeps the blur from showing a soft/transparent edge. */
+.ob-overlay::before {
+  content: '';
+  position: absolute;
+  inset: -32px;
+  background:
+    linear-gradient(oklch(0.21 0.02 57 / 0.6), oklch(0.21 0.02 57 / 0.6)),
+    url('/screenshots/dashboard.jpg') center/cover no-repeat;
+  filter: blur(14px);
+  z-index: -1;
 }
 
 .ob-card {
@@ -255,6 +270,84 @@
 .ob-plan-warning {
   font-size: 13px;
   color: var(--amber-700);
+}
+
+/* Step 6 — review table. Grouped field/value rows with a spanning section
+   header per step being reviewed. */
+.ob-review-tablewrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.ob-review-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.ob-review-section td {
+  padding: 8px 14px;
+  background: var(--surface);
+  border-block-end: 1px solid var(--border);
+  border-block-start: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ob-review-table tr:first-child td {
+  border-block-start: none;
+}
+
+.ob-review-label {
+  inline-size: 38%;
+  padding: 10px 14px;
+  border-block-end: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 600;
+  vertical-align: top;
+}
+
+.ob-review-value {
+  padding: 10px 14px;
+  border-block-end: 1px solid var(--border);
+  color: var(--ink);
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.ob-review-table tbody tr:last-child .ob-review-label,
+.ob-review-table tbody tr:last-child .ob-review-value {
+  border-block-end: none;
+}
+
+.ob-review-value-en,
+.ob-review-value-ar {
+  display: block;
+}
+
+.ob-review-value-ar {
+  color: var(--muted);
+  font-size: 13px;
+  margin-block-start: 2px;
+}
+
+.ob-review-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ob-review-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .ob-error {

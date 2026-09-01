@@ -35,7 +35,7 @@ test('GET /employees/import/template returns a CSV with the expected header', as
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type') || '', /text\/csv/);
   const text = await res.text();
-  assert.match(text.split('\n')[0], /^firstName,lastName,email,phone,birthdate,gender,workerType,weeklyRestDay,department,manager,level$/);
+  assert.match(text.split('\n')[0], /^firstName,lastName,email,phone,birthdate,gender,workerType,weeklyRestDay,department,level$/);
 });
 
 test('without manage_employees, import is refused', async () => {
@@ -75,19 +75,18 @@ test('partial success: good rows are created, a bad row is reported, neither blo
   assert.ok(res.body.failed[0].errors.email);
 
   // Non-admin importer (root): every created row lands in root's own
-  // department, under root — same restriction POST / already applies.
+  // department — same restriction POST / already applies.
   const { rows } = await query(
-    "SELECT department_id, manager_id, weekly_rest_day FROM users WHERE email IN ('import.one@fixture.test', 'import.two@fixture.test') ORDER BY email"
+    "SELECT department_id, weekly_rest_day FROM users WHERE email IN ('import.one@fixture.test', 'import.two@fixture.test') ORDER BY email"
   );
   assert.equal(rows.length, 2);
   for (const r of rows) {
     assert.equal(r.department_id, fixtures.departmentId);
-    assert.equal(r.manager_id, fixtures.employeeIds.root);
   }
   assert.equal(rows[1].weekly_rest_day, 5); // "Friday" -> 5
 });
 
-test('admin importer resolves department/manager/level by name; an unknown one fails that row only', async () => {
+test('admin importer resolves department/level by name; an unknown one fails that row only', async () => {
   const { rows: depts } = await query('SELECT id FROM department LIMIT 1');
   const departmentId = depts[0].id;
   const { rows: deptRow } = await query('SELECT name->>\'en\' AS name FROM department WHERE id = $1', [departmentId]);
@@ -105,24 +104,6 @@ test('admin importer resolves department/manager/level by name; an unknown one f
 
   const { rows } = await query("SELECT department_id FROM users WHERE email = 'import.admin1@fixture.test'");
   assert.equal(rows[0].department_id, departmentId);
-});
-
-test('a later row can reference an employee created earlier in the same import as their manager', async () => {
-  const deptName = (await query("SELECT name->>'en' AS n FROM department LIMIT 1")).rows[0].n;
-  const csv =
-    'firstName,lastName,email,phone,birthdate,gender,workerType,department,manager\n' +
-    `Import,Boss,import.boss@fixture.test,0590000000,1995-01-01,female,full_time,${deptName},\n` +
-    `Import,Report,import.report@fixture.test,0590000000,1995-01-01,female,full_time,${deptName},import.boss@fixture.test\n`;
-  const res = await importCsv(tokens.admin, csv);
-  assert.equal(res.status, 200, JSON.stringify(res.body));
-  assert.equal(res.body.createdCount, 2, JSON.stringify(res.body.failed));
-
-  const { rows } = await query(
-    `SELECT u.manager_id, m.email AS manager_email
-     FROM users u JOIN users m ON m.id = u.manager_id
-     WHERE u.email = 'import.report@fixture.test'`
-  );
-  assert.equal(rows[0].manager_email, 'import.boss@fixture.test');
 });
 
 test('a row missing a required column (phone/birthdate/gender/workerType) fails just that row', async () => {

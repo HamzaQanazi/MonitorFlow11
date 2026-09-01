@@ -35,7 +35,6 @@ interface Employee {
   branchName: Loc | null
   levelId: number | null
   levelName: Loc | null
-  managerId: number | null
   // Avg minutes to resolve the requests this employee holds; null = none yet.
   avgResolutionMinutes: number | null
 }
@@ -371,7 +370,6 @@ export default function EmployeesPage() {
         <EmployeeForm
           departments={departments}
           levels={levels}
-          managers={data?.employees ?? []}
           isAdmin={isAdmin}
           onClose={() => setDialog(null)}
           onDone={onDone}
@@ -381,7 +379,6 @@ export default function EmployeesPage() {
         <EmployeeForm
           departments={departments}
           levels={levels}
-          managers={data?.employees ?? []}
           isAdmin={isAdmin}
           employee={dialog.employee}
           onClose={() => setDialog(null)}
@@ -422,7 +419,6 @@ const REST_DAYS = [1, 2, 3, 4, 5, 6, 0].map((value) => ({
 function EmployeeForm({
   departments,
   levels,
-  managers,
   isAdmin,
   employee,
   onClose,
@@ -430,7 +426,6 @@ function EmployeeForm({
 }: {
   departments: Department[]
   levels: Level[]
-  managers: Employee[]
   isAdmin: boolean
   employee?: Employee
   onClose: () => void
@@ -449,24 +444,6 @@ function EmployeeForm({
   const [weeklyRestDay, setWeeklyRestDay] = useState(employee?.weeklyRestDay != null ? String(employee.weeklyRestDay) : '')
   const initialDeptId = employee?.departmentId ?? departments[0]?.id ?? null
   const [depId, setDepId] = useState(String(initialDeptId ?? ''))
-  // Smart default: the initially-selected department's head, if it has one
-  // and they're a valid manager choice — same rule the department picker's
-  // onChange applies, just also covering "never touched the dropdown."
-  const initialHead = !isEdit && isAdmin ? departments.find((d) => d.id === initialDeptId)?.headUserId : null
-  // Edit: seed from the employee's current manager. `managers` is the page's
-  // own (filtered/paginated) employee list, so a manager outside the current
-  // filter/page won't appear as an option here — same pre-existing limit as
-  // the create-time picker, not new to this.
-  const [managerId, setManagerId] = useState(
-    isEdit
-      ? employee?.managerId != null
-        ? String(employee.managerId)
-        : ''
-      : initialHead != null && managers.some((m) => m.id === initialHead)
-        ? String(initialHead)
-        : ''
-  )
-  const managerOptions = managers.filter((m) => m.id !== employee?.id)
   const [levelId, setLevelId] = useState(employee?.levelId ? String(employee.levelId) : '')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [busy, setBusy] = useState(false)
@@ -494,9 +471,7 @@ function EmployeeForm({
             workerType,
             departmentId: Number(depId),
             weeklyRestDay: weeklyRestDay === '' ? null : Number(weeklyRestDay),
-            ...(isAdmin
-              ? { levelId: levelId ? Number(levelId) : null, managerId: managerId ? Number(managerId) : null }
-              : {}),
+            ...(isAdmin ? { levelId: levelId ? Number(levelId) : null } : {}),
           },
         })
         onDone()
@@ -515,7 +490,6 @@ function EmployeeForm({
             ...(isAdmin
               ? {
                   departmentId: Number(depId),
-                  managerId: managerId ? Number(managerId) : null,
                   levelId: levelId ? Number(levelId) : null,
                 }
               : { departmentId: Number(depId) }),
@@ -640,24 +614,7 @@ function EmployeeForm({
         </label>
         <label className="field">
           <span>{t('emp_department')}</span>
-          <select
-            className="req-select"
-            value={depId}
-            onChange={(e) => {
-              const nextDepId = e.target.value
-              setDepId(nextDepId)
-              // Smart default, not a hard rule: if the picked department has
-              // a head and the manager field hasn't been set to anything
-              // else yet, default to that head — one less click for the
-              // common case, still fully overridable below.
-              if (!isEdit && isAdmin && managerId === '') {
-                const dept = departments.find((d) => String(d.id) === nextDepId)
-                if (dept?.headUserId != null && managers.some((m) => m.id === dept.headUserId)) {
-                  setManagerId(String(dept.headUserId))
-                }
-              }
-            }}
-          >
+          <select className="req-select" value={depId} onChange={(e) => setDepId(e.target.value)}>
             {departments.map((d) => (
               <option key={d.id} value={d.id}>
                 {L(d.name)}
@@ -666,20 +623,6 @@ function EmployeeForm({
           </select>
           {errors.departmentId && <em className="field-err">{errors.departmentId}</em>}
         </label>
-        {isAdmin && (
-          <label className="field">
-            <span>{t('emp_manager_optional')}</span>
-            <select className="req-select" value={managerId} onChange={(e) => setManagerId(e.target.value)}>
-              <option value="">{t('emp_manager_none')}</option>
-              {managerOptions.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-            {errors.managerId && <em className="field-err">{errors.managerId}</em>}
-          </label>
-        )}
         {isAdmin && (
           <label className="field">
             <span>{t('emp_role_optional')}</span>

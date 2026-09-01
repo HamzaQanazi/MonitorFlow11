@@ -291,10 +291,22 @@ async function buildFixtures() {
 
   const { rows: depts } = await query(`SELECT id FROM department LIMIT 1`);
   const departmentId = depts[0].id;
+  const { rows: branches } = await query(`SELECT id FROM branch LIMIT 1`);
+  // Gate 2 is flat department membership (re-scoped, user-directed — no more
+  // manager tree), so "two independent subtrees" now means two separate
+  // departments: root/field1/field2 share one, head2 gets their own, so a
+  // cross-subtree-refusal test still has an actor who is genuinely outside
+  // root's reach.
+  const otherDept = await api('POST', '/departments', {
+    token: ownerToken,
+    body: { name: { en: 'Other Dept', ar: 'دائرة أخرى' }, branchId: branches[0].id },
+  });
+  if (otherDept.status !== 201) throw new Error(`fixture other department: ${otherDept.status} ${JSON.stringify(otherDept.body)}`);
+  const otherDepartmentId = otherDept.body.departmentId;
 
   // Phone/birthdate/gender/workerType are required at creation now (CLAUDE.md
   // §13) — every fixture hire needs a value, so a fixed one covers all of them.
-  async function hire(firstName, lastName, { levelId = null, managerId = null } = {}) {
+  async function hire(firstName, lastName, { levelId = null, deptId = departmentId } = {}) {
     const res = await api('POST', '/employees', {
       token: ownerToken,
       body: {
@@ -305,9 +317,8 @@ async function buildFixtures() {
         birthdate: '1995-01-01',
         gender: 'female',
         workerType: 'full_time',
-        departmentId,
+        departmentId: deptId,
         levelId,
-        managerId,
       },
     });
     if (res.status !== 201) throw new Error(`hire ${firstName}: ${res.status} ${JSON.stringify(res.body)}`);
@@ -320,9 +331,9 @@ async function buildFixtures() {
   // the shape a cross-subtree-refusal test needs: an actor in one tree must
   // never reach a resource owned by the other.
   const root = await hire('Root', 'Manager', { levelId: managerLevelId });
-  const head2 = await hire('Head', 'Second', { levelId: managerLevelId });
-  const field1 = await hire('Field', 'One', { levelId: staffLevelId, managerId: root.id });
-  const field2 = await hire('Field', 'Two', { levelId: staffLevelId, managerId: root.id });
+  const head2 = await hire('Head', 'Second', { levelId: managerLevelId, deptId: otherDepartmentId });
+  const field1 = await hire('Field', 'One', { levelId: staffLevelId });
+  const field2 = await hire('Field', 'Two', { levelId: staffLevelId });
 
   WHO.root = root.loginIdentifier;
   WHO.head2 = head2.loginIdentifier;

@@ -8,7 +8,6 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
 const { isBilingual } = require('../lib/i18nLabel');
 const { reassignDepartmentHead } = require('../lib/departmentHead');
-const { ancestorIds } = require('../lib/scope');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -73,26 +72,31 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// POST /departments (admin-only) — create with a mandatory head + at least
-// one other member. Both get moved into the new department (department_id);
-// every member other than the head also gets manager_id = head (Gate 2 —
-// this is what gives the head real oversight of them). The head's own
-// manager_id is left untouched (unrelated to which department they now head).
+// POST /departments (admin-only) — head and members are both optional at
+// creation (re-scoped: a department used to require a head + at least one
+// other member up front). An Owner can now create an empty department and
+// staff it later, either manually (Edit Employee's department picker, or
+// PATCH /:id/head once someone should be the named head) or via the CSV
+// import's department column. Everyone supplied — head and members alike —
+// just gets department_id set to the new department; head_user_id is display
+// metadata only (re-scoped, user-directed: no more manager tree, so no
+// "gives the head oversight" write to make — Gate 2 is flat department
+// membership, §6/lib/scope.js).
 router.post('/', requireRole('admin'), async (req, res, next) => {
   try {
     const b = req.body || {};
     const errors = {};
     if (!isBilingual(b.name)) errors.name = 'Bilingual name (en + ar) is required';
 
-    const headEmployeeId = b.headEmployeeId;
-    if (!Number.isInteger(headEmployeeId)) errors.headEmployeeId = 'A department head is required';
+    const headEmployeeId = b.headEmployeeId != null ? b.headEmployeeId : null;
+    if (headEmployeeId !== null && !Number.isInteger(headEmployeeId)) {
+      errors.headEmployeeId = 'Invalid employee';
+    }
 
     const memberEmployeeIds = Array.isArray(b.memberEmployeeIds)
       ? [...new Set(b.memberEmployeeIds)]
-      : null;
-    if (!memberEmployeeIds || !memberEmployeeIds.length) {
-      errors.memberEmployeeIds = 'At least one other employee is required';
-    } else if (memberEmployeeIds.includes(headEmployeeId)) {
+      : [];
+    if (headEmployeeId !== null && memberEmployeeIds.includes(headEmployeeId)) {
       errors.memberEmployeeIds = 'Members must be different from the head';
     }
 
@@ -101,24 +105,18 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
 
     if (Object.keys(errors).length) return res.status(422).json({ errors });
 
-    const badHead = await invalidEmployeeIds([headEmployeeId]);
-    if (badHead) errors.headEmployeeId = 'Invalid or inactive employee';
-    const badMembers = await invalidEmployeeIds(memberEmployeeIds);
-    if (badMembers) errors.memberEmployeeIds = 'Invalid or inactive employee(s)';
+    if (headEmployeeId !== null) {
+      const badHead = await invalidEmployeeIds([headEmployeeId]);
+      if (badHead) errors.headEmployeeId = 'Invalid or inactive employee';
+    }
+    if (memberEmployeeIds.length) {
+      const badMembers = await invalidEmployeeIds(memberEmployeeIds);
+      if (badMembers) errors.memberEmployeeIds = 'Invalid or inactive employee(s)';
+    }
     if (await invalidBranchId(branchId, req.user.company_id)) errors.branchId = 'Invalid branch';
     if (Object.keys(errors).length) return res.status(422).json({ errors });
 
-    // Same cycle risk as reassignDepartmentHead (2026-08-21 incident): every
-    // member is about to get manager_id = headEmployeeId, which is a cycle if
-    // any of them is currently an ancestor of the head (e.g. picking the
-    // head's own manager as a "member" by mistake).
-    const headAncestors = new Set(await ancestorIds(headEmployeeId));
-    const cyclicMember = memberEmployeeIds.find((id) => headAncestors.has(id));
-    if (cyclicMember) {
-      return res.status(422).json({
-        errors: { memberEmployeeIds: `Employee ${cyclicMember} manages the chosen head — would create a reporting cycle` },
-      });
-    }
+    const allIds = headEmployeeId !== null ? [headEmployeeId, ...memberEmployeeIds] : memberEmployeeIds;
 
     const created = await withTx(async (tx) => {
       const { rows } = await tx.query(
@@ -126,11 +124,9 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
         [JSON.stringify(b.name), headEmployeeId, branchId]
       );
       const departmentId = rows[0].id;
-      await tx.query('UPDATE users SET department_id = $1 WHERE id = $2', [departmentId, headEmployeeId]);
-      await tx.query(
-        'UPDATE users SET department_id = $1, manager_id = $2 WHERE id = ANY($3)',
-        [departmentId, headEmployeeId, memberEmployeeIds]
-      );
+      if (allIds.length) {
+        await tx.query('UPDATE users SET department_id = $1 WHERE id = ANY($2)', [departmentId, allIds]);
+      }
       await logAudit(tx, req.user.id, 'department.created', 'department', departmentId, {
         name: b.name,
         headEmployeeId,
@@ -176,8 +172,9 @@ router.patch('/:id', requireRole('admin'), async (req, res, next) => {
 });
 
 // PATCH /departments/:id/head (admin-only) — manually reassign the head, e.g.
-// after the automatic on-deactivation fallback (routes/employees.js) picked
-// the outgoing head's manager and the Owner wants someone else instead.
+// after deactivating the outgoing head (routes/employees.js refuses that
+// deactivation until the Owner reassigns the head first — there's no more
+// automatic fallback to promote, §6/lib/departmentHead.js).
 router.patch('/:id/head', requireRole('admin'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);

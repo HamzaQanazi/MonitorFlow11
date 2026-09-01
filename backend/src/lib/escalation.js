@@ -1,8 +1,11 @@
 // Escalation sweep — the one proactive notifier. Phase 5 (§10): SLAs are
 // per-status `sla_minutes` in the workflow JSONB (null/absent = no SLA), and a
-// breach escalates UP THE MANAGER TREE — the assignee's manager, falling back
-// to the service owner when the request is unassigned or the assignee has no
-// manager. No status key appears here (Section 9): the completion-target
+// breach escalates to the assignee's DEPARTMENT HEAD (re-scoped, user-
+// directed — the manager tree is gone, §6/lib/scope.js), falling back to the
+// service owner when the request is unassigned, the assignee has no
+// department, their department has no head, or they themselves are the head
+// (escalating to yourself isn't an escalation). No status key appears here
+// (Section 9): the completion-target
 // status (the requester's turn to confirm) is derived from the workflow's
 // required_form_key transition, exactly like reports.js.
 //
@@ -51,8 +54,9 @@ const COMPLETION_TARGET = `COALESCE((
        ), '')`;
 
 async function runEscalationSweep() {
-  // Rule 1: any SLA'd status breached → up the manager tree. mgr resolves only
-  // when a task exists (assignee's manager); otherwise the service owner.
+  // Rule 1: any SLA'd status breached → the assignee's department head. mgr
+  // resolves only when a task exists and the assignee heads a different
+  // department than themselves; otherwise the service owner.
   const tree = await pool.query(
     `INSERT INTO notification (user_id, request_id, type, message)
      SELECT COALESCE(mgr.id, own.id), r.id, 'escalation',
@@ -70,7 +74,8 @@ async function runEscalationSweep() {
      JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
      LEFT JOIN task t ON t.request_id = r.id
      LEFT JOIN users emp ON emp.id = t.employee_id
-     LEFT JOIN users mgr ON mgr.id = emp.manager_id AND mgr.is_active
+     LEFT JOIN department dept ON dept.id = emp.department_id
+     LEFT JOIN users mgr ON mgr.id = dept.head_user_id AND mgr.is_active AND mgr.id <> emp.id
      LEFT JOIN users own ON own.id = st.owner_id AND own.is_active
      WHERE s->>'sla_minutes' IS NOT NULL
        AND NOT (s->>'is_terminal')::bool

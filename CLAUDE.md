@@ -90,8 +90,8 @@ the violation.
 
 ### I2. "Monitor" is not a role. Exactly three account kinds.
 ```
-admin     configures the platform. OUTSIDE the reporting tree. Seed/admin-created.
-employee  operational. INSIDE the tree. Created by an admin/manager.
+admin     configures the platform. OUTSIDE every department. Seed/admin-created.
+employee  operational. Belongs to a department. Created by an admin/oversight employee.
 user      external submitter. OPTIONAL per service. Self-registers.
 ```
 An overseer ("monitor") is just an **employee at a level that holds oversight
@@ -102,14 +102,19 @@ capabilities**. Never write `role === 'monitor'`, `isManager(user)`, or a
 ```
 GATE 1 (actions)  Does the actor's LEVEL grant the required capability?
                   → level_capability table (lib/capabilities.js, requireCapability)
-GATE 2 (scope)    Is the target inside the actor's SUBTREE?
-                  → recursive CTE on users.manager_id (lib/scope.js, ownerInScope)
+GATE 2 (scope)    Is the target inside the actor's DEPARTMENT?
+                  → flat department_id match (lib/scope.js, ownerInScope)
 ```
 Both gates, on every guarded action, on the server. A client showing a button is
-**not** authorisation. Assignment is therefore **downward-only** — you assign to
-anyone below you in the tree, never sideways. A root employee
-(`manager_id IS NULL`) reaches the whole organisation by sitting at the top, not
-by a special case.
+**not** authorisation. Assignment is therefore **department-only** — you assign to
+anyone in your own department, never across departments. **Re-scoped, user-
+directed: the multi-level manager tree (`users.manager_id`, arbitrary-depth
+recursive CTE) is gone.** Gate 2 is flat: an employee's scope is exactly their
+own department's members (self included), full stop — no root employee, no
+"reaches the whole organisation by sitting at the top" special case for anyone
+but the admin (who has no department and sees the whole company by construction,
+I2). `department.head_user_id` is display metadata, not a scope mechanism: every
+`view_all` holder in a department has equal Gate-2 reach over it, head or not.
 
 ### I4. Clients are THIN RENDERERS.
 Frontends never hardcode a field name, a status key, or a role.
@@ -297,10 +302,11 @@ resolved by the two gates (I3):
   `view_all`'s general oversight. A `employee_level` grants a subset via
   `level_capability`. An "oversight" employee is one whose level grants
   `view_all`.
-- **Gate 2 — subtree scope.** `users.manager_id` self-reference; a recursive CTE
-  (`lib/scope.js` `subtreeIds` / `ownerInScope`) yields self + all descendants.
-  Request visibility for an employee = requests whose **service `owner_id` is in
-  the actor's subtree**. Assignment candidates = subtree employees only.
+- **Gate 2 — department scope.** Flat `department_id` match (`lib/scope.js`
+  `subtreeIds` / `ownerInScope`) yields self + every co-member of the actor's
+  own department (no manager tree — re-scoped, user-directed). Request
+  visibility for an employee = requests whose **service `owner_id` is in the
+  actor's department**. Assignment candidates = same-department employees only.
 
 **Ownership + 404-over-403:** "own only" resources (`request.user_id ==
 me`, `task.employee_id == me`) require an ownership check on top of the gates. A
@@ -394,35 +400,23 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
   rationale as company's), created_at. One row per branch the Owner names in
   the wizard.
 - **department** — id, name `{en,ar}`, head_user_id (FK → users, nullable —
-  Owner-only CRUD via `/departments`, §12; metadata only, display + the
-  reassignment fallback below — the real Gate-2 effect is that a
-  department's other members get `manager_id` = head_user_id). Creating a
-  department requires a head + ≥1 other employee; deactivating a head
-  auto-promotes their own manager to head (and re-points the department's
-  other members to report to them) or, if that head has no active manager,
-  refuses the deactivation (409) until the Owner reassigns the head first.
-User-clarified 2026-08-21: department and the reporting tree are
-deliberately decoupled — hiring someone into a department does **not**
-auto-set their `manager_id` to that department's head at the DB/API level
-(only department creation and head reassignment do that). The Add Employee
-web form (admin only) does default the Manager picker to the selected
-department's head when one exists (`EmployeesPage.tsx`, UX only, always
-overridable) — a convenience default, not a rule the server enforces,
-since the picker still needs to work for a company with no department
-heads set yet (a fresh onboarding's default department has none).
-**Re-scoped 2026-08-21, same session: the Add Department web dialog**
-(`DepartmentsPage.tsx`) — supervisor-directed: the separate "Head" dropdown
-is gone; a "Head" radio now sits next to each checked row in the one
-employee checklist (exactly one checked employee can be head — the API
-contract is unchanged, `headEmployeeId` + `memberEmployeeIds` still POST
-the same shape, this only changed how the client builds them). User-
-directed, same dialog: checking someone already in a different department
-used to silently move them (`department_id`/`manager_id` overwritten, no
-warning) — the checklist now shows each employee's current department
-inline, and if creating would move anyone out of one, a confirmation step
-lists exactly who before the write fires. `PATCH /departments/{id}/head`
-(the separate reassign-head flow, an existing department's head only) is
-unchanged — still its own dropdown, this dialog wasn't in scope.
+  Owner-only CRUD via `/departments`, §12; **display metadata only, not a
+  scope mechanism** — Gate 2 is flat department membership, so every
+  `view_all` holder in a department has equal reach over it, head or not).
+  **Re-scoped, user-directed: creating a department needs only a name +
+  branch** — headEmployeeId and memberEmployeeIds are both optional; an
+  empty department can be staffed later via `PATCH /employees/{id}`, the CSV
+  import's department column, or `PATCH /departments/{id}/head`. Deactivating
+  a head is refused (409) until the Owner reassigns the department's head
+  first (`PATCH /departments/{id}/head`) — no automatic fallback (there is no
+  more manager to promote). The Add Department web dialog
+  (`DepartmentsPage.tsx`) offers one unified employee checklist with a "Head"
+  radio (only one at a time, only among checked rows) — `headEmployeeId` +
+  `memberEmployeeIds` in the POST body either way. Checking someone already
+  in a different department shows a confirmation step listing exactly who
+  gets moved before the write fires. `PATCH /departments/{id}/head` (the
+  separate reassign-head flow, an existing department's head only) is its own
+  dropdown, unaffected by the create dialog.
 - **users** — id, name (computed `${firstName} ${lastName}` for employees created
   through the extended Add Employee form — see §5's login_identifier note), email
   (nullable, unique), password_hash, role
@@ -436,8 +430,7 @@ unchanged — still its own dropdown, this dialog wasn't in scope.
   `priority` — not a bilingual JSONB catalogue, since I5 doesn't require one for
   small fixed system enums; also required-for-new-hires/nullable-column), weekly_rest_day (nullable smallint
   0–6, JS weekday convention — one fixed day off/week, `/schedule/suggest`'s
-  input, §13), **manager_id** (self-FK,
-  nullable — the reporting tree), **level_id** (FK → employee_level, nullable),
+  input, §13), **level_id** (FK → employee_level, nullable),
   **company_id** (FK → company, nullable — the account's company; nullable so the
   Owner, created before the company row, and self-registered users stay valid),
   is_active (default true), created_at.
@@ -616,7 +609,7 @@ capability catalogue, one **empty `company`** (`onboarding_completed = false`), 
 one **Owner** (`role 'admin'`, `login_identifier` = their email, `company_id` set).
 Credentials come from `SEED_OWNER_*` env vars; it refuses to run against a database
 that already has users unless `SEED_FORCE=true`. The Owner is `admin` (I2):
-configures, sits outside the reporting tree, holds no capabilities.
+configures, has no department, holds no capabilities.
 
 **Onboarding endpoints** (`routes/onboarding.js`, both `requireAuth`; the save is
 `requireRole('admin')`):
@@ -669,14 +662,16 @@ page edit the same row after the fact, §15's 2026-08-22 re-scope.)*
 
 **Notification triggers (complete list — do not invent others):** task
 assigned/reassigned → assignee; any status change → request owner; task completed
-→ owner; employee rejected task → assignee's manager; comment added → the other
-party. Targets are the relationships in §8, resolved at fire time.
+→ owner; employee rejected task → assignee's department head; comment added →
+the other party. Targets are the relationships in §8, resolved at fire time.
 
 **SLA / escalation** (`lib/escalation.js`, a periodic sweep, `ESCALATION_SWEEP_MS`,
 default 5 min): a request sitting in a status past its `sla_minutes` escalates
-**up the manager tree** (to the assignee's manager), not to a hardcoded
-department overseer. Reuses the existing sweep worker. (The `sla_breached` webhook
-it once fired is removed — §9.)
+**to the assignee's department head** (re-scoped, user-directed — the manager
+tree is gone, §2 I3/§6), falling back to the service owner when the request is
+unassigned, the assignee has no department, their department has no head, or
+they themselves are the head. Reuses the existing sweep worker. (The
+`sla_breached` webhook it once fired is removed — §9.)
 
 ---
 
@@ -939,12 +934,10 @@ always lists both `created` and `failed` (each keyed by CSV row number,
 header = row 1), and the plan's seat cap is enforced as a running counter
 across the file, not just once up front, so a batch that would cross the
 cap partway through fails only the rows that would exceed it. Only an admin
-caller gets `department`/`manager`/`level` CSV columns resolved (matched by
-name, case-insensitive, against the company's own catalogue) — a non-admin
-importer's hires all land in their own department under themselves, same
-restriction `POST /employees` already applies; a later row can name an
-earlier row's new hire as its manager, since the freshly created id is
-registered into the lookup as the loop goes. Web: `emp_import` button on
+caller gets `department`/`level` CSV columns resolved (matched by name,
+case-insensitive, against the company's own catalogue) — a non-admin
+importer's hires all land in their own department, same restriction
+`POST /employees` already applies. Web: `emp_import` button on
 `EmployeesPage.tsx` opens a dialog (download template → pick file → submit
 → a results table of failed rows only, since the good ones are already
 visible in the list once it reloads).
@@ -992,6 +985,62 @@ config action (§6). The wizard gained a final **review step** before the
 one-shot save, and maps the server's 422 field keys back to the step they came
 from instead of stranding the Owner on the last step under a generic error.
 
+**Re-scoped 2026-09-01 (deliberate, user-directed): department creation no
+longer requires a head or members.** `POST /departments` used to require a
+head + ≥1 other employee up front; name + branch are now the only
+requirements. An Owner can create an empty department and staff it later,
+either manually (Edit Employee's department picker, `PATCH
+/departments/{id}/head`) or via the CSV import's department column. Web: the
+Add Department dialog's Submit button no longer requires a head or checked
+employees — the employee checklist stays available for staffing it
+immediately, now labeled optional.
+
+**Re-scoped 2026-09-01, same session (deliberate, user-directed, bigger:
+dropped the manager-tree architecture in favor of a flat department-head
+model).** `users.manager_id` (self-FK, arbitrary-depth reporting tree) is
+**removed** (`032_drop_manager_id.sql`), along with `lib/scope.js`'s
+recursive-CTE `subtreeIds`/`ownerInScope`/`ancestorIds` and the cycle-guard
+they existed to protect (the 2026-08-21 incident's fix — moot once there's no
+tree left to cycle). **Gate 2 (I3, §5) is now flat department membership**:
+an employee's scope is exactly their own department's co-members, self
+included — no multi-level hierarchy, no "root employee reaches the whole
+org" case for anyone but the admin (who has no department and sees
+everything by construction, unchanged). `department.head_user_id` (020) is
+now **purely display metadata** — every `view_all` holder in a department has
+equal Gate-2 reach over it, head or not; it no longer re-points any other
+member's row on reassignment (`lib/departmentHead.js` simplified
+accordingly). Ripple effects, all re-scoped the same session:
+- **Assignment/visibility** narrows from "subtree" to "own department" —
+  `lib/autoAssign.js`'s candidate pool, `POST/PATCH /employees`'s Gate-2
+  checks, and every route that called `subtreeIds`/`ownerInScope` are
+  unchanged in *shape* (same function signatures), just department-scoped
+  now instead of tree-scoped.
+- **`assignee_manager` notifications (§10) and SLA escalation** now resolve
+  to the assignee's **department head** (falling back to the service owner
+  when the assignee has no department, their department has no head, or
+  they themselves are the head — never escalate to yourself). The
+  `assignee_manager` relationship *key* is unchanged (§8's notify enum) —
+  only what it resolves to changed.
+- **Employee create/edit lost `managerId`** entirely — `POST /employees`,
+  `PATCH /employees/{id}`, and the CSV import's `manager` column are gone (a
+  new hire just inherits the caller's department, or an admin-supplied
+  `departmentId`). Web: `EmployeesPage.tsx`'s Manager picker and its
+  "defaults to the department's head" convenience are both gone.
+- **Deactivating a department head** no longer auto-promotes anyone — there
+  is no more manager to fall back to. It's a flat refusal (409) until the
+  Owner reassigns the head first (`PATCH /departments/{id}/head`); the old
+  "falls back to the outgoing head's own manager, or refuses if none" logic
+  in `routes/employees.js` is gone.
+No named-sector/industry branch was ever involved here (I1 untouched) — this
+is purely Gate 2's shape. `openapi.yaml` and this file are reconciled; the
+2026-08-21 `departments.api.test.js` cycle-guard regression suite is deleted
+(its entire premise no longer exists) and `employees.api.test.js`/
+`employeesImport.api.test.js`'s manager-specific tests are removed with it.
+The shared test fixture (`testlib/harness.js`) now builds **two** departments
+so cross-department-refusal tests still have an actor genuinely outside the
+main fixture's scope (previously two "subtrees" via `manager_id`, now two
+departments).
+
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
 `audit_event`) · **bilingual auto-fill** (Gemini, above) · **AI auto-assign
@@ -1034,7 +1083,7 @@ service → 403 · hire past the plan's employee cap → 409 · clock-in with
 missing/out-of-range location → 422 · forgot-password on a real vs. fake
 identifier → identical response · expired/reused/unknown reset token → 422 ·
 CSV import: a bad row alongside good ones → good ones created, bad one
-reported, neither blocks the other · unknown department/manager/level name
+reported, neither blocks the other · unknown department/level name
 in a row → that row only fails · import row count over the limit → 422 ·
 hire missing phone/birthdate/gender/workerType → 422 field-keyed, no
 password error · edit clearing a required field (e.g. `gender: null`) → 422.

@@ -8,11 +8,10 @@ const multer = require('multer');
 const pool = require('../db');
 const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
 const { statusOf } = require('../lib/workflowEngine');
-const { subtreeIds } = require('../lib/scope');
+const { subtreeIds, ownerInScope } = require('../lib/scope');
 const { withTx, logAudit } = require('../lib/audit');
 const { allocateEmployeeEmail } = require('../lib/employeeEmail');
 const { PLANS } = require('../lib/onboardingOptions');
-const { reassignDepartmentHead } = require('../lib/departmentHead');
 const { sendMail } = require('../lib/mailer');
 const { csvToObjects } = require('../lib/csv');
 
@@ -66,42 +65,32 @@ function publicEmployee(r) {
     branchName: r.branch_name,
     levelId: r.level_id,
     levelName: r.level_name,
-    managerId: r.manager_id,
   };
 }
 
 // Load an employee by id, joined to its department. Returns null for a
 // missing id, a non-employee user, the actor themselves, OR (Gate 2) an
-// employee outside the acting oversight actor's subtree — all look
-// nonexistent → 404. The admin has no subtree (I2) — they see the whole
-// company, so their "sub" CTE is every user rather than a recursive walk.
+// employee outside the acting oversight actor's department — all look
+// nonexistent → 404. The admin has no department of their own (I2) — they see
+// the whole company.
 async function loadEmployee(id, actor) {
-  if (!Number.isInteger(id)) return null;
-  // path guards against a manager_id cycle in the data — see scope.js.
-  const sub = actor.role === 'admin'
-    ? 'WITH sub AS (SELECT id FROM users)'
-    : `WITH RECURSIVE sub AS (
-         SELECT id, ARRAY[id] AS path FROM users WHERE id = $2
-         UNION ALL
-         SELECT u.id, sub.path || u.id
-         FROM users u JOIN sub ON u.manager_id = sub.id
-         WHERE NOT u.id = ANY(sub.path)
-       )`;
+  if (!Number.isInteger(id) || id === actor.id) return null;
   const { rows } = await pool.query(
-    `${sub}
-     SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
+    `SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
             u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type, u.weekly_rest_day,
             u.department_id, d.name AS department_name, d.branch_id, b.name AS branch_name,
-            u.level_id, l.name AS level_name, u.manager_id
+            u.level_id, l.name AS level_name
      FROM users u
      LEFT JOIN department d ON d.id = u.department_id
      LEFT JOIN branch b ON b.id = d.branch_id
      LEFT JOIN employee_level l ON l.id = u.level_id
-     WHERE u.id = $1 AND u.role = 'employee'
-       AND u.id <> $2 AND u.id IN (SELECT id FROM sub)`,
-    [id, actor.id]
+     WHERE u.id = $1 AND u.role = 'employee'`,
+    [id]
   );
-  return rows[0] || null;
+  const row = rows[0];
+  if (!row) return null;
+  if (actor.role !== 'admin' && !(await ownerInScope(actor.id, id))) return null;
+  return row;
 }
 
 // Single-employee-row creation, shared by POST / (one at a time, the
@@ -116,7 +105,7 @@ async function loadEmployee(id, actor) {
 async function createEmployeeRow(actor, emailDomain, input) {
   const {
     firstName, lastName, email, phone, birthdate, gender, workerType,
-    weeklyRestDay, departmentId, managerId, levelId,
+    weeklyRestDay, departmentId, levelId,
   } = input;
   const errors = {};
   if (!firstName || typeof firstName !== 'string' || !firstName.trim()) errors.firstName = 'First name is required';
@@ -142,12 +131,12 @@ async function createEmployeeRow(actor, emailDomain, input) {
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
       const { rows } = await tx.query(
         `INSERT INTO users (name, first_name, last_name, email, password_hash, role, phone,
-                            birthdate, gender, worker_type, weekly_rest_day, department_id, manager_id, level_id,
+                            birthdate, gender, worker_type, weekly_rest_day, department_id, level_id,
                             login_identifier, company_id)
-         VALUES ($1, $2, $3, $4, $5, 'employee', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         VALUES ($1, $2, $3, $4, $5, 'employee', $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING id, name, email, phone, is_active, department_id`,
         [fullName, firstName.trim(), lastName.trim(), email.toLowerCase(), password_hash, phone.trim(),
-         birthdate, gender, workerType, weeklyRestDay ?? null, departmentId, managerId, levelId,
+         birthdate, gender, workerType, weeklyRestDay ?? null, departmentId, levelId,
          loginIdentifier, actor.company_id]
       );
       await logAudit(tx, actor.id, 'employee.created', 'user', rows[0].id, { email: rows[0].email });
@@ -155,7 +144,7 @@ async function createEmployeeRow(actor, emailDomain, input) {
     });
   } catch (err) {
     if (err.code === '23505') return { errors: { email: 'Email is already registered' } };
-    if (err.code === '23503') return { errors: { departmentId: 'Invalid department, manager, or level' } };
+    if (err.code === '23503') return { errors: { departmentId: 'Invalid department or level' } };
     throw err;
   }
   const created = await loadEmployee(inserted.id, actor);
@@ -207,7 +196,7 @@ router.get('/', async (req, res, next) => {
       `SELECT u.id, u.name, u.first_name, u.last_name, u.email, u.phone,
               u.login_identifier, u.is_active, u.birthdate, u.gender, u.worker_type, u.weekly_rest_day,
               u.department_id, d.name AS department_name, d.branch_id, b.name AS branch_name,
-              u.level_id, l.name AS level_name, u.manager_id,
+              u.level_id, l.name AS level_name,
               (SELECT COUNT(*)::int
                FROM task t
                JOIN request r ON r.id = t.request_id
@@ -270,7 +259,6 @@ router.get('/', async (req, res, next) => {
         branchName: r.branch_name,
         levelId: r.level_id,
         levelName: r.level_name,
-        managerId: r.manager_id,
         openTaskCount: r.open_task_count,
         avgResolutionMinutes: r.avg_resolution_minutes,
       })),
@@ -292,14 +280,10 @@ router.post('/', async (req, res, next) => {
     const b = req.body || {};
     const errors = {};
 
-    // Gate 2: an oversight actor's new hire becomes their direct report
-    // (manager_id = actor), inheriting the actor's department. The admin has
-    // no department/subtree of their own (I2) — they sit outside the tree —
-    // so they must say where the hire goes; an omitted managerId makes the
-    // hire a tree root (I3: "a root employee reaches the whole organisation
-    // by sitting at the top").
+    // Gate 2: an oversight actor's new hire inherits the actor's own
+    // department. The admin has no department of their own (I2) — they
+    // configure the whole org — so they must say where the hire goes.
     let departmentId = req.user.department_id;
-    let managerId = req.user.id;
     // Handing out a level at creation grants real Gate-1 power, so only the
     // admin can do it — an oversight employee handing an arbitrary level
     // (including one stronger than their own) to their own hire would be a
@@ -309,12 +293,6 @@ router.post('/', async (req, res, next) => {
     if (req.user.role === 'admin') {
       if (!Number.isInteger(b.departmentId)) errors.departmentId = 'Department is required';
       departmentId = b.departmentId;
-      if (b.managerId !== undefined && b.managerId !== null) {
-        if (!Number.isInteger(b.managerId)) errors.managerId = 'Invalid manager';
-        managerId = b.managerId;
-      } else {
-        managerId = null;
-      }
       if (b.levelId !== undefined && b.levelId !== null) {
         if (!Number.isInteger(b.levelId)) errors.levelId = 'Invalid level';
         levelId = b.levelId;
@@ -348,7 +326,7 @@ router.post('/', async (req, res, next) => {
     const result = await createEmployeeRow(req.user, co[0].email_domain, {
       firstName: b.firstName, lastName: b.lastName, email: b.email,
       phone: b.phone, birthdate: b.birthdate, gender: b.gender, workerType: b.workerType,
-      weeklyRestDay: b.weeklyRestDay, departmentId, managerId, levelId,
+      weeklyRestDay: b.weeklyRestDay, departmentId, levelId,
     });
     if (result.errors) return res.status(422).json({ errors: result.errors });
     res.status(201).json({ employee: publicEmployee(result.employee), tempPassword: result.password });
@@ -359,13 +337,13 @@ router.post('/', async (req, res, next) => {
 
 // GET /employees/import/template — a starter CSV with the exact columns
 // POST /employees/import expects, one filled-in example row. Not itself
-// gated to admin-only fields: department/manager/level only ever get read
-// for an admin caller (see below), so a non-admin importer just leaves them
-// blank — the template shows the full column set either way for simplicity.
+// gated to admin-only fields: department/level only ever get read for an
+// admin caller (see below), so a non-admin importer just leaves them blank —
+// the template shows the full column set either way for simplicity.
 router.get('/import/template', (req, res) => {
   const csv =
-    'firstName,lastName,email,phone,birthdate,gender,workerType,weeklyRestDay,department,manager,level\n' +
-    'Jane,Doe,jane.doe@example.com,0590000000,1995-03-14,female,full_time,Friday,Field Services,,Staff\n';
+    'firstName,lastName,email,phone,birthdate,gender,workerType,weeklyRestDay,department,level\n' +
+    'Jane,Doe,jane.doe@example.com,0590000000,1995-03-14,female,full_time,Friday,Field Services,Staff\n';
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="employees-template.csv"');
   res.send(csv);
@@ -434,16 +412,14 @@ async function importEmployees(req, res, next) {
       activeCount = countRows[0].n;
     }
 
-    // Department/manager/level columns only mean anything for an admin
-    // caller (same restriction POST / already applies — a non-admin's hire
-    // always lands in their own department, under themselves). Resolved
-    // once here, not per row: a subtree-sized company's department/level
-    // catalogue and employee list are small, and re-querying per CSV row
-    // would be wasteful for a 500-row file.
+    // Department/level columns only mean anything for an admin caller (same
+    // restriction POST / already applies — a non-admin's hire always lands
+    // in their own department). Resolved once here, not per row: a company's
+    // department/level catalogue is small, and re-querying per CSV row would
+    // be wasteful for a 500-row file.
     const isAdmin = req.user.role === 'admin';
     const departmentsByName = new Map();
     const levelsByName = new Map();
-    const employeesByHandle = new Map();
     if (isAdmin) {
       const { rows: depts } = await pool.query('SELECT id, name FROM department');
       for (const d of depts) {
@@ -455,14 +431,6 @@ async function importEmployees(req, res, next) {
         if (l.name.en) levelsByName.set(l.name.en.toLowerCase(), l.id);
         if (l.name.ar) levelsByName.set(l.name.ar.toLowerCase(), l.id);
       }
-      const { rows: emps } = await pool.query(
-        "SELECT id, login_identifier, email FROM users WHERE role = 'employee' AND company_id = $1",
-        [req.user.company_id]
-      );
-      for (const e of emps) {
-        employeesByHandle.set(e.login_identifier.toLowerCase(), e.id);
-        if (e.email) employeesByHandle.set(e.email.toLowerCase(), e.id);
-      }
     }
 
     const created = [];
@@ -473,20 +441,12 @@ async function importEmployees(req, res, next) {
       const rowErrors = {};
 
       let departmentId = req.user.department_id;
-      let managerId = req.user.id;
       let levelId = null;
       if (isAdmin) {
         const deptName = (r.department || '').toLowerCase();
         if (!deptName) rowErrors.department = 'Department is required';
         else if (!departmentsByName.has(deptName)) rowErrors.department = `Department "${r.department}" not found`;
         else departmentId = departmentsByName.get(deptName);
-
-        managerId = null;
-        const managerHandle = (r.manager || '').toLowerCase();
-        if (managerHandle) {
-          if (!employeesByHandle.has(managerHandle)) rowErrors.manager = `Manager "${r.manager}" not found`;
-          else managerId = employeesByHandle.get(managerHandle);
-        }
 
         const levelName = (r.level || '').toLowerCase();
         if (levelName) {
@@ -514,7 +474,7 @@ async function importEmployees(req, res, next) {
         gender: r.gender || null,
         workerType: r.workertype || null,
         weeklyRestDay: parseWeeklyRestDayCell(r.weeklyrestday),
-        departmentId, managerId, levelId,
+        departmentId, levelId,
       });
       if (result.errors) {
         failed.push({ row: rowNum, errors: result.errors });
@@ -523,10 +483,6 @@ async function importEmployees(req, res, next) {
       const emp = publicEmployee(result.employee);
       created.push({ row: rowNum, employee: emp });
       if (activeCount !== null) activeCount++;
-      // A manager referenced before their own row, or a sibling created
-      // earlier in this same file, is now resolvable for later rows too.
-      employeesByHandle.set(emp.loginIdentifier.toLowerCase(), emp.id);
-      if (emp.email) employeesByHandle.set(emp.email.toLowerCase(), emp.id);
     }
 
     res.json({ totalRows: rows.length, createdCount: created.length, failedCount: failed.length, created, failed });
@@ -545,7 +501,7 @@ router.patch('/:id', async (req, res, next) => {
     const emp = await loadEmployee(Number(req.params.id), req.user);
     if (!emp) return res.status(404).json({ error: 'Not found' });
 
-    const { name, phone, birthdate, gender, workerType, departmentId, levelId, weeklyRestDay, managerId } =
+    const { name, phone, birthdate, gender, workerType, departmentId, levelId, weeklyRestDay } =
       req.body || {};
     const errors = {};
     if (name !== undefined && (typeof name !== 'string' || !name.trim())) errors.name = 'Name cannot be empty';
@@ -587,34 +543,6 @@ router.patch('/:id', async (req, res, next) => {
       }
     }
 
-    // Reassigning one person's manager, same Gate-2 sensitivity as
-    // reassignDepartmentHead (admin-only, same cycle risk — see the
-    // 2026-08-21 incident note there). Unlike a department reassignment this
-    // moves exactly one person, not the whole department, so it's checked
-    // against their own subtree rather than departmentHead.js's shared
-    // helper: a cycle here is the new manager currently being this
-    // employee's own descendant.
-    let applyManagerId = false;
-    let resolvedManagerId = null;
-    if (req.user.role === 'admin' && managerId !== undefined) {
-      applyManagerId = true;
-      if (managerId !== null) {
-        if (!Number.isInteger(managerId)) {
-          return res.status(422).json({ errors: { managerId: 'Invalid manager' } });
-        }
-        const { rows: mgrRows } = await pool.query(
-          "SELECT 1 FROM users WHERE id = $1 AND role = 'employee' AND is_active = TRUE",
-          [managerId]
-        );
-        if (!mgrRows.length) return res.status(422).json({ errors: { managerId: 'Invalid or inactive employee' } });
-        const descendants = await subtreeIds(emp.id);
-        if (descendants.includes(managerId)) {
-          return res.status(422).json({ errors: { managerId: 'Would create a reporting cycle' } });
-        }
-        resolvedManagerId = managerId;
-      }
-    }
-
     await withTx(async (tx) => {
       await tx.query(
         `UPDATE users SET
@@ -625,9 +553,8 @@ router.patch('/:id', async (req, res, next) => {
            worker_type = COALESCE($5, worker_type),
            department_id = COALESCE($6, department_id),
            level_id = CASE WHEN $7::boolean THEN $8 ELSE level_id END,
-           weekly_rest_day = CASE WHEN $9::boolean THEN $10 ELSE weekly_rest_day END,
-           manager_id = CASE WHEN $11::boolean THEN $12 ELSE manager_id END
-         WHERE id = $13`,
+           weekly_rest_day = CASE WHEN $9::boolean THEN $10 ELSE weekly_rest_day END
+         WHERE id = $11`,
         [
           name === undefined ? null : name.trim(),
           phone === undefined ? null : phone.trim(),
@@ -639,8 +566,6 @@ router.patch('/:id', async (req, res, next) => {
           resolvedLevelId,
           weeklyRestDay !== undefined,
           weeklyRestDay === undefined ? null : weeklyRestDay,
-          applyManagerId,
-          resolvedManagerId,
           emp.id,
         ]
       );
@@ -653,7 +578,6 @@ router.patch('/:id', async (req, res, next) => {
         ...(departmentId !== undefined ? { departmentId } : {}),
         ...(applyLevelId ? { levelId: resolvedLevelId } : {}),
         ...(weeklyRestDay !== undefined ? { weeklyRestDay } : {}),
-        ...(applyManagerId ? { managerId: resolvedManagerId } : {}),
       });
     });
     res.json({ employee: publicEmployee(await loadEmployee(emp.id, req.user)) });
@@ -681,14 +605,14 @@ router.patch('/:id/activate', async (req, res, next) => {
 // current status is non-final (Section 5). Finality is read from the workflow
 // data, not a hardcoded status key: reassign the open task first.
 //
-// Department-head fallback: if this employee currently heads a department,
-// deactivating them auto-promotes THEIR OWN manager to head (and re-points
-// the department's other members to report to that new head — see
-// lib/departmentHead.js), so oversight of the department never has a gap. If
-// they have no manager of their own, there's no one to fall back to — the
-// deactivation is refused (409) until the Owner reassigns the department's
-// head (or gives this employee a manager) first, same "fix the tree before
-// you leave it broken" spirit as the open-task check above.
+// Department-head guard: if this employee currently heads a department,
+// deactivating them is refused (409) until the Owner reassigns the
+// department's head first (PATCH /:id/head) — same "fix the tree before you
+// leave it broken" spirit as the open-task check above. Re-scoped, user-
+// directed: there's no more manager to auto-promote to head (§6/
+// lib/departmentHead.js) — this used to fall back to the outgoing head's own
+// manager when one existed, and only refuse otherwise; now it always refuses,
+// so the Owner makes the call explicitly every time.
 router.patch('/:id/deactivate', async (req, res, next) => {
   try {
     const emp = await loadEmployee(Number(req.params.id), req.user);
@@ -712,32 +636,12 @@ router.patch('/:id/deactivate', async (req, res, next) => {
 
     const { rows: headOf } = await pool.query('SELECT id FROM department WHERE head_user_id = $1', [emp.id]);
     if (headOf.length) {
-      // The fallback must be an active employee — a null manager_id, or one
-      // pointing at an already-inactive account, both leave nobody who can
-      // actually operate as head (an inactive account can't log in).
-      const { rows: fallback } = emp.manager_id == null
-        ? { rows: [] }
-        : await pool.query(
-            "SELECT id FROM users WHERE id = $1 AND role = 'employee' AND is_active = TRUE",
-            [emp.manager_id]
-          );
-      if (!fallback.length) {
-        return res.status(409).json({
-          error: 'Employee heads a department and has no active manager to fall back to — reassign the department’s head first',
-        });
-      }
+      return res.status(409).json({
+        error: 'Employee heads a department — reassign the department’s head before deactivating',
+      });
     }
 
     await withTx(async (tx) => {
-      if (headOf.length) {
-        for (const dept of headOf) {
-          await reassignDepartmentHead(tx, dept.id, emp.manager_id, { moveIntoDepartment: false });
-          await logAudit(tx, req.user.id, 'department.head_auto_promoted', 'department', dept.id, {
-            firedHeadId: emp.id,
-            newHeadId: emp.manager_id,
-          });
-        }
-      }
       await tx.query('UPDATE users SET is_active = FALSE WHERE id = $1', [emp.id]);
       await logAudit(tx, req.user.id, 'employee.deactivated', 'user', emp.id);
     });

@@ -534,40 +534,62 @@ export default function OnboardingWizard() {
           {step === 6 && (
             <>
               <p className="ob-hint">{t('ob_review_hint')}</p>
-              <dl className="ob-review">
-                <dt>{t('ob_company_name_en')}</dt>
-                <dd>{nameEn} / {nameAr}</dd>
-                <dt>{t('ob_company_address_en')}</dt>
-                <dd>{addressEn} / {addressAr}</dd>
-                <dt>{t('ob_job_title_en')}</dt>
-                <dd>{ownerJobTitleEn} / {ownerJobTitleAr}</dd>
-                <dt>{t('ob_phone')}</dt>
-                <dd>{phone}</dd>
-                <dt>{t('ob_industry')}</dt>
-                <dd>
-                  {L(options.industries.find((i) => i.key === industry)?.label ?? { en: industry, ar: industry })}
-                  {' · '}
-                  {L(subs.find((sub) => sub.key === subIndustry)?.label ?? { en: subIndustry, ar: subIndustry })}
-                </dd>
-                <dt>{t('ob_employee_count')}</dt>
-                <dd>{employeeRange}</dd>
-                <dt>{t('ob_s3_title')}</dt>
-                <dd>{branchNames.map((b) => b.en).join(', ')}</dd>
-                <dt>{t('ob_s4_title')}</dt>
-                <dd>
-                  {options.featureGroups
-                    .flatMap((g) => g.features)
-                    .filter((f) => features.includes(f.key))
-                    .map((f) => L(f.label))
-                    .join(', ')}
-                </dd>
-                <dt>{t('ob_email_domain')}</dt>
-                <dd>{emailDomain}</dd>
-                <dt>{t('ob_logo')}</dt>
-                <dd>{logoFile ? logoFile.name : '—'}</dd>
-                <dt>{t('ob_s7_title')}</dt>
-                <dd>{L(options.plans.find((p) => p.key === plan)?.name ?? { en: plan, ar: plan })}</dd>
-              </dl>
+              <div className="ob-review-tablewrap">
+                <table className="ob-review-table">
+                  <tbody>
+                    <ReviewSection label={t('ob_s1_title')} />
+                    <ReviewRow label={t('ob_company_name_en')} en={nameEn} ar={nameAr} />
+                    <ReviewRow label={t('ob_company_address_en')} en={addressEn} ar={addressAr} />
+                    <ReviewRow label={t('ob_job_title_en')} en={ownerJobTitleEn} ar={ownerJobTitleAr} />
+                    <ReviewRow label={t('ob_phone')} value={phone} />
+
+                    <ReviewSection label={t('ob_s2_title')} />
+                    <ReviewRow
+                      label={t('ob_industry')}
+                      value={
+                        <>
+                          {L(options.industries.find((i) => i.key === industry)?.label ?? { en: industry, ar: industry })}
+                          {' · '}
+                          {L(subs.find((sub) => sub.key === subIndustry)?.label ?? { en: subIndustry, ar: subIndustry })}
+                        </>
+                      }
+                    />
+                    <ReviewRow label={t('ob_employee_count')} value={employeeRange} />
+
+                    <ReviewSection label={t('ob_s3_title')} />
+                    {branchNames.map((b, i) => (
+                      <ReviewRow key={i} label={`${t('ob_review_branch_label')} ${i + 1}`} en={b.en} ar={b.ar} />
+                    ))}
+
+                    <ReviewSection label={t('ob_s5_title')} />
+                    <ReviewRow label={t('ob_logo')} value={logoFile ? logoFile.name : '—'} />
+                    <ReviewRow label={t('ob_email_domain')} value={emailDomain || '—'} />
+
+                    <ReviewSection label={t('ob_review_section_plan')} />
+                    <ReviewRow
+                      label={t('ob_s4_title')}
+                      value={
+                        features.length ? (
+                          <div className="ob-review-chips">
+                            {options.featureGroups
+                              .flatMap((g) => g.features)
+                              .filter((f) => features.includes(f.key))
+                              .map((f) => (
+                                <span key={f.key} className="ob-review-chip">{L(f.label)}</span>
+                              ))}
+                          </div>
+                        ) : (
+                          '—'
+                        )
+                      }
+                    />
+                    <ReviewRow
+                      label={t('set_plan_h')}
+                      value={L(options.plans.find((p) => p.key === plan)?.name ?? { en: plan, ar: plan })}
+                    />
+                  </tbody>
+                </table>
+              </div>
               <p className="ob-hint">{t('ob_review_editable')}</p>
             </>
           )}
@@ -595,5 +617,46 @@ function Field({ label, error, children }: { label: string; error?: string; chil
       {children}
       {error && <span className="ob-field-error">{error}</span>}
     </div>
+  )
+}
+
+// Step 6 (review) — a spanning header row that groups the rows below it.
+function ReviewSection({ label }: { label: string }) {
+  return (
+    <tr className="ob-review-section">
+      <td colSpan={2}>{label}</td>
+    </tr>
+  )
+}
+
+// One field of the review table. Pass `value` for a single value, or
+// `en`/`ar` for a bilingual pair (I5) — shown as English above Arabic (the
+// Arabic line stays RTL regardless of the console's current language) so
+// both halves stay legible instead of running together inline.
+function ReviewRow({
+  label,
+  value,
+  en,
+  ar,
+}: {
+  label: string
+  value?: React.ReactNode
+  en?: string
+  ar?: string
+}) {
+  return (
+    <tr>
+      <td className="ob-review-label">{label}</td>
+      <td className="ob-review-value">
+        {value !== undefined ? (
+          value
+        ) : (
+          <>
+            <span className="ob-review-value-en">{en || '—'}</span>
+            <span className="ob-review-value-ar" dir="rtl">{ar || '—'}</span>
+          </>
+        )}
+      </td>
+    </tr>
   )
 }

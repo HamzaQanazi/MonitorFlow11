@@ -343,10 +343,12 @@ being read-only — see §9 below.
 ## 4. Employees management
 
 - [x] Create an employee (as Rita, a non-admin `manage_employees` holder) —
-      the form correctly omits Manager/Level pickers for a non-admin actor
-      (server-side: `POST /employees` forces `managerId = req.user.id`,
-      `levelId = null` for non-admin callers, a privilege-escalation guard —
-      confirmed by reading `routes/employees.js`, not just observed). The
+      the form correctly omits the Level picker for a non-admin actor
+      (server-side: `POST /employees` forces `levelId = null` for non-admin
+      callers, a privilege-escalation guard, and the hire always inherits the
+      caller's own department — confirmed by reading `routes/employees.js`,
+      not just observed; the Manager picker referenced here no longer exists,
+      2026-09-01 re-scope, CLAUDE.md §13). The
       server generated the login (`ne.hire@adad.ada` for "Newt Hire"), shown
       once in a "won't be shown again" dialog; the client never sent one.
       Verified 2026-08-04. **Not verified**: the colliding-name numbered-

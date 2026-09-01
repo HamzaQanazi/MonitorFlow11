@@ -6,11 +6,13 @@ import './RequestsPage.css'
 import './EmployeesPage.css'
 import './DepartmentsPage.css'
 
-// Departments (Owner-only). Create requires a head + at least one other
-// employee (both get moved into the department, the other members also get
-// manager_id = head — Gate 2). Rename and reassign-head are separate small
-// writes; delete is refused (409) while any employee or service still
-// references the department. See backend/src/routes/departments.js.
+// Departments (Owner-only). Create needs only a name + branch — a head and
+// members are optional and can be added later. Gate 2 scope is flat
+// department membership (re-scoped, user-directed: no more manager tree),
+// so head_user_id is display metadata only. Rename and reassign-head are
+// separate small writes; delete is refused (409) while any employee or
+// service still references the department. See
+// backend/src/routes/departments.js.
 
 interface Department {
   id: number
@@ -179,15 +181,16 @@ export default function DepartmentsPage() {
   )
 }
 
-// Create: bilingual name + one unified employee checklist. Checking someone
-// includes them; a "Head" radio (only one at a time, only among checked
-// rows) replaces the old separate head dropdown — supervisor-directed,
-// 2026-08-21. Submit stays disabled until a head is picked and at least one
-// other employee is checked (server enforces the same rule — this just
-// avoids a round trip for it). If any checked employee already belongs to a
-// different department, a confirmation step lists exactly who's being moved
-// before the write happens — user-directed, same session: this used to
-// silently reassign department_id/manager_id with no warning.
+// Create: bilingual name + branch are the only requirements — a head and
+// employees are optional at creation (re-scoped, user-directed: an Owner can
+// spin up an empty department and staff it later, either manually via
+// Employees or through the CSV import's department column). The employee
+// checklist below stays available for staffing it immediately, with a "Head"
+// radio (only one at a time, only among checked rows) for picking a head
+// alongside them. If any checked employee already belongs to a different
+// department, a confirmation step lists exactly who's being moved before the
+// write happens — user-directed, 2026-08-21: this used to silently reassign
+// department_id/manager_id with no warning.
 function DepartmentForm({
   employees,
   branches,
@@ -229,7 +232,7 @@ function DepartmentForm({
   }
 
   const otherMemberIds = [...includedIds].filter((id) => String(id) !== headId)
-  const canSubmit = nameEn.trim() && nameAr.trim() && branchId && headId && otherMemberIds.length > 0
+  const canSubmit = nameEn.trim() && nameAr.trim() && branchId
   const movedEmployees = employees.filter((emp) => includedIds.has(emp.id) && emp.departmentId != null)
 
   async function doCreate() {
@@ -241,7 +244,7 @@ function DepartmentForm({
         body: {
           name: { en: nameEn, ar: nameAr },
           branchId: Number(branchId),
-          headEmployeeId: Number(headId),
+          headEmployeeId: headId ? Number(headId) : null,
           memberEmployeeIds: otherMemberIds,
         },
       })
@@ -319,6 +322,7 @@ function DepartmentForm({
         </label>
         <div className="field">
           {t('dept_members_label')}
+          <p className="field-hint">{t('dept_members_hint')}</p>
           <div className="dept-member-list">
             {employees.map((emp) => {
               const included = includedIds.has(emp.id)

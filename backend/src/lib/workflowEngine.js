@@ -241,9 +241,16 @@ async function applyTransition(client, {
     } else {
       // assigned_to / assignee_manager both hang off the task's current
       // assignee — re-read, the row may have been written in beforeCommit.
+      // manager_id here is the assignee's DEPARTMENT HEAD (re-scoped,
+      // user-directed — the manager tree is gone, §6/lib/scope.js), null
+      // when the assignee has no department, no head, or is the head
+      // themselves (never escalate to yourself).
       const { rows: a } = await client.query(
-        `SELECT t.employee_id, u.manager_id FROM task t
+        `SELECT t.employee_id,
+                CASE WHEN dept.head_user_id = u.id THEN NULL ELSE dept.head_user_id END AS manager_id
+         FROM task t
          JOIN users u ON u.id = t.employee_id
+         LEFT JOIN department dept ON dept.id = u.department_id
          WHERE t.request_id = $1`,
         [request.id]
       );
@@ -258,8 +265,9 @@ async function applyTransition(client, {
           },
         ];
       } else {
-        // assignee_manager: one step up the tree (§10 gate); a manager-less
-        // assignee falls back to the service owner so the alert never drops.
+        // assignee_manager: the assignee's department head (§10 gate); a
+        // headless/departmentless assignee falls back to the service owner
+        // so the alert never drops.
         // ponytail: the one seeded use is the reject transition, so the type
         // and wording say "rejected" — generalize both when a workflow
         // notifies managers on other transitions.

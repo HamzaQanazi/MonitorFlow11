@@ -37,7 +37,7 @@ openapi: 3.0.3
 #   • transition `notify` lists RELATIONSHIP targets resolved at fire time
 #     (created_by | assigned_to | assignee_manager); notify_oversight is gone.
 #   • statuses carry `sla_minutes` (null = no SLA); a breach escalates to the
-#     assignee's manager (fallback: service owner); the completion-target
+#     assignee's department head (fallback: service owner); the completion-target
 #     status nudges the requester. Service-level escalate_* columns dropped.
 #   • notification `message` is bilingual {en, ar}.
 #
@@ -893,12 +893,11 @@ paths:
     post:
       tags: [people]
       summary: >
-        Create an employee. An oversight employee's hire becomes their direct
-        report (manager_id = caller), inheriting the caller's department; the
-        admin (no department/subtree of their own, I2) must supply
-        departmentId and may supply managerId (omitted → the hire becomes a
-        tree root) and levelId (admin-only — handing out a level grants real
-        Gate-1 power). login_identifier is NOT supplied by the client — the
+        Create an employee. An oversight employee's hire inherits the
+        caller's own department; the admin (no department of their own, I2)
+        must supply departmentId, and may supply levelId (admin-only —
+        handing out a level grants real Gate-1 power). login_identifier is
+        NOT supplied by the client — the
         server generates it as two letters of firstName + '.' + lastName +
         '@' + the company's email_domain (step 5 of onboarding), with a
         numeric suffix on collision (lib/employeeEmail.js). No password field
@@ -923,7 +922,6 @@ paths:
                 workerType: { type: string }
                 weeklyRestDay: { type: integer, nullable: true, minimum: 0, maximum: 6 }
                 departmentId: { type: integer, description: required when the caller is the admin }
-                managerId: { type: integer, nullable: true, description: admin-only; omitted makes the hire a tree root }
                 levelId: { type: integer, nullable: true, description: admin-only }
       responses:
         '201':
@@ -958,10 +956,10 @@ paths:
         (reusing exactly the same rules POST /employees applies), so one bad
         row never blocks the rest of the file. No password column — each row
         gets a random temp password delivered only by the credentials email
-        (§13), never echoed back here. department/manager/level columns
-        (matched by name, case-insensitive) are read only for an admin
-        caller — a non-admin's imported hires all land in their own
-        department, under themselves, same restriction as POST /employees.
+        (§13), never echoed back here. department/level columns (matched by
+        name, case-insensitive) are read only for an admin caller — a
+        non-admin's imported hires all land in their own department, same
+        restriction as POST /employees.
         Limited to 500 rows / 2 MB per file.
       requestBody:
         required: true
@@ -1013,12 +1011,7 @@ paths:
         (cross-department moves need an org-level actor that does not exist
         today). levelId is admin-only — silently ignored for any other
         caller, same as at creation (POST /employees) — and, if given, must
-        reference an existing level; null clears it. managerId is likewise
-        admin-only (2026-08-21 addition — previously an employee's manager
-        could only change via a whole-department head reassignment): must
-        reference an active employee and must not be inside this employee's
-        own subtree (422 — would create a reporting cycle, same check as
-        PATCH /departments/{id}/head); null makes them a tree root.
+        reference an existing level; null clears it.
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
@@ -1034,7 +1027,6 @@ paths:
                 workerType: { type: string }
                 departmentId: { type: integer }
                 levelId: { type: integer, nullable: true, description: admin-only }
-                managerId: { type: integer, nullable: true, description: admin-only; must not create a reporting cycle }
                 weeklyRestDay: { type: integer, nullable: true, minimum: 0, maximum: 6 }
       responses:
         '200':
@@ -1072,13 +1064,10 @@ paths:
       summary: >
         Deactivate an employee. 409 if they still hold a task in a non-terminal
         status (finality read from the workflow data, no status key hardcoded) —
-        reassign it first. If this employee heads a department, their own
-        manager is auto-promoted to head (department.head_user_id) and every
-        other department member's manager_id is re-pointed to the new head, so
-        oversight never has a gap; if they have no active manager to fall back
-        to, deactivation is refused (409) until the Owner reassigns the
-        department's head first (PATCH /departments/{id}/head). A deactivated
-        account's JWT stops working immediately.
+        reassign it first. If this employee heads a department, deactivation
+        is refused (409) until the Owner reassigns the department's head
+        first (PATCH /departments/{id}/head) — there is no automatic
+        fallback. A deactivated account's JWT stops working immediately.
       parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
         '200':
@@ -1092,7 +1081,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': {
-          description: Employee still holds an open task, or heads a department with no active manager to fall back to — reassign first,
+          description: Employee still holds an open task, or heads a department — reassign first,
         }
 
   /employees/{id}/reset-password:
@@ -1189,25 +1178,27 @@ paths:
     post:
       tags: [people]
       summary: >
-        Create a department (admin-only). Requires a head and at least one
-        other employee — both are moved into the new department
-        (department_id); every member other than the head also gets
-        manager_id = head (Gate 2 — this is what gives the head real
-        oversight of them). The head's own manager_id is left untouched.
+        Create a department (admin-only). name and branchId are the only
+        requirements — headEmployeeId and memberEmployeeIds are both
+        optional (re-scoped, user-directed); everyone supplied just gets
+        department_id set to the new department (Gate 2 is flat department
+        membership; head_user_id is display metadata only, not a scope
+        mechanism). An empty department can be staffed later via
+        PATCH /employees/{id}, the CSV import's department column, or
+        PATCH /departments/{id}/head.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, headEmployeeId, memberEmployeeIds, branchId]
+              required: [name, branchId]
               properties:
                 name: { $ref: '#/components/schemas/LocalizedText' }
-                headEmployeeId: { type: integer }
+                headEmployeeId: { type: integer, nullable: true }
                 memberEmployeeIds:
                   type: array
                   items: { type: integer }
-                  minItems: 1
                   description: must not include headEmployeeId
                 branchId: { type: integer, description: must be one of this company's own branches }
       responses:
@@ -1261,11 +1252,12 @@ paths:
     patch:
       tags: [people]
       summary: >
-        Manually reassign a department's head (admin-only) — e.g. after the
-        automatic on-deactivation fallback (PATCH /employees/{id}/deactivate)
-        picked the outgoing head's manager and the Owner wants someone else.
-        Moves the new head into the department and re-points every other
-        current member's manager_id to them.
+        Manually reassign a department's head (admin-only) — e.g. after
+        deactivating the outgoing head (PATCH /employees/{id}/deactivate
+        refuses that until the head is reassigned; there is no automatic
+        fallback). Sets department.head_user_id and moves the new head into
+        the department — purely display metadata (Gate 2 is flat department
+        membership).
       parameters: [ { $ref: '#/components/parameters/id' } ]
       requestBody:
         required: true
@@ -2325,14 +2317,13 @@ components:
       type: object
       description: >
         Three account kinds only — admin | employee | user. There is no "monitor".
-        Oversight is a matter of level + subtree, not a role name.
+        Oversight is a matter of level + department, not a role name.
       properties:
         id: { type: integer }
         kind: { type: string, enum: [admin, employee, user] }
         name: { type: string }
         login_identifier: { type: string }
         level: { $ref: '#/components/schemas/Level' }        # employees only
-        manager_id: { type: integer, nullable: true }        # employees only
         capabilities:
           type: array
           items: { type: string }
@@ -2360,7 +2351,6 @@ components:
         branchName: { $ref: '#/components/schemas/LocalizedText' }
         levelId: { type: integer, nullable: true }
         levelName: { $ref: '#/components/schemas/LocalizedText' }
-        managerId: { type: integer, nullable: true, description: "null = a tree root" }
 
     EmployeeListItem:
       type: object
