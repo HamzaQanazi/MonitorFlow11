@@ -161,39 +161,157 @@
 .rep-trend .chart-seg.is-open { background: var(--state-open); }
 .rep-trend .chart-seg.is-closed { background: var(--state-closed); }
 
-/* Print header is off-screen until the browser prints (Export PDF). */
-.rep-print-head {
+/* Print header (letterhead) and print-only table are off-screen until the
+   browser prints (Export PDF) — see the @media print block below. */
+.rep-print-head,
+.rep-print-table {
   display: none;
 }
 
+.rep-print-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-block-end: 10px;
+}
+
+.rep-print-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.rep-print-company {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.rep-print-head h2 {
+  font-size: 22px;
+  font-weight: 700;
+  margin-block-end: 10px;
+}
+
+.rep-print-meta {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.rep-print-meta > div {
+  display: flex;
+  gap: 6px;
+}
+
+.rep-print-meta dt {
+  color: var(--muted);
+  min-width: 90px;
+}
+
+.rep-print-meta dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.rep-print-note {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+  margin-block-end: 8px;
+}
+
 /* Export PDF = browser Print → Save as PDF. Hide the app chrome, filters,
-   buttons and pager so only the report body (header, cards, pies, table)
-   lands on the page. */
+   buttons, pager, and the on-screen (paginated) table so only a purpose-
+   built report — letterhead, summary cards, trend chart, and the full-set
+   print table — lands on the page. */
 @media print {
-  .shell-bar,
+  * {
+    /* Without this, most browsers drop background colors (status pills,
+       chart bars, chip dots) by default when printing, which is the single
+       biggest reason this used to look like a bare, colorless print-out. */
+    -webkit-print-color-adjust: exact;
+    print-color-scheme: light;
+    color-adjust: exact;
+  }
+
+  @page {
+    size: auto;
+    margin: 14mm 12mm 16mm;
+  }
+
+  /* Chrome/Edge print-to-PDF page-number footer, centered — numeric only
+     (no translated "Page X of Y" text) so it doesn't need an i18n entry. */
+  @page {
+    @bottom-center {
+      content: counter(page) ' / ' counter(pages);
+      font-size: 9px;
+      color: #888;
+    }
+  }
+
+  .shell-sidebar,
+  .shell-topbar,
   .req-filters,
   .rep-actions,
-  .req-pager {
+  .req-pager,
+  .req-tablewrap {
     display: none !important;
   }
-  .rep-print-head {
+
+  .rep-print-head,
+  .rep-print-table {
     display: block;
-    margin-block-end: 16px;
   }
-  .rep-print-head h2 {
-    font-size: 20px;
-    font-weight: 700;
+
+  .rep-print-head {
+    margin-block-end: 20px;
+    padding-block-end: 14px;
+    border-block-end: 2px solid var(--ink);
   }
-  .rep-print-head p {
-    font-size: 12px;
-    color: var(--muted);
-  }
+
   .shell-main {
     padding: 0 !important;
   }
-  /* Keep the trend chart and table rows from splitting awkwardly across pages. */
+
+  .rep-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-block-end: 16px;
+  }
+
+  .rep-card {
+    box-shadow: none;
+    padding: 10px 12px;
+    break-inside: avoid;
+  }
+
+  .rep-trend {
+    margin-block-end: 16px;
+  }
+
+  .rep-print-table h3,
+  .rep-print-table {
+    break-before: auto;
+  }
+
+  /* Keep the trend chart intact and repeat the table header on every page
+     instead of letting either split awkwardly across a page boundary. */
   .rep-trend,
   .req-table tr {
     break-inside: avoid;
+  }
+
+  .rep-print-table .req-table thead {
+    display: table-header-group;
+  }
+
+  .rep-print-table .req-table tbody tr:nth-child(even) {
+    background: #f6f6f6;
+  }
+
+  .rep-print-table .req-table {
+    font-size: 11px;
   }
 }

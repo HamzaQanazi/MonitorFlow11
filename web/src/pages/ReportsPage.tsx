@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch, getToken } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
@@ -71,6 +72,8 @@ export default function ReportsPage() {
   const { t, L } = useI18n()
   const { user } = useAuth()
   const canExport = !!user?.capabilities.includes('export')
+  const companyName = user?.companyName ? L(user.companyName) : t('rep_title')
+  const companyLogo = user?.companyLogo ?? null
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const page = Math.max(1, Number(params.get('page')) || 1)
@@ -194,6 +197,38 @@ export default function ReportsPage() {
     }
   }
 
+  // Printing the on-screen table would only capture whatever 20-row page
+  // happens to be loaded. Instead, fetch the whole matching set (capped at
+  // the API's own pageSize ceiling of 100 — plenty for this project's scale)
+  // into a separate print-only table. flushSync forces that state into the
+  // DOM synchronously before window.print() reads it — an effect watching
+  // "did the rows land yet" would work too, but double-fires under
+  // StrictMode's dev-mode double-invoke, which means the print dialog
+  // popping twice on every click. flushSync has no such gap.
+  const [printRows, setPrintRows] = useState<ReportRow[] | null>(null)
+  const [printTotal, setPrintTotal] = useState(0)
+  const [preparingPrint, setPreparingPrint] = useState(false)
+
+  async function exportPdf() {
+    setPreparingPrint(true)
+    setExportError(null)
+    try {
+      const qs = backendQuery()
+      qs.set('page', '1')
+      qs.set('pageSize', '100')
+      const res = await apiFetch<ReportResponse>(`/reports?${qs.toString()}`)
+      flushSync(() => {
+        setPrintRows(res.requests)
+        setPrintTotal(res.total)
+      })
+      window.print()
+    } catch (err) {
+      setExportError((err as Error).message)
+    } finally {
+      setPreparingPrint(false)
+    }
+  }
+
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
   const agg = data?.aggregates
 
@@ -226,11 +261,11 @@ export default function ReportsPage() {
           <button
             type="button"
             className="req-retry emp-add rep-print-btn"
-            onClick={() => window.print()}
-            disabled={!canExport || !data || data.total === 0}
+            onClick={exportPdf}
+            disabled={!canExport || preparingPrint || !data || data.total === 0}
             title={canExport ? undefined : t('rep_export_no_cap')}
           >
-            {t('rep_export_pdf')}
+            {preparingPrint ? t('rep_print_preparing') : t('rep_export_pdf')}
           </button>
           <button
             type="button"
@@ -249,16 +284,31 @@ export default function ReportsPage() {
         )}
       </header>
 
-      {/* Print-only header — the browser's Print → Save as PDF (feature 8) uses
-          the on-screen charts + summary + table (feature 9). Chrome, filters and
-          buttons are hidden by the @media print rules in ReportsPage.css. */}
+      {/* Print-only header/letterhead — the browser's Print → Save as PDF
+          (feature 8) uses the on-screen summary cards + trend chart, plus the
+          separate full-set print table below (feature 9). Chrome, filters,
+          buttons, and the on-screen (paginated) table are hidden by the
+          @media print rules in ReportsPage.css. */}
       <div className="rep-print-head" aria-hidden="true">
+        <div className="rep-print-brand">
+          {companyLogo && <img src={companyLogo} alt="" className="rep-print-logo" />}
+          <span className="rep-print-company">{companyName}</span>
+        </div>
         <h2>{t('rep_title')}</h2>
-        <p>
-          {t('rep_generated')}: {new Date().toLocaleString()}
-          {' · '}
-          {t('rep_filters_applied')}: {hasFilters ? filterSummary : t('rep_filters_none')}
-        </p>
+        <dl className="rep-print-meta">
+          <div>
+            <dt>{t('rep_generated')}</dt>
+            <dd>{new Date().toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt>{t('rep_generated_by')}</dt>
+            <dd>{user?.name}</dd>
+          </div>
+          <div>
+            <dt>{t('rep_filters_applied')}</dt>
+            <dd>{hasFilters ? filterSummary : t('rep_filters_none')}</dd>
+          </div>
+        </dl>
       </div>
 
       <div className="req-filters">
@@ -552,6 +602,53 @@ export default function ReportsPage() {
                 </nav>
               )}
             </>
+          )}
+
+          {/* Print-only: the full matching set (up to the API's 100-row
+              pageSize ceiling), fetched by exportPdf — the on-screen table
+              above is hidden for print via ReportsPage.css since it only
+              ever holds the current 20-row page. */}
+          {printRows && (
+            <div className="rep-print-table" aria-hidden="true">
+              {printTotal > printRows.length && (
+                <p className="rep-print-note">{t('rep_print_showing').replace('{total}', String(printTotal))}</p>
+              )}
+              <table className="req-table">
+                <thead>
+                  <tr>
+                    <th scope="col" className="req-id">
+                      {t('col_id')}
+                    </th>
+                    <th scope="col">{t('col_service')}</th>
+                    <th scope="col">{t('col_requester')}</th>
+                    <th scope="col">{t('col_status')}</th>
+                    <th scope="col" className="req-priority">
+                      {t('col_priority')}
+                    </th>
+                    <th scope="col" className="req-when">
+                      {t('col_created')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {printRows.map((r) => (
+                    <tr key={r.id}>
+                      <td className="req-id">#{r.id}</td>
+                      <td>{L(r.serviceTypeName)}</td>
+                      <td>{r.requester.name}</td>
+                      <td>
+                        <span className={`status-pill is-${r.status.isTerminal ? 'closed' : 'open'}`}>
+                          <i className="pill-dot" aria-hidden="true" />
+                          {L(r.status.label)}
+                        </span>
+                      </td>
+                      <td className={`req-priority is-${r.priority}`}>{t(`pri_${r.priority}`)}</td>
+                      <td className="req-when">{formatDate(r.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </>
       )}
