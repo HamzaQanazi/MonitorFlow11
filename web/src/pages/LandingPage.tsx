@@ -124,22 +124,20 @@ function WindowChrome({ title, children, className = '' }: { title?: string; chi
   )
 }
 
-// A phone bezel for the two Flutter apps — no real device screenshot exists
-// yet (mobile ships no landing-page assets), so this is a hand-built,
-// realistic approximation of each app's actual screens rather than a
-// decorative stock phone.
-function PhoneFrame({ children, label }: { children: ReactNode; label: string }) {
+// A phone bezel for the two Flutter apps. Pass `src` to show a real
+// screenshot (captured from the actual Flutter web build, cropped to the
+// bezel via object-fit) — falls back to hand-built schematic `children`
+// only where no real capture exists for that screen.
+function PhoneFrame({ children, label, src }: { children?: ReactNode; label: string; src?: string }) {
   return (
     <div className="mock-phone">
       <div className="mock-phone-notch" />
-      <div className="mock-phone-screen">{children}</div>
+      <div className="mock-phone-screen">
+        {src ? <img className="mock-phone-shot" src={src} alt="" /> : children}
+      </div>
       <span className="mock-phone-label">{label}</span>
     </div>
   )
-}
-
-function StatusChip({ tone, children }: { tone: 'open' | 'closed' | 'pending'; children: ReactNode }) {
-  return <span className={`mock-status mock-status-${tone}`}>{children}</span>
 }
 
 export default function LandingPage() {
@@ -201,20 +199,10 @@ export default function LandingPage() {
         {/* alt="" — decorative; the hero copy above already describes the product. */}
         <img className="landing-hero-shot" src="/screenshots/dashboard.jpg" alt="" />
         <div className="landing-hero-phone landing-hero-phone-a">
-          <PhoneFrame label={t('landing_hero_mock_user_app')}>
-            <div className="mock-app-header">{t('landing_svc_generator')}</div>
-            <StatusChip tone="open">{t('landing_flow_step_assigned')}</StatusChip>
-            <div className="mock-list-row" />
-            <div className="mock-list-row mock-list-row-short" />
-          </PhoneFrame>
+          <PhoneFrame label={t('landing_hero_mock_user_app')} src="/screenshots/mobile-user-home.jpg" />
         </div>
         <div className="landing-hero-phone landing-hero-phone-b">
-          <PhoneFrame label={t('landing_hero_mock_employee_app')}>
-            <div className="mock-app-header">{t('landing_svc_electrical')}</div>
-            <StatusChip tone="pending">{t('landing_flow_step_started')}</StatusChip>
-            <div className="mock-list-row" />
-            <div className="mock-list-row mock-list-row-short" />
-          </PhoneFrame>
+          <PhoneFrame label={t('landing_hero_mock_employee_app')} src="/screenshots/mobile-employee-tasks.jpg" />
         </div>
       </Reveal>
 
@@ -431,23 +419,7 @@ export default function LandingPage() {
         </div>
         <div className="mobile-showcase">
           <div className="mobile-showcase-item">
-            <PhoneFrame label={t('landing_mobile_user_title')}>
-              <div className="mock-app-title">{t('landing_mobile_user_title')}</div>
-              <div className="mock-list">
-                <div className="mock-list-item">
-                  <span>{t('landing_svc_generator')}</span>
-                  <StatusChip tone="open">{t('landing_flow_step_assigned')}</StatusChip>
-                </div>
-                <div className="mock-list-item">
-                  <span>{t('landing_svc_electrical')}</span>
-                  <StatusChip tone="pending">{t('landing_flow_step_started')}</StatusChip>
-                </div>
-                <div className="mock-list-item">
-                  <span>{t('landing_svc_warehouse_pickup')}</span>
-                  <StatusChip tone="closed">{t('landing_flow_step_completed')}</StatusChip>
-                </div>
-              </div>
-            </PhoneFrame>
+            <PhoneFrame label={t('landing_mobile_user_title')} src="/screenshots/mobile-user-home.jpg" />
             <ul className="mobile-points">
               <li>{t('landing_mobile_user_point1')}</li>
               <li>{t('landing_mobile_user_point2')}</li>
@@ -455,19 +427,7 @@ export default function LandingPage() {
             </ul>
           </div>
           <div className="mobile-showcase-item">
-            <PhoneFrame label={t('landing_mobile_emp_title')}>
-              <div className="mock-app-title">{t('landing_mobile_emp_title')}</div>
-              <div className="mock-list">
-                <div className="mock-list-item">
-                  <span>{t('landing_svc_generator')}</span>
-                  <span className="mock-list-meta">{t('landing_dept_facilities')}</span>
-                </div>
-                <div className="mock-list-item">
-                  <span>{t('landing_svc_warehouse_pickup')}</span>
-                  <span className="mock-list-meta">Farah Nasser</span>
-                </div>
-              </div>
-            </PhoneFrame>
+            <PhoneFrame label={t('landing_mobile_emp_title')} src="/screenshots/mobile-employee-tasks.jpg" />
             <ul className="mobile-points">
               <li>{t('landing_mobile_emp_point1')}</li>
               <li>{t('landing_mobile_emp_point2')}</li>

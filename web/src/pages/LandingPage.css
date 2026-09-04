@@ -237,6 +237,11 @@
   border-radius: 24px;
 }
 
+.landing-hero-phone .mock-phone-screen {
+  height: 220px;
+  border-radius: 14px;
+}
+
 .landing-hero-phone-a {
   inset-inline-start: -3%;
   bottom: -40px;
@@ -466,30 +471,6 @@
   padding: 14px;
 }
 
-.mock-status {
-  display: inline-flex;
-  width: fit-content;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.mock-status-open {
-  background: var(--state-open-bg);
-  color: var(--state-open-ink);
-}
-
-.mock-status-closed {
-  background: var(--state-closed-bg);
-  color: var(--state-closed-ink);
-}
-
-.mock-status-pending {
-  background: oklch(0.66 0.15 57 / 0.16);
-  color: var(--amber-700);
-}
-
 .mock-phone {
   width: 220px;
   border: 8px solid var(--ink);
@@ -512,6 +493,19 @@
   display: grid;
   gap: 8px;
   min-height: 190px;
+  height: 300px;
+  overflow: hidden;
+  border-radius: 18px;
+  position: relative;
+}
+
+.mock-phone-shot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
 }
 
 .mock-phone-label {
@@ -521,48 +515,6 @@
   font-size: 12px;
   color: var(--muted);
   font-weight: 650;
-}
-
-.mock-app-header {
-  font-weight: 650;
-  font-size: 13px;
-}
-
-.mock-app-title {
-  font-weight: 700;
-  font-size: 15px;
-  margin-block-end: 4px;
-}
-
-.mock-list {
-  display: grid;
-  gap: 8px;
-}
-
-.mock-list-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 12px;
-}
-
-.mock-list-meta {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.mock-list-row {
-  height: 10px;
-  border-radius: 4px;
-  background: var(--border);
-}
-
-.mock-list-row-short {
-  width: 60%;
 }
 
 .mock-input {
