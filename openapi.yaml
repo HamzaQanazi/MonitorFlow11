@@ -242,13 +242,6 @@ paths:
                       properties:
                         key: { type: string }
                         label: { $ref: '#/components/schemas/LocalizedText' }
-                        subs:
-                          type: array
-                          items:
-                            type: object
-                            properties:
-                              key: { type: string }
-                              label: { $ref: '#/components/schemas/LocalizedText' }
                   featureGroups:
                     type: array
                     items:
@@ -266,18 +259,17 @@ paths:
                   plans:
                     type: array
                     description: >
-                      Step-7 plan tiers. Descriptive only for now — employeeCap
-                      and featureGroups are not enforced server-side (no billing,
-                      no gating; see CLAUDE.md §13).
+                      Step-7 plan tiers. Plans differ only by employeeCap, which
+                      IS enforced server-side on hire (POST /employees, 409 past
+                      cap; see CLAUDE.md §9). Plans never gate feature modules —
+                      that used to be implied by a descriptive, never-enforced
+                      per-plan featureGroups list, dropped 2026-09-03 (§13).
                     items:
                       type: object
                       properties:
                         key: { type: string }
                         name: { $ref: '#/components/schemas/LocalizedText' }
                         employeeCap: { type: integer, nullable: true, description: null = unlimited }
-                        featureGroups:
-                          type: array
-                          items: { type: string, description: a featureGroups key }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /onboarding/geocode:
@@ -350,15 +342,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, address, ownerJobTitle, phone, employeeRange, industry, subIndustry, emailDomain, plan, features, branches]
+              required: [name, address, phone, employeeRange, industry, emailDomain, plan, features, branches]
               properties:
                 name: { $ref: '#/components/schemas/LocalizedText' }
                 address: { $ref: '#/components/schemas/LocalizedText' }
-                ownerJobTitle: { $ref: '#/components/schemas/LocalizedText' }
                 phone: { type: string }
                 employeeRange: { type: string }
                 industry: { type: string }
-                subIndustry: { type: string }
                 emailDomain: { type: string, description: affects logins generated from now on; existing rows keep theirs }
                 plan: { type: string }
                 features:
@@ -410,14 +400,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, address, ownerJobTitle, employeeRange, industry, subIndustry, branches, phone, plan, emailDomain]
+              required: [name, address, employeeRange, industry, branches, phone, plan, emailDomain]
               properties:
                 name: { $ref: '#/components/schemas/LocalizedText' }
                 address: { $ref: '#/components/schemas/LocalizedText' }
-                ownerJobTitle: { $ref: '#/components/schemas/LocalizedText' }
                 employeeRange: { type: string, description: one of options.employeeRanges }
                 industry: { type: string, description: an industry key }
-                subIndustry: { type: string, description: a sub-industry key of the chosen industry }
                 branches:
                   type: array
                   minItems: 1

@@ -6,6 +6,19 @@
 // manage_events/manage_knowledge_base (Levels & Capabilities live editor) let
 // a level author just that module without also holding view_all's
 // operational oversight — see routes/events.js et al.
+// view_all_company (added 2026-09-04, user-directed): the one capability that
+// widens Gate 2 (scope) itself rather than gating an action within it. Every
+// other capability here is a Gate-1 grant, orthogonal to scope — an employee
+// with all of them still only reaches their own department (flat scope,
+// scope.js). This one is different: a level holding it makes its employees'
+// scope the whole company, the same "operational, not admin" reach a General
+// Manager needs — someone who works requests/tasks like any employee (unlike
+// the Owner, who holds no capabilities and doesn't operate the queue, I2) but
+// needs company-wide reach, not just their own department's. Orthogonal to
+// view_all like any other pair of capabilities: it widens WHERE an employee's
+// authority reaches, view_all widens WHAT they can see once there — hold only
+// this one and Gate 1 still limits you to your own resources across a huge
+// scope; hold both for real oversight of the whole company.
 const CAPABILITIES = [
   'view_all',
   'assign',
@@ -15,6 +28,7 @@ const CAPABILITIES = [
   'export',
   'manage_events',
   'manage_knowledge_base',
+  'view_all_company',
 ];
 
 // The capability set an employee holds through their level. Non-employees, and

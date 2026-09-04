@@ -4,7 +4,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  setup, stopServer, api, loginAll, fixtures, submitRequest, query,
+  setup, stopServer, api, login, loginAll, fixtures, submitRequest, query,
 } = require('../testlib/harness');
 
 let tokens;
@@ -105,6 +105,63 @@ test('weeklyRestDay: invalid value rejected on create, valid value round-trips, 
   });
   assert.equal(cleared.status, 200, JSON.stringify(cleared.body));
   assert.equal(cleared.body.employee.weeklyRestDay, null);
+});
+
+test('view_all_company: a level holding it reaches employees outside its own department', async () => {
+  // Gate 2 is normally flat department scope (scope.js) — root's requests
+  // elsewhere in this suite prove root can't reach head2's department.
+  // view_all_company is the one capability that widens Gate 2 itself: a
+  // level holding it gets the whole company as scope. Built explicitly here
+  // (not via the shared Manager level, which deliberately excludes it —
+  // testlib/harness.js) so this is a real, isolated proof, not an accidental
+  // side effect of another level's grants. Looks up head2's department_id
+  // directly rather than depending on head2 itself, since an earlier test in
+  // this file deactivates head2.
+  const { rows: dept } = await query('SELECT department_id FROM users WHERE id = $1', [fixtures.employeeIds.head2]);
+  const otherDepartmentId = dept[0].department_id;
+
+  const level = await api('POST', '/employee-levels', {
+    token: tokens.admin,
+    body: { name: { en: 'General Manager Test', ar: 'مدير عام (اختبار)' } },
+  });
+  assert.equal(level.status, 201, JSON.stringify(level.body));
+
+  const granted = await api('PATCH', `/employee-levels/${level.body.level.id}`, {
+    token: tokens.admin,
+    body: { capabilities: ['manage_employees', 'view_all_company'] },
+  });
+  assert.equal(granted.status, 200, JSON.stringify(granted.body));
+
+  const REQUIRED_EXTRAS = { phone: '0590000000', birthdate: '1995-01-01', gender: 'female', workerType: 'full_time' };
+  const gm = await api('POST', '/employees', {
+    token: tokens.admin,
+    body: {
+      firstName: 'General', lastName: 'Manager', email: 'general.manager@fixture.test',
+      departmentId: fixtures.departmentId, levelId: level.body.level.id, ...REQUIRED_EXTRAS,
+    },
+  });
+  assert.equal(gm.status, 201, JSON.stringify(gm.body));
+  const gmToken = await login(gm.body.employee.loginIdentifier, gm.body.tempPassword);
+
+  // A fresh stranger in the other department — self-contained, doesn't lean
+  // on head2 (deactivated earlier in this file) still being reachable.
+  const stranger = await api('POST', '/employees', {
+    token: tokens.admin,
+    body: {
+      firstName: 'Other', lastName: 'Dept', email: 'other.dept@fixture.test',
+      departmentId: otherDepartmentId, ...REQUIRED_EXTRAS,
+    },
+  });
+  assert.equal(stranger.status, 201, JSON.stringify(stranger.body));
+
+  // Without view_all_company: root's own department doesn't include the
+  // stranger's — the pre-existing flat-scope rule, unchanged.
+  const refused = await api('GET', `/employees/${stranger.body.employee.id}/tasks`, { token: tokens.root });
+  assert.equal(refused.status, 404);
+
+  // With it: the General Manager reaches across the whole company.
+  const allowed = await api('GET', `/employees/${stranger.body.employee.id}/tasks`, { token: gmToken });
+  assert.equal(allowed.status, 200, JSON.stringify(allowed.body));
 });
 
 test('phone/birthdate/gender/workerType are required; the server always generates the password', async () => {

@@ -708,6 +708,8 @@ const dict: Record<string, Loc> = {
   lvl_name_en: { en: 'Name (English)', ar: 'الاسم (إنجليزي)' },
   lvl_name_ar: { en: 'Name (Arabic)', ar: 'الاسم (عربي)' },
   lvl_grants: { en: 'Capabilities', ar: 'الصلاحيات' },
+  lvl_select_all: { en: 'Select all', ar: 'تحديد الكل' },
+  lvl_clear_all: { en: 'Clear all', ar: 'إلغاء تحديد الكل' },
   lvl_delete: { en: 'Delete', ar: 'حذف' },
   lvl_delete_q: { en: 'Delete this level?', ar: 'حذف هذا المستوى؟' },
   lvl_delete_warn: {
@@ -717,12 +719,12 @@ const dict: Record<string, Loc> = {
   lvl_toggle_grant_h: { en: 'Grant', ar: 'منح' },
   lvl_toggle_revoke_h: { en: 'Revoke', ar: 'سحب' },
   lvl_toggle_grant_p: {
-    en: 'This grants a real permission to everyone holding {level} — {count} employee(s) — effective immediately.',
-    ar: 'سيمنح هذا صلاحية حقيقية لكل من يحمل مستوى {level} — {count} موظف(ين) — فورًا.',
+    en: 'This grants real permission(s) to everyone holding {level} — {count} employee(s) — effective immediately.',
+    ar: 'سيمنح هذا صلاحية (أو صلاحيات) حقيقية لكل من يحمل مستوى {level} — {count} موظف(ين) — فورًا.',
   },
   lvl_toggle_revoke_p: {
-    en: 'This removes a permission from everyone holding {level} — {count} employee(s) — effective immediately.',
-    ar: 'سيسحب هذا صلاحية من كل من يحمل مستوى {level} — {count} موظف(ين) — فورًا.',
+    en: 'This removes permission(s) from everyone holding {level} — {count} employee(s) — effective immediately.',
+    ar: 'سيسحب هذا صلاحية (أو صلاحيات) من كل من يحمل مستوى {level} — {count} موظف(ين) — فورًا.',
   },
   lvl_toggle_grant_btn: { en: 'Grant it', ar: 'منح الصلاحية' },
   lvl_toggle_revoke_btn: { en: 'Revoke it', ar: 'سحب الصلاحية' },
@@ -912,14 +914,11 @@ const dict: Record<string, Loc> = {
   ob_company_name_ar: { en: 'Company name (Arabic)', ar: 'اسم الشركة (بالعربية)' },
   ob_company_address_en: { en: 'Company address (English)', ar: 'عنوان الشركة (بالإنجليزية)' },
   ob_company_address_ar: { en: 'Company address (Arabic)', ar: 'عنوان الشركة (بالعربية)' },
-  ob_job_title_en: { en: 'Your job title (English)', ar: 'مسمّاك الوظيفي (بالإنجليزية)' },
-  ob_job_title_ar: { en: 'Your job title (Arabic)', ar: 'مسمّاك الوظيفي (بالعربية)' },
   ob_phone: { en: 'Phone number', ar: 'رقم الهاتف' },
 
   ob_s2_title: { en: 'Company details', ar: 'تفاصيل الشركة' },
   ob_employee_count: { en: 'Number of employees', ar: 'عدد الموظفين' },
   ob_industry: { en: 'Business industry', ar: 'مجال العمل' },
-  ob_sub_industry: { en: 'Sub-industry', ar: 'التخصّص' },
 
   ob_s3_title: { en: 'Branches', ar: 'الفروع' },
   ob_branch_count: { en: 'How many branches?', ar: 'كم عدد الفروع؟' },
@@ -931,6 +930,8 @@ const dict: Record<string, Loc> = {
     en: 'Choose the features you want to use. You can change these later.',
     ar: 'اختر الميزات التي تريد استخدامها. يمكنك تغييرها لاحقًا.',
   },
+  ob_select_all_features: { en: 'Select all', ar: 'تحديد الكل' },
+  ob_clear_all_features: { en: 'Clear all', ar: 'إلغاء تحديد الكل' },
 
   ob_s5_title: { en: 'Branding', ar: 'الهوية' },
   ob_logo: { en: 'Company logo (optional)', ar: 'شعار الشركة (اختياري)' },
@@ -949,7 +950,6 @@ const dict: Record<string, Loc> = {
   ob_plan_up_to: { en: 'Up to', ar: 'حتى' },
   ob_plan_employees: { en: 'employees', ar: 'موظف' },
   ob_plan_unlimited: { en: 'Unlimited employees', ar: 'عدد غير محدود من الموظفين' },
-  ob_plan_includes: { en: 'Includes', ar: 'يشمل' },
   ob_plan_size_warning: {
     en: 'This may not fit your team size — consider a larger plan.',
     ar: 'قد لا تناسب هذه الخطة حجم فريقك — فكّر في خطة أكبر.',
@@ -1148,7 +1148,6 @@ const dict: Record<string, Loc> = {
   landing_plan_starter: { en: 'Starter', ar: 'أساسي' },
   landing_plan_growth: { en: 'Growth', ar: 'نمو' },
   landing_plan_enterprise: { en: 'Enterprise', ar: 'مؤسسات' },
-  landing_group_hr_skills: { en: 'HR & Skills', ar: 'الموارد البشرية والمهارات' },
 }
 
 type Ctx = {

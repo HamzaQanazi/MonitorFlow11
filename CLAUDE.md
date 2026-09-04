@@ -40,7 +40,7 @@ backend and one database. **One deployment = one company** (§13).
 **How a company comes online (v7):** the buyer is **provisioned an Owner account
 at purchase** (seed/CLI — no self-registration for the Owner). On first login the
 Owner runs the **"Customize your app in 1 minute" onboarding wizard** (§9): company
-info, industry + sub-industry, branches, the **feature modules** they want, branding,
+info, industry, branches, the **feature modules** they want, branding,
 contact. That fills the one `company` row and flips `onboarding_completed`; from
 then on the console is live and staff are added through the employee flow.
 
@@ -102,7 +102,8 @@ capabilities**. Never write `role === 'monitor'`, `isManager(user)`, or a
 ```
 GATE 1 (actions)  Does the actor's LEVEL grant the required capability?
                   → level_capability table (lib/capabilities.js, requireCapability)
-GATE 2 (scope)    Is the target inside the actor's DEPARTMENT?
+GATE 2 (scope)    Is the target inside the actor's DEPARTMENT (or, holding
+                  view_all_company, inside the whole company)?
                   → flat department_id match (lib/scope.js, ownerInScope)
 ```
 Both gates, on every guarded action, on the server. A client showing a button is
@@ -115,6 +116,20 @@ own department's members (self included), full stop — no root employee, no
 but the admin (who has no department and sees the whole company by construction,
 I2). `department.head_user_id` is display metadata, not a scope mechanism: every
 `view_all` holder in a department has equal Gate-2 reach over it, head or not.
+**One deliberate, capability-driven exception (added 2026-09-04, user-
+directed): `view_all_company`.** A level holding it makes its employees'
+Gate-2 scope the whole company instead of their own department — an
+*operational* path to company-wide reach (a General Manager who still works
+requests/tasks like any employee) distinct from the admin's role-based one
+(who holds no capabilities and doesn't operate the queue, I2). It's a real
+Gate-1 grant like any other in `lib/capabilities.js` — never a hardcoded
+role check — and it's orthogonal to every other capability the same way
+Gate 1 and Gate 2 are orthogonal to each other: `view_all_company` decides
+**where** an employee's authority reaches, `view_all` decides **what** they
+can see once there. Holding only `view_all_company` still leaves Gate 1
+limiting an employee to their own resources, just across a much bigger
+scope; the two are typically granted together for real company-wide
+oversight. See `lib/scope.js`.
 
 ### I4. Clients are THIN RENDERERS.
 Frontends never hardcode a field name, a status key, or a role.
@@ -297,16 +312,20 @@ resolved by the two gates (I3):
 
 - **Gate 1 — capability.** The fixed catalogue (`lib/capabilities.js`):
   `view_all · assign · set_priority · override · manage_employees · export ·
-  manage_events · manage_knowledge_base`. The last two let a
-  level author just one workforce feature module (§11) without also holding
-  `view_all`'s general oversight. A `employee_level` grants a subset via
-  `level_capability`. An "oversight" employee is one whose level grants
-  `view_all`.
+  manage_events · manage_knowledge_base · view_all_company`. `manage_events`/
+  `manage_knowledge_base` let a level author just one workforce feature
+  module (§11) without also holding `view_all`'s general oversight. A
+  `employee_level` grants a subset via `level_capability`. An "oversight"
+  employee is one whose level grants `view_all`. `view_all_company` (added
+  2026-09-04, user-directed) is a different kind of grant — it widens Gate 2
+  itself rather than gating an action within it; see below.
 - **Gate 2 — department scope.** Flat `department_id` match (`lib/scope.js`
   `subtreeIds` / `ownerInScope`) yields self + every co-member of the actor's
-  own department (no manager tree — re-scoped, user-directed). Request
-  visibility for an employee = requests whose **service `owner_id` is in the
-  actor's department**. Assignment candidates = same-department employees only.
+  own department (no manager tree — re-scoped, user-directed) — **or every
+  user in the company, if the actor's level grants `view_all_company`**, the
+  one operational (non-admin) path to company-wide reach. Request visibility
+  for an employee = requests whose **service `owner_id` is in the actor's
+  scope**. Assignment candidates = employees within that same scope.
 
 **Ownership + 404-over-403:** "own only" resources (`request.user_id ==
 me`, `task.employee_id == me`) require an ownership check on top of the gates. A
@@ -380,20 +399,27 @@ metric, just three of them instead of one.
 
 Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
 
-- **company** (v7) — id, name, address, owner_job_title (JSONB `{en,ar}`,
-  **both required** — the Owner types both halves in the wizard; unlike other
-  owner-entered tenant data, these three are shown to every console/mobile user
-  via the wordmark or future pickers regardless of *their* language, so I5's
-  rule applies here the same as a system label), employee_range, industry,
-  sub_industry, plan, email_domain (plain TEXT — genuinely Owner-only tenant
+- **company** (v7) — id, name, address (JSONB `{en,ar}`, **both required** —
+  the Owner types both halves in the wizard; `name` is shown to every
+  console/mobile user via the wordmark regardless of *their* language, so I5's
+  rule applies the same as a system label — `address` isn't rendered anywhere
+  yet but gets the same treatment since it's owner-entered tenant data of the
+  same shape), employee_range, industry
+  (sub_industry dropped `033_drop_sub_industry.sql`, user-directed,
+  2026-09-03 — pure classification data collected alongside industry that
+  nothing ever read; see §9), plan, email_domain (plain TEXT — genuinely Owner-only tenant
   data nobody else's UI renders; plan is step 7, its `employeeCap`
   server-enforced on hire — see §9; email_domain is step 5, the domain suffix
   generated employee login emails use — see §4), features
   (`TEXT[]` of selected feature keys), logo_file_id (FK → file_attachment, nullable),
   phone, **onboarding_completed**
-  (bool, default false — the first-login gate), created_at. name/address/
-  owner_job_title stay nullable (the row exists pre-onboarding with no values
-  yet); the bilingual CHECK passes NULL through unchanged. At most one row per
+  (bool, default false — the first-login gate), created_at. name/address
+  stay nullable (the row exists pre-onboarding with no values
+  yet); the bilingual CHECK passes NULL through unchanged. (owner_job_title —
+  same shape, same nullable-pre-onboarding treatment — dropped
+  `034_drop_owner_job_title.sql`, user-directed, 2026-09-03: required
+  bilingual data with no display use anywhere in the app; see §13.) At most
+  one row per
   deployment (single-org, §13); a table not a singleton so branches/features get
   clean FKs and can grow to multi-tenant later.
 - **branch** (v7) — id, company_id (FK, cascade), name (JSONB `{en,ar}`, same
@@ -639,10 +665,12 @@ configures, has no department, holds no capabilities.
   see below). Step 2's employee-range answer is only a size hint here — step 7
   shows a non-blocking warning if a plan's cap looks too small for it, but
   doesn't stop the Owner picking it anyway; the plan's own cap is the one real
-  gate. Each plan's **feature-group access is still record-only** — descriptive
-  text on the card, not server-enforced, same status as the step-4 feature
-  selections (the modules and any real gating there are a future increment). No
-  pricing, checkout, or billing of any kind — that stays on the "deliberately
+  gate. **Plans differ ONLY by employeeCap** (re-scoped 2026-09-03, user-
+  directed — a plan used to also show a per-plan "includes: Operations,
+  Communication" feature-group list, record-only and never server-enforced,
+  which implied a restriction that didn't exist; see §13). Step-4 feature
+  selection is separate and unrestricted by plan — every plan can pick every
+  module. No pricing, checkout, or billing of any kind — that stays on the "deliberately
   NOT built" list (§13), which is why hitting the cap points the Owner to
   support rather than an in-app upgrade action.
 
@@ -1041,6 +1069,109 @@ so cross-department-refusal tests still have an actor genuinely outside the
 main fixture's scope (previously two "subtrees" via `manager_id`, now two
 departments).
 
+**Re-scoped 2026-09-03 (deliberate, user-directed): dropped `sub_industry`
+from onboarding.** Step 2 collected an industry + a sub-industry, both pure
+classification data (I1 — neither ever branches behaviour, same as a country
+dropdown); the sub-industry half had a UX gap the industry field doesn't
+(no bilingual auto-fill helper works on a fixed picklist the way the address
+field's geocode/TranslateButton helpers do) and, once checked, nothing in
+the codebase ever *read* it beyond storing and displaying it back in
+Settings — pure collection with no payoff. Dropped: the `sub_industry`
+column (`033_drop_sub_industry.sql`), `INDUSTRIES[].subs` and
+`SUBS_BY_INDUSTRY` from `lib/onboardingOptions.js`, the field + its
+validation from both `PATCH /company/onboarding` and `PATCH /company`, the
+wizard's step-2 field and review-step row, Settings' matching field, and the
+`ob_sub_industry` i18n key. `industry` itself is untouched — still a flat,
+un-cut picklist (I1 means every industry gets the identical engine, so
+there's no such thing as an "unsupported" industry to cut). `openapi.yaml`
+and this file are reconciled.
+
+**Re-scoped 2026-09-03, same session (deliberate, user-directed): dropped the
+`hr_skills` feature group and its sole feature, `time_off`, from the
+onboarding/Settings feature catalogue.** Not a scope trim like the ones
+above — a real bug find: `time_off` was never actually gated by anything.
+Time Off has always been "a normal service type through the request engine
+(I1), not one of the [gated] modules — always offered" (§11, and verbatim
+in `mobile/lib/employee/employee_home.dart`'s drawer-item comment) — no
+backend route, web page, or mobile screen ever checked
+`company.features.includes('time_off')`. So the step-4 checkbox controlled
+nothing; checking or unchecking it had zero effect on what staff saw. Since
+`time_off` was the only feature in `hr_skills`, the group is dropped
+entirely rather than left empty, along with `hr_skills` from the Enterprise
+plan's descriptive `featureGroups` card and its mirror on the public
+`/welcome` landing page (`LandingPage.tsx`, which hand-copies
+`onboardingOptions.js`'s PLANS/FEATURE_GROUPS since that page is pre-auth
+and can't fetch `/onboarding/options`). The mobile Time Off screen itself
+(`time_off_screen.dart`) and the `service_type.feature_key` tagging
+mechanism it filters on (`020_service_feature_key.sql`) are untouched —
+those are a different, unrelated concept from the onboarding wizard's
+`company.features` array, and Time Off staying always-offered regardless of
+selection is unchanged, deliberate product behavior, not something this
+re-scope touches.
+
+**Re-scoped 2026-09-03, same session (deliberate, user-directed): plans no
+longer show a per-plan feature-group list.** `PLANS[].featureGroups` — a
+record-only, never-server-enforced "includes: Operations, Communication"
+line on each plan card — implied plans gated which feature modules a
+company could pick; they never actually did (§9's own text already said
+so, the UI just didn't match it). Dropped `featureGroups` from
+`lib/onboardingOptions.js`'s `PLANS` entries, the wizard's plan-card
+"Includes: …" line and its now-unused `.ob-plan-includes` CSS, the public
+`/welcome` landing page's mirrored plan cards and `.landing-plan-includes`
+CSS, the `ob_plan_includes` i18n key, and the `featureGroups` property from
+`openapi.yaml`'s plan schema (its description corrected at the same time:
+`employeeCap` **is** server-enforced, unlike the removed field). Plans now
+differ by `employeeCap` only; step-4 feature selection is unaffected by
+which plan is picked.
+
+**Re-scoped 2026-09-03, same session (deliberate, user-directed): dropped
+`owner_job_title` from onboarding/Settings.** A fourth required bilingual
+field pair on step 1, alongside name/address/phone. Same shape as the
+`sub_industry` and Time Off cuts above: required, round-tripped into
+Settings' edit form, and never actually displayed anywhere else in the
+app — not the wordmark (only `name`/the logo ride the `/auth/me` payload),
+not mobile, no directory-style screen. Its own stated rationale ("shown via
+the wordmark or future pickers") no longer holds: the most likely "future
+picker" was the Directory module, itself removed 2026-08-21 (§13). Dropped:
+the `owner_job_title` column (`034_drop_owner_job_title.sql`), the field +
+its `TranslateButton` from step 1 of the wizard and from Settings, its
+review-step row, and — since step 1 is now down to two bilingual pairs
+(name, address) — the step's `TranslateAllButton` too, matching the
+existing "two-field forms don't need it" rule this file already states for
+Knowledge Base/Events/Levels/Departments. `openapi.yaml` and this file are
+reconciled.
+
+**Added 2026-09-04 (deliberate, user-directed): `view_all_company`, an
+operational path to company-wide Gate-2 scope.** Prompted by a direct
+question about whether a "root employee who sees everything" could be
+added back — flagged first, since that's exactly what the manager-tree
+removal above deliberately eliminated ("no root employee... except the
+admin"). The actual need turned out to be narrower and legitimate: an
+operational account (a General Manager who still works requests/tasks,
+unlike the Owner, who holds no capabilities and doesn't operate the queue,
+I2) that needs company-wide reach rather than just its own department's.
+Built as a capability, not a role or a resurrected tree — `view_all_company`
+joins the fixed catalogue (`lib/capabilities.js`, `035_view_all_company_
+capability.sql` for already-provisioned databases) and is checked directly
+inside `scope.js`'s `subtreeIds`/`ownerInScope`: a level holding it makes
+its employees' scope the whole company, computed the same way admin's
+whole-company scope already was (both collapse to "no department filter"),
+just triggered by a capability grant instead of account role. Orthogonal to
+every other capability (§2 I3, §5) — it widens **where** authority reaches,
+not **what** an employee can do once there. Surfaced in the Levels &
+Capabilities live editor (`LevelsPage.tsx`) like any other capability
+checkbox, including the "select all" toggle added the same session.
+**Near-miss caught before shipping:** the test fixture's shared "Manager"
+level blanket-granted every row in the `capability` table, so adding this
+key would have silently given the fixture's two separate-department test
+actors (`root`, `head2`) company-wide scope each, collapsing the
+cross-department-refusal tests the flat-scope re-scope above depends on.
+Fixed by excluding `view_all_company` from that blanket grant
+(`testlib/harness.js`) and adding a dedicated positive test
+(`employees.api.test.js`) that builds an isolated level holding it and
+proves the cross-department reach directly, rather than trusting the SQL
+by inspection alone.
+
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
 `audit_event`) · **bilingual auto-fill** (Gemini, above) · **AI auto-assign
@@ -1086,7 +1217,9 @@ CSV import: a bad row alongside good ones → good ones created, bad one
 reported, neither blocks the other · unknown department/level name
 in a row → that row only fails · import row count over the limit → 422 ·
 hire missing phone/birthdate/gender/workerType → 422 field-keyed, no
-password error · edit clearing a required field (e.g. `gender: null`) → 422.
+password error · edit clearing a required field (e.g. `gender: null`) → 422 ·
+cross-department reach without `view_all_company` → 404, the same level
+holding it → 200.
 
 ---
 

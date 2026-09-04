@@ -21,6 +21,7 @@ const CAPABILITIES = [
   'export',
   'manage_events',
   'manage_knowledge_base',
+  'view_all_company',
 ] as const
 
 interface Level {
@@ -50,8 +51,10 @@ export default function LevelsPage() {
   >(null)
   // Confirmed before firing — this is bulk (every holder of the level) and
   // immediate (no per-employee step like the Employees page's level picker),
-  // so a plain hint isn't enough here the way it was there.
-  const [pendingToggle, setPendingToggle] = useState<{ level: Level; key: string; willEnable: boolean } | null>(
+  // so a plain hint isn't enough here the way it was there. `keys` covers
+  // both a single-checkbox click ([key]) and "select/clear all" (every
+  // CAPABILITIES key at once) through the one dialog.
+  const [pendingToggle, setPendingToggle] = useState<{ level: Level; keys: string[]; willEnable: boolean } | null>(
     null
   )
 
@@ -73,9 +76,11 @@ export default function LevelsPage() {
 
   async function confirmToggle() {
     if (!pendingToggle) return
-    const { level, key, willEnable } = pendingToggle
+    const { level, keys, willEnable } = pendingToggle
     setToggleBusy(level.id)
-    const next = willEnable ? [...level.capabilities, key] : level.capabilities.filter((c) => c !== key)
+    const next = willEnable
+      ? [...new Set([...level.capabilities, ...keys])]
+      : level.capabilities.filter((c) => !keys.includes(c))
     try {
       await apiFetch(`/employee-levels/${level.id}`, { method: 'PATCH', body: { capabilities: next } })
       setPendingToggle(null)
@@ -138,6 +143,22 @@ export default function LevelsPage() {
                 <tr key={lvl.id}>
                   <td className="req-service">{L(lvl.name)}</td>
                   <td>
+                    <span className="translate-row">
+                      <button
+                        type="button"
+                        className="link-button translate-btn"
+                        disabled={toggleBusy === lvl.id}
+                        onClick={() =>
+                          setPendingToggle({
+                            level: lvl,
+                            keys: [...CAPABILITIES],
+                            willEnable: !CAPABILITIES.every((k) => lvl.capabilities.includes(k)),
+                          })
+                        }
+                      >
+                        {CAPABILITIES.every((k) => lvl.capabilities.includes(k)) ? t('lvl_clear_all') : t('lvl_select_all')}
+                      </button>
+                    </span>
                     <div className="dept-member-list">
                       {CAPABILITIES.map((key) => (
                         <label key={key} className="dept-member-row">
@@ -148,7 +169,7 @@ export default function LevelsPage() {
                             onChange={() => {}}
                             onClick={(e) => {
                               e.preventDefault()
-                              setPendingToggle({ level: lvl, key, willEnable: !lvl.capabilities.includes(key) })
+                              setPendingToggle({ level: lvl, keys: [key], willEnable: !lvl.capabilities.includes(key) })
                             }}
                           />
                           <code>{key}</code>
@@ -197,13 +218,13 @@ function ToggleConfirmDialog({
   onCancel,
   onConfirm,
 }: {
-  pending: { level: Level; key: string; willEnable: boolean }
+  pending: { level: Level; keys: string[]; willEnable: boolean }
   busy: boolean
   onCancel: () => void
   onConfirm: () => void
 }) {
   const { t, L } = useI18n()
-  const { level, key, willEnable } = pending
+  const { level, keys, willEnable } = pending
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !busy && onCancel()
@@ -215,7 +236,10 @@ function ToggleConfirmDialog({
     <div className="dialog-backdrop" onClick={() => !busy && onCancel()}>
       <div className="dialog" onClick={(e) => e.stopPropagation()}>
         <h4>
-          {willEnable ? t('lvl_toggle_grant_h') : t('lvl_toggle_revoke_h')} <code>{key}</code>
+          {willEnable ? t('lvl_toggle_grant_h') : t('lvl_toggle_revoke_h')}{' '}
+          {keys.map((key) => (
+            <code key={key}>{key} </code>
+          ))}
         </h4>
         <p className="req-status-msg">
           {(willEnable ? t('lvl_toggle_grant_p') : t('lvl_toggle_revoke_p'))

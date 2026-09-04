@@ -257,12 +257,10 @@ async function buildFixtures() {
     body: {
       name: { en: 'Fixture Co', ar: 'شركة تجريبية' },
       address: { en: '1 Test St', ar: 'شارع الاختبار 1' },
-      ownerJobTitle: { en: 'Owner', ar: 'المالك' },
       phone: '0590000000',
       emailDomain: 'fixture.test',
       employeeRange: '11-30',
       industry: 'field_services',
-      subIndustry: 'maintenance',
       branches: [{ en: 'Main', ar: 'الرئيسي' }],
       features: ['time_clock'],
       plan: 'enterprise',
@@ -276,16 +274,23 @@ async function buildFixtures() {
   // level grants are seed-time only). The seeded "Manager" level deliberately
   // holds only view_all/manage_employees/override (seed.js's product
   // default); the permission suite needs one role that holds every
-  // capability to drive full happy paths, so this grants the rest directly.
-  // Test-DB-only — resetTestDb() rebuilds from a clean seed every run, so
-  // this never touches what a real deployment ships.
+  // in-scope capability to drive full happy paths, so this grants the rest
+  // directly — EXCEPT view_all_company, which is deliberately excluded: it
+  // widens Gate 2 itself (company-wide scope, scope.js), not an in-scope
+  // action, so blanket-granting it here would silently collapse the
+  // root/head2 two-department fixture below into one shared scope and break
+  // every cross-department-refusal test. A level that actually holds
+  // view_all_company gets built explicitly where it's tested (see
+  // employees.api.test.js). Test-DB-only — resetTestDb() rebuilds from a
+  // clean seed every run, so this never touches what a real deployment ships.
   const { rows: levels } = await query(`SELECT id, name->>'en' AS name FROM employee_level`);
   const managerLevelId = levels.find((l) => l.name === 'Manager').id;
   const staffLevelId = levels.find((l) => l.name === 'Staff').id;
   await query(
     `INSERT INTO level_capability (level_id, capability_key)
      SELECT $1, key FROM capability
-     WHERE key NOT IN (SELECT capability_key FROM level_capability WHERE level_id = $1)`,
+     WHERE key <> 'view_all_company'
+       AND key NOT IN (SELECT capability_key FROM level_capability WHERE level_id = $1)`,
     [managerLevelId]
   );
 
