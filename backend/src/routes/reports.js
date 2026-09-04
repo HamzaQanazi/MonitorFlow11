@@ -6,7 +6,7 @@ const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireCapability, requireCapabilityOrAdmin } = require('../middleware/auth');
 const { buildRequestFilter } = require('../lib/requestQuery');
-const { ownerScopeIds } = require('../lib/scope');
+const { departmentScopeIds } = require('../lib/scope');
 const { csvCell } = require('../lib/csv');
 
 const router = express.Router();
@@ -31,7 +31,7 @@ const FROM = `
 // filtered set (category is a category, not a status key — allowed in code).
 router.get('/', async (req, res, next) => {
   try {
-    const filter = buildRequestFilter(req.query, req.user, await ownerScopeIds(req.user));
+    const filter = buildRequestFilter(req.query, req.user, await departmentScopeIds(req.user));
     if (filter.error) return res.status(400).json({ error: filter.error });
     const { where, params, page, pageSize } = filter;
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -126,7 +126,7 @@ router.get('/', async (req, res, next) => {
 // no status key.
 router.get('/export.csv', requireCapability('export'), async (req, res, next) => {
   try {
-    const filter = buildRequestFilter(req.query, req.user, await ownerScopeIds(req.user));
+    const filter = buildRequestFilter(req.query, req.user, await departmentScopeIds(req.user));
     if (filter.error) return res.status(400).json({ error: filter.error });
     const { where, params } = filter;
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
