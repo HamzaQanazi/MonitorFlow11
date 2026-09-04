@@ -4,14 +4,18 @@
 // filter with the frozen column set and a CSV-injection guard.
 const express = require('express');
 const pool = require('../db');
-const { requireAuth, requireCapability } = require('../middleware/auth');
+const { requireAuth, requireCapability, requireCapabilityOrAdmin } = require('../middleware/auth');
 const { buildRequestFilter } = require('../lib/requestQuery');
-const { subtreeIds } = require('../lib/scope');
+const { ownerScopeIds } = require('../lib/scope');
 const { csvCell } = require('../lib/csv');
 
 const router = express.Router();
 router.use(requireAuth);
-router.use(requireCapability('view_all'));
+// The admin (Owner) reads reports too (I2 — configures, doesn't operate the
+// queue, but isn't blind to it either); export.csv keeps its own stricter
+// requireCapability('export') below, no admin bypass — matches the client,
+// which already disables the export buttons for admin.
+router.use(requireCapabilityOrAdmin('view_all'));
 
 // Shared FROM/JOINs so list, aggregate, and export all resolve status
 // label/category from the workflow data identically. `s` is the current
@@ -27,7 +31,7 @@ const FROM = `
 // filtered set (category is a category, not a status key — allowed in code).
 router.get('/', async (req, res, next) => {
   try {
-    const filter = buildRequestFilter(req.query, req.user, await subtreeIds(req.user.id));
+    const filter = buildRequestFilter(req.query, req.user, await ownerScopeIds(req.user));
     if (filter.error) return res.status(400).json({ error: filter.error });
     const { where, params, page, pageSize } = filter;
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -122,7 +126,7 @@ router.get('/', async (req, res, next) => {
 // no status key.
 router.get('/export.csv', requireCapability('export'), async (req, res, next) => {
   try {
-    const filter = buildRequestFilter(req.query, req.user, await subtreeIds(req.user.id));
+    const filter = buildRequestFilter(req.query, req.user, await ownerScopeIds(req.user));
     if (filter.error) return res.status(400).json({ error: filter.error });
     const { where, params } = filter;
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';

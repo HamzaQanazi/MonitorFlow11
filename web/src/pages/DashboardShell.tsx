@@ -28,13 +28,19 @@ const oversightNav: { to: string; labelKey: string; end: boolean; need: string[]
   { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, need: ['view_all', 'manage_knowledge_base'], feature: 'knowledge_base', group: 'communication' },
   { to: '/events', labelKey: 'nav_events', end: false, need: ['view_all', 'manage_events'], feature: 'events', group: 'communication' },
 ]
-// Owner (admin role) surface. Dashboard + Employees admit the admin via the
-// backend's requireCapabilityOrAdmin (I2: admins hold no capabilities, so this
-// is a role-based allow, not a Gate-1 capability like oversightNav's items).
+// Owner (admin role) surface. Dashboard, Employees, and Reports admit the
+// admin via the backend's requireCapabilityOrAdmin (I2: admins hold no
+// capabilities, so this is a role-based allow, not a Gate-1 capability like
+// oversightNav's items) — Reports itself stays read-only for them (export
+// stays capability-only, no admin bypass, so ReportsPage disables it).
+// Requests deliberately isn't here: requests.js excludes admin at the router
+// level on purpose (see main.tsx's Guard comment) — not just a missing nav
+// link.
 // The 7 module items still carry `feature` — the onboarding wizard's picks
 // gate the Owner too (no admin bypass on requireFeature, middleware/auth.js).
 const adminNav: { to: string; labelKey: string; end: boolean; feature?: string; group: NavGroup }[] = [
   { to: '/', labelKey: 'nav_dashboard', end: true, group: 'overview' },
+  { to: '/reports', labelKey: 'nav_reports', end: false, group: 'overview' },
   { to: '/employees', labelKey: 'nav_employees', end: false, group: 'people' },
   { to: '/departments', labelKey: 'nav_departments', end: false, group: 'people' },
   { to: '/levels', labelKey: 'nav_levels', end: false, group: 'people' },

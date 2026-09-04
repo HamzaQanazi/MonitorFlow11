@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
+import { useAuth } from '../auth/AuthContext'
 import { useI18n, type Loc } from '../i18n'
 import { formatDuration } from '../lib/format'
 import './DashboardPage.css'
@@ -44,6 +45,13 @@ function formatDay(iso: string) {
 
 export default function DashboardPage() {
   const { t, L } = useI18n()
+  const { user } = useAuth()
+  // The admin (Owner) can't reach /requests — requests.js excludes them at
+  // the router level on purpose (see main.tsx's Guard comment) — so these
+  // two health-alert tiles send them to Reports instead, the nearest page
+  // they can actually read. Reports has no slaBreached/reopened toggle of
+  // its own, so it lands unfiltered rather than pre-narrowed.
+  const isAdmin = user?.role === 'admin'
   const [stats, setStats] = useState<Stats | null>(null)
   const [chart, setChart] = useState<Chart | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -205,7 +213,7 @@ export default function DashboardPage() {
       {stats.total > 0 && (
         <section className="dash-alerts" aria-label={t('dash_health')}>
           <Link
-            to="/requests?slaBreached=true"
+            to={isAdmin ? '/reports' : '/requests?slaBreached=true'}
             className={`alert-tile${stats.slaBreaches.count > 0 ? ' is-breach' : ''}`}
           >
             <span className="alert-count">{stats.slaBreaches.count}</span>
@@ -216,7 +224,7 @@ export default function DashboardPage() {
               )}
             </span>
           </Link>
-          <Link to="/requests?reopened=true" className="alert-tile">
+          <Link to={isAdmin ? '/reports' : '/requests?reopened=true'} className="alert-tile">
             <span className="alert-count">
               {stats.reopenRate.rate != null ? `${Math.round(stats.reopenRate.rate * 100)}%` : '—'}
             </span>

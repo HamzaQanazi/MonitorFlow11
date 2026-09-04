@@ -33,7 +33,14 @@ import SettingsPage from './pages/SettingsPage'
 // keeps the UI from rendering pages that would only show errors.
 // `orAdmin` admits the admin (Owner) into a capability-gated page too — used
 // only where the backend was updated to match (requireCapabilityOrAdmin):
-// Dashboard and Employees. Everywhere else stays capability-only.
+// Dashboard, Employees, and Reports (ReportsPage disables export itself,
+// matching the server, which kept requireCapability('export') strict — no
+// admin bypass). Requests stays capability-only on purpose: requests.js
+// excludes admin at the router level (`requireRole('user', 'employee')`),
+// deliberately, so the per-route "field-employee → 403, user → own" checks
+// can't let admin fall through to unrestricted oversight visibility — not
+// just a missing capability flag, don't add orAdmin here without revisiting
+// that exclusion first. Everywhere else stays capability-only.
 // `need` takes an array where the backend also accepts more than one
 // capability (requireCapabilityOrAdmin('view_all', 'manage_X')) — the module
 // pages (knowledge base, events) so a level holding only that module's
@@ -134,7 +141,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="requests/:id" element={<Guard need="view_all"><RequestsPage /></Guard>} />
             <Route path="employees" element={<Guard need="manage_employees" orAdmin><EmployeesPage /></Guard>} />
             <Route path="departments" element={<Guard need="admin"><DepartmentsPage /></Guard>} />
-            <Route path="reports" element={<Guard need="view_all"><ReportsPage /></Guard>} />
+            <Route path="reports" element={<Guard need="view_all" orAdmin><ReportsPage /></Guard>} />
             <Route path="timeclock" element={<Guard need="view_all" orAdmin feature="time_clock"><TimeClockPage /></Guard>} />
             <Route path="schedule" element={<Guard need="view_all" orAdmin feature="schedule"><SchedulePage /></Guard>} />
             <Route path="checklists" element={<Guard need="view_all" orAdmin feature="forms_checklists"><ChecklistsPage /></Guard>} />
