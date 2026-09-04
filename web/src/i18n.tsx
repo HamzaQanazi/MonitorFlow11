@@ -966,7 +966,7 @@ const dict: Record<string, Loc> = {
   svc_name_ar: { en: 'Service name (Arabic)', ar: 'اسم الخدمة (بالعربية)' },
   svc_default_priority: { en: 'Default priority', ar: 'الأولوية الافتراضية' },
   svc_accepts_external: { en: 'External users may submit this request', ar: 'يمكن للمستخدمين الخارجيين تقديم هذا الطلب' },
-  svc_accepts_employee: { en: 'Employees may submit this request (e.g. Time Off)', ar: 'يمكن للموظفين تقديم هذا الطلب (مثل الإجازة)' },
+  svc_accepts_employee: { en: 'Employees may submit this request (e.g. a checklist)', ar: 'يمكن للموظفين تقديم هذا الطلب (مثل قائمة تحقق)' },
   svc_owner: { en: 'Owner', ar: 'المسؤول' },
   svc_owner_hint: {
     en: 'The employee whose subtree can see this service’s requests.',

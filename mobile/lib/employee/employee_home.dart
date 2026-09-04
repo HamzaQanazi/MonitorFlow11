@@ -21,9 +21,8 @@ import 'knowledge_base_screen.dart';
 import 'schedule_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_map_view.dart';
+import 'employee_request_detail_screen.dart';
 import 'time_clock_screen.dart';
-import 'time_off_detail_screen.dart';
-import 'time_off_screen.dart';
 
 class EmployeeHomeScreen extends StatefulWidget {
   const EmployeeHomeScreen({super.key});
@@ -82,10 +81,10 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
 
   /// An employee notification points at a request. Usually that's a task
   /// they're assigned to; but it may instead be a status change on a request
-  /// they submitted themselves (e.g. their own Time Off being approved) —
-  /// those have no task at all. Try the task first, then fall back to the
-  /// employee's own-request detail view; that view's own 404 handling covers
-  /// the genuine "not yours" case.
+  /// they submitted themselves (e.g. their own checklist submission being
+  /// logged) — those have no task at all. Try the task first, then fall back
+  /// to the employee's own-request detail view; that view's own 404 handling
+  /// covers the genuine "not yours" case.
   Future<void> _openTaskForRequest(BuildContext ctx, int requestId) async {
     final match = _tasks?.where((t) => t.requestId == requestId).toList();
     if (match != null && match.isNotEmpty) {
@@ -107,7 +106,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
     }
     if (!ctx.mounted) return;
     await Navigator.of(ctx).push(
-      MaterialPageRoute(builder: (_) => TimeOffDetailScreen(requestId: requestId)),
+      MaterialPageRoute(builder: (_) => EmployeeRequestDetailScreen(requestId: requestId)),
     );
   }
 
@@ -139,10 +138,10 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   }
 
   // Feature modules moved off the AppBar into a Drawer once the module count
-  // grew past what fits as icons (7 gated modules + Time Off + notifications
-  // + profile + logout). Material caps a bottom nav bar around 5
-  // destinations, so a Drawer — not a bottom bar — is the right native fit
-  // here. Scaffold auto-adds the hamburger button, so no leading IconButton.
+  // grew past what fits as icons (7 gated modules + notifications + profile
+  // + logout). Material caps a bottom nav bar around 5 destinations, so a
+  // Drawer — not a bottom bar — is the right native fit here. Scaffold
+  // auto-adds the hamburger button, so no leading IconButton.
   Widget _buildDrawer(BuildContext context, I18n i18n, List<String> features) {
     Widget item(IconData icon, String label, Widget screen) => ListTile(
           leading: Icon(icon),
@@ -165,10 +164,6 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             if (features.contains('schedule'))
               item(Icons.calendar_month_outlined, i18n.tr('sc_title'),
                   const ScheduleScreen()),
-            // Time Off is a normal service type through the request engine
-            // (I1), not one of the 7 gated modules — always offered.
-            item(Icons.beach_access_outlined, i18n.tr('to_title'),
-                const TimeOffScreen()),
             if (features.contains('forms_checklists'))
               item(Icons.checklist_outlined, i18n.tr('cl_title'),
                   const ChecklistsScreen()),

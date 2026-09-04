@@ -1,13 +1,16 @@
-// My Checklists (employee self-service): unlike Time Off, there can be
-// several checklist templates at once, so this is a list-of-templates
-// screen rather than TimeOffScreen's single-service shortcut. Checklist
+// My Checklists (employee self-service): there can be several checklist
+// templates at once, so this is a list-of-templates screen. Checklist
 // services are identified by featureKey == 'forms_checklists' (lib/
-// onboardingOptions.js's catalogue) — the same acceptsEmployeeSubmitters
-// flag Time Off uses, so featureKey is what keeps the two apart. GET
-// /requests already returns "own rows OR subtree-owned rows" for an
-// employee; filtered here to just this screen's own template ids so a
-// manager's subtree-owned requests (and Time Off) don't show up in the
-// submissions list below.
+// onboardingOptions.js's catalogue), not just by acceptsEmployeeSubmitters —
+// other self-service request types share that flag too. GET /requests
+// already returns "own rows OR subtree-owned rows" for an employee;
+// filtered here to just this screen's own template ids so a manager's
+// subtree-owned requests don't show up in the submissions list below.
+// User-directed (2026-09-04): checklists are department-specific work — a
+// Waste Management field worker has no business filling out HR's
+// onboarding checklist. GET /services stays unscoped for staff generally
+// (other screens need it), so the department match is client-side here
+// rather than a new query param.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -20,7 +23,7 @@ import '../models/request.dart';
 import '../theme.dart';
 import '../user/create_request_screen.dart';
 import '../widgets/states.dart';
-import 'time_off_detail_screen.dart';
+import 'employee_request_detail_screen.dart';
 
 class ChecklistsScreen extends StatefulWidget {
   const ChecklistsScreen({super.key});
@@ -57,9 +60,13 @@ class _ChecklistsScreenState extends State<ChecklistsScreen> {
         api.get('/services'),
       ]);
       if (!mounted) return;
+      final departmentId = context.read<AuthState>().user?.departmentId;
       final templates = (results[1]['services'] as List<dynamic>)
           .map((s) => ServiceType.fromJson(s as Map<String, dynamic>))
-          .where((s) => s.acceptsEmployeeSubmitters && s.featureKey == 'forms_checklists')
+          .where((s) =>
+              s.acceptsEmployeeSubmitters &&
+              s.featureKey == 'forms_checklists' &&
+              s.departmentId == departmentId)
           .toList();
       final templateIds = templates.map((s) => s.id).toSet();
       setState(() {
@@ -194,7 +201,7 @@ class _ChecklistSubmissionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: () async {
           await Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => TimeOffDetailScreen(requestId: request.id)),
+            MaterialPageRoute(builder: (_) => EmployeeRequestDetailScreen(requestId: request.id)),
           );
           onReturn();
         },

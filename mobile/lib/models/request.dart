@@ -156,8 +156,9 @@ class ServiceType {
   final int id;
   final Loc name;
   final Loc departmentName;
+  final int? departmentId;
   final bool acceptsEmployeeSubmitters;
-  // Optional tag from the onboarding feature catalogue (e.g. 'time_off',
+  // Optional tag from the onboarding feature catalogue (e.g.
   // 'forms_checklists') — lets self-service screens tell apart services that
   // all share acceptsEmployeeSubmitters == true.
   final String? featureKey;
@@ -166,6 +167,7 @@ class ServiceType {
     required this.id,
     required this.name,
     required this.departmentName,
+    this.departmentId,
     this.acceptsEmployeeSubmitters = false,
     this.featureKey,
   });
@@ -174,6 +176,7 @@ class ServiceType {
         id: json['id'] as int,
         name: Loc.fromJson(json['name']),
         departmentName: Loc.fromJson(json['departmentName']),
+        departmentId: json['departmentId'] as int?,
         acceptsEmployeeSubmitters: json['acceptsEmployeeSubmitters'] == true,
         featureKey: json['featureKey'] as String?,
       );

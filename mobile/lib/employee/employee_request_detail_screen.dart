@@ -3,9 +3,9 @@
 // GET /requests/{id}/transitions — rendered generically, no transition key
 // hardcoded here, I4). Trimmed from the User app's RequestDetailScreen: these
 // requests have no confirm/dispute/"resolved?" step (submit → done, no
-// task), so that copy doesn't fit here. Shared by Time Off and Checklists —
-// ponytail: the class/file name still says "TimeOff" from when this only
-// served one feature; rename to something generic if a third one shows up.
+// task), so that copy doesn't fit here. Shared by Checklists and the
+// notification tap-through for an employee's own non-task requests (Time
+// Off, previously, used this too — removed 2026-09-04, user-directed).
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -20,16 +20,16 @@ import '../widgets/form_response_view.dart';
 import '../widgets/states.dart';
 import '../widgets/timeline.dart';
 
-class TimeOffDetailScreen extends StatefulWidget {
+class EmployeeRequestDetailScreen extends StatefulWidget {
   final int requestId;
 
-  const TimeOffDetailScreen({super.key, required this.requestId});
+  const EmployeeRequestDetailScreen({super.key, required this.requestId});
 
   @override
-  State<TimeOffDetailScreen> createState() => _TimeOffDetailScreenState();
+  State<EmployeeRequestDetailScreen> createState() => _EmployeeRequestDetailScreenState();
 }
 
-class _TimeOffDetailScreenState extends State<TimeOffDetailScreen> {
+class _EmployeeRequestDetailScreenState extends State<EmployeeRequestDetailScreen> {
   RequestDetail? _detail;
   List<TransitionOption>? _transitions;
   List<FormFieldDef>? _requestFields;
