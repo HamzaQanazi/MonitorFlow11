@@ -140,6 +140,15 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  padding: 4px;
+  margin: -4px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.shell-session-user:hover {
+  background: var(--surface);
 }
 
 .shell-avatar {

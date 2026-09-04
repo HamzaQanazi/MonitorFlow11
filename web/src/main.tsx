@@ -26,6 +26,7 @@ import AuditPage from './pages/AuditPage'
 import AddServiceWizard from './pages/AddServiceWizard'
 import ServicesPage from './pages/ServicesPage'
 import SettingsPage from './pages/SettingsPage'
+import ProfilePage from './pages/ProfilePage'
 
 // Two-gate routing: oversight employees and the admin share the shell but not
 // the pages. Each page needs a capability (Gate 1) — or the admin kind for the
@@ -151,6 +152,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="audit" element={<Guard need="admin"><AuditPage /></Guard>} />
             <Route path="services" element={<Guard need="admin"><ServicesPage /></Guard>} />
             <Route path="settings" element={<Guard need="admin"><SettingsPage /></Guard>} />
+            {/* No Guard: self-service account edit, open to any signed-in console account. */}
+            <Route path="profile" element={<ProfilePage />} />
             <Route path="services/new" element={<Guard need="admin"><AddServiceWizard /></Guard>} />
             <Route path="services/:id/edit" element={<Guard need="admin"><AddServiceWizard /></Guard>} />
           </Route>

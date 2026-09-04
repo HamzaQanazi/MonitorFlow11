@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import NotificationBell from '../components/NotificationBell'
@@ -100,12 +100,12 @@ export default function DashboardShell() {
           })}
         </nav>
         <div className="shell-session">
-          <div className="shell-session-user">
+          <Link to="/profile" className="shell-session-user" title={t('profile_title')}>
             <span className="shell-avatar" aria-hidden="true">
               {(user?.name ?? '?').trim().charAt(0).toUpperCase()}
             </span>
             <span className="shell-user">{user?.name}</span>
-          </div>
+          </Link>
           <div className="shell-session-actions">
             <button
               type="button"

@@ -903,6 +903,25 @@ const dict: Record<string, Loc> = {
   set_logo_current: { en: 'A logo is already set.', ar: 'يوجد شعار محدد بالفعل.' },
   set_confirm_features_h: { en: 'Turn off these modules?', ar: 'إيقاف هذه الوحدات؟' },
   set_plan_h: { en: 'Plan', ar: 'الخطة' },
+
+  // profile — self-service account edit (name/phone + password), any signed-in
+  // account. Email/login identifier are shown but not editable here (backend
+  // treats them as identity, see routes/users.js).
+  profile_title: { en: 'Your profile', ar: 'ملفك الشخصي' },
+  profile_sec_info: { en: 'Account', ar: 'الحساب' },
+  profile_name: { en: 'Name', ar: 'الاسم' },
+  profile_phone: { en: 'Phone', ar: 'الهاتف' },
+  profile_login_id: { en: 'Login email', ar: 'البريد الإلكتروني لتسجيل الدخول' },
+  profile_login_id_hint: { en: 'Contact support to change this.', ar: 'تواصل مع الدعم لتغيير هذا.' },
+  profile_save: { en: 'Save changes', ar: 'حفظ التغييرات' },
+  profile_saved: { en: 'Saved.', ar: 'تم الحفظ.' },
+  profile_sec_password: { en: 'Password', ar: 'كلمة المرور' },
+  profile_current_password: { en: 'Current password', ar: 'كلمة المرور الحالية' },
+  profile_new_password: { en: 'New password', ar: 'كلمة المرور الجديدة' },
+  profile_confirm_password: { en: 'Confirm new password', ar: 'تأكيد كلمة المرور الجديدة' },
+  profile_password_mismatch: { en: 'Passwords don’t match.', ar: 'كلمتا المرور غير متطابقتين.' },
+  profile_change_password: { en: 'Change password', ar: 'تغيير كلمة المرور' },
+  profile_password_changed: { en: 'Password changed.', ar: 'تم تغيير كلمة المرور.' },
   ob_err_save: {
     en: 'Couldn’t save your setup. Check your answers and try again.',
     ar: 'تعذّر حفظ الإعداد. تحقّق من إجاباتك وحاول مجددًا.',

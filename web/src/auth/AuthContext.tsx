@@ -76,6 +76,9 @@ interface AuthContextValue {
   // captured at the original pre-onboarding login, so without this the nav's
   // OPERATIONS/COMMUNICATION sections stayed empty until a manual refresh.
   markOnboarded: (companyName: Loc, companyLogo: string | null, companyFeatures: string[]) => void
+  // Called by ProfilePage after PATCH /users/me so the shell's name/avatar
+  // update immediately, without a fresh /auth/me round-trip.
+  updateProfile: (name: string, phone: string | null) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -131,6 +134,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       markOnboarded(companyName, companyLogo, companyFeatures) {
         setUser((u) => (u ? { ...u, onboardingCompleted: true, companyName, companyLogo, companyFeatures } : u))
+      },
+      updateProfile(name, phone) {
+        setUser((u) => (u ? { ...u, name, phone } : u))
       },
     }),
     [status, user],
