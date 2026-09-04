@@ -47,7 +47,6 @@ test('a fully-capable employee (root) still gets 403 on POST /services — admin
       acceptsExternalUsers: true,
       acceptsEmployeeSubmitters: false,
       featureKey: null,
-      ownerId: fixtures.employeeIds.root,
       requestFields: A_FIELD,
       completionFields: A_FIELD,
       ...A_WORKFLOW,
@@ -66,7 +65,6 @@ test('the admin can create a service', async () => {
       acceptsExternalUsers: true,
       acceptsEmployeeSubmitters: false,
       featureKey: null,
-      ownerId: fixtures.employeeIds.root,
       requestFields: A_FIELD,
       completionFields: A_FIELD,
       ...A_WORKFLOW,
@@ -88,7 +86,6 @@ function servicePayload(overrides) {
     acceptsExternalUsers: true,
     acceptsEmployeeSubmitters: false,
     featureKey: null,
-    ownerId: fixtures.employeeIds.root,
     requestFields: A_FIELD,
     completionFields: A_FIELD,
     ...A_WORKFLOW,
@@ -166,31 +163,6 @@ test('a self-service workflow with no assign transition is still allowed', async
     body: servicePayload({ name: { en: 'Self service', ar: 'خدمة ذاتية' } }),
   });
   assert.equal(res.status, 201, JSON.stringify(res.body));
-});
-
-// ---- ownerId must be an ACTIVE employee: owner_id is Gate 2's anchor, so a
-// deactivated owner makes every request on the service invisible.
-
-test('a deactivated employee cannot be a service owner', async () => {
-  const hire = await api('POST', '/employees', {
-    token: tokens.admin,
-    body: {
-      firstName: 'Owner', lastName: 'Gone', email: 'owner.gone@example.com',
-      phone: '0599000111', birthdate: '1990-01-01', gender: 'male', workerType: 'full_time',
-      departmentId: fixtures.departmentId,
-    },
-  });
-  assert.equal(hire.status, 201, JSON.stringify(hire.body));
-  const deactivated = hire.body.employee.id;
-  const off = await api('PATCH', `/employees/${deactivated}/deactivate`, { token: tokens.admin });
-  assert.equal(off.status, 200, JSON.stringify(off.body));
-
-  const res = await api('POST', '/services', {
-    token: tokens.admin,
-    body: servicePayload({ name: { en: 'Dead owner', ar: 'مالك معطّل' }, ownerId: deactivated }),
-  });
-  assert.equal(res.status, 422);
-  assert.ok(res.body.errors.some((e) => e.includes('active employee')), JSON.stringify(res.body));
 });
 
 // ---- Editing a service before any request has used it (§3's actual rule).

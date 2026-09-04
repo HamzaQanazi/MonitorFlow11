@@ -27,7 +27,6 @@ before(async () => {
       acceptsExternalUsers: true,
       acceptsEmployeeSubmitters: false,
       featureKey: null,
-      ownerId: fixtures.employeeIds.root,
       requestFields: [
         { id: 'summary', label: { en: 'Summary', ar: 'ملخص' }, type: 'text', required: true },
         {

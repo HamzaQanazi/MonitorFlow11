@@ -10,7 +10,7 @@ const multer = require('multer');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { isOversight } = require('../lib/capabilities');
-const { ownerInScope } = require('../lib/scope');
+const { inDepartmentScope } = require('../lib/scope');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -120,7 +120,7 @@ router.get('/:id', async (req, res, next) => {
       `SELECT f.original_filename, f.mime_type, f.storage_path, f.uploaded_by,
               f.request_id, f.task_id,
               r.user_id AS owner_id, pt.employee_id AS assignee_id,
-              st.owner_id AS service_owner_id
+              st.department_id AS service_department_id
        FROM file_attachment f
        LEFT JOIN task ft ON ft.id = f.task_id
        LEFT JOIN request r ON r.id = COALESCE(f.request_id, ft.request_id)
@@ -140,8 +140,9 @@ router.get('/:id', async (req, res, next) => {
       } else if (req.user.role === 'user') {
         allowed = f.owner_id === req.user.id;
       } else if (isOversight(req.user)) {
-        // Gate 2: an oversight employee downloads within their subtree only.
-        allowed = await ownerInScope(req.user.id, f.service_owner_id);
+        // Gate 2: an oversight employee downloads within their department
+        // scope only.
+        allowed = await inDepartmentScope(req.user.id, f.service_department_id);
       } else if (req.user.role === 'employee') {
         allowed = f.assignee_id === req.user.id;
       }

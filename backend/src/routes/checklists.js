@@ -11,7 +11,7 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireCapabilityOrAdmin, requireFeature } = require('../middleware/auth');
-const { ownerScopeIds } = require('../lib/scope');
+const { departmentScopeIds } = require('../lib/scope');
 const { COMPANY_TZ, companyDate } = require('../lib/timeClock');
 
 const router = express.Router();
@@ -19,9 +19,9 @@ router.use(requireAuth, requireFeature('forms_checklists'), requireCapabilityOrA
 
 router.get('/stats', async (req, res, next) => {
   try {
-    const scope = await ownerScopeIds(req.user);
+    const scope = await departmentScopeIds(req.user);
     const { rows } = await pool.query(
-      `SELECT st.id, st.name, st.owner_id, o.name AS owner_name,
+      `SELECT st.id, st.name,
               d.id AS department_id, d.name AS department_name,
               COUNT(r.id) FILTER (WHERE (r.created_at AT TIME ZONE $2)::date = $3::date)::int AS submitted_today,
               COUNT(r.id) FILTER (WHERE (r.created_at AT TIME ZONE $2)::date = $3::date AND lat.is_terminal)::int AS logged_today,
@@ -29,7 +29,6 @@ router.get('/stats', async (req, res, next) => {
               COUNT(r.id) FILTER (WHERE lat.is_terminal)::int AS logged_total,
               MAX(r.created_at) AS last_submitted_at
        FROM service_type st
-       JOIN users o ON o.id = st.owner_id
        JOIN department d ON d.id = st.department_id
        LEFT JOIN workflow_definition w ON w.service_type_id = st.id
        LEFT JOIN request r ON r.service_type_id = st.id
@@ -39,8 +38,8 @@ router.get('/stats', async (req, res, next) => {
          WHERE s->>'key' = r.status
          LIMIT 1
        ) lat ON TRUE
-       WHERE st.enabled AND st.feature_key = 'forms_checklists' AND st.owner_id = ANY($1)
-       GROUP BY st.id, st.name, st.owner_id, o.name, d.id, d.name
+       WHERE st.enabled AND st.feature_key = 'forms_checklists' AND st.department_id = ANY($1)
+       GROUP BY st.id, st.name, d.id, d.name
        ORDER BY st.id`,
       // "Today" in the company's zone rather than the DB session's — the same
       // basis lib/timeClock.js uses, so a submission near midnight lands on
@@ -51,8 +50,6 @@ router.get('/stats', async (req, res, next) => {
       templates: rows.map((r) => ({
         serviceTypeId: r.id,
         name: r.name,
-        ownerId: r.owner_id,
-        ownerName: r.owner_name,
         departmentId: r.department_id,
         departmentName: r.department_name,
         submittedToday: r.submitted_today,

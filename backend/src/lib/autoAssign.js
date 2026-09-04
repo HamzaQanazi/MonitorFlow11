@@ -5,7 +5,7 @@
 //
 // Fires right after a request is created, inside the same transaction as the
 // INSERT (called by routes/requests.js). Ranks active employees in the
-// service's own subtree by a weighted blend of three I10-safe outcome
+// service's own department by a weighted blend of three I10-safe outcome
 // metrics (reopen rate, avg resolution time, open load — same definitions
 // EmployeesPage/dashboard.js already use) and fires the workflow's
 // assign-capability transition through workflowEngine's applyTransition — the
@@ -13,10 +13,10 @@
 // notifications), so nothing here re-implements or diverges from that path.
 //
 // There's no human actor to check Gate 1 (a capability) against, and Gate 2
-// (subtree) holds by construction: the candidate pool IS the service owner's
-// own subtree (lib/scope.js's subtreeIds), so it can never reach outside it.
-// Authorization for this action is the service's auto_assign flag itself.
-const { subtreeIds } = require('./scope');
+// holds by construction: the candidate pool IS the service's own department
+// (2026-09-04 — service_type.owner_id is gone, department_id is the Gate 2
+// anchor directly), so it can never reach outside it. Authorization for this
+// action is the service's auto_assign flag itself.
 const { applyTransition } = require('./workflowEngine');
 
 // Lower is better for all three metrics. A candidate with no history for a
@@ -49,10 +49,11 @@ function rankCandidates(rows) {
 }
 
 // `request` is the just-created row: {id, user_id, status}. `service` is what
-// POST /requests already loaded: {ownerId, name, autoAssign, statuses, transitions}.
+// POST /requests already loaded: {departmentId, name, autoAssign, statuses, transitions}.
 // Returns the assigned task info, or null if nothing was assigned (disabled,
-// no assign-capability transition on this workflow, or no eligible employee —
-// all of which just leave the request unassigned, same as the manual path).
+// no assign-capability transition on this workflow, the department has no
+// head to attribute the auto-fire to, or no eligible employee — all of which
+// just leave the request unassigned, same as the manual path).
 async function maybeAutoAssign(client, { request, service }) {
   if (!service.autoAssign) return null;
 
@@ -63,7 +64,24 @@ async function maybeAutoAssign(client, { request, service }) {
   );
   if (!transition) return null;
 
-  const scope = await subtreeIds(service.ownerId, client);
+  // There's no human actor for an auto-fired pick, so the history/audit rows
+  // (changed_by is NOT NULL) attribute to the service's department head —
+  // also the assignee_manager notification's fallback target. A headless
+  // department has nobody to attribute to, so auto-assign just no-ops (same
+  // as every other "nothing eligible" case here) rather than crashing on the
+  // NOT NULL constraint or silently attributing to some unrelated account.
+  const { rows: deptRows } = await client.query(
+    'SELECT head_user_id FROM department WHERE id = $1',
+    [service.departmentId]
+  );
+  const departmentHeadId = deptRows[0]?.head_user_id ?? null;
+  if (!departmentHeadId) return null;
+
+  const { rows: scopeRows } = await client.query(
+    "SELECT id FROM users WHERE department_id = $1 AND role = 'employee' AND is_active",
+    [service.departmentId]
+  );
+  const scope = scopeRows.map((r) => r.id);
   // Ranking inputs, all I10-safe outcome metrics (§2, §5): open load (same
   // subquery as before), avg resolution minutes (same "resolved" definition
   // employees.js/the CSV export use — request creation to the completion-form
@@ -121,7 +139,8 @@ async function maybeAutoAssign(client, { request, service }) {
   const requestForEngine = {
     id: request.id,
     user_id: request.user_id,
-    owner_id: service.ownerId,
+    department_id: service.departmentId,
+    department_head_id: departmentHeadId,
     status: request.status,
     service_name: service.name,
     statuses: service.statuses,
@@ -131,7 +150,7 @@ async function maybeAutoAssign(client, { request, service }) {
     request: requestForEngine,
     transition,
     task: null,
-    actorId: service.ownerId,
+    actorId: departmentHeadId,
     note: `Auto-assigned to ${employee.name}`,
     auditAction: 'request.assigned',
     auditDetail: { assigneeId: employee.id, assignee: employee.name, to: transition.to, auto: true },

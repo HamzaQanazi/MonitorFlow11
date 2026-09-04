@@ -17,7 +17,7 @@
 // (422 / 409) → write both statuses + history + notifications in the same
 // transaction → commit.
 const pool = require('../db');
-const { ownerInScope } = require('./scope');
+const { inDepartmentScope } = require('./scope');
 const { isOversight } = require('./capabilities');
 const { pick } = require('./i18nLabel');
 const { logAudit } = require('./audit');
@@ -182,7 +182,9 @@ function resolveOverride({ statuses, currentStatus, user, to, note }) {
 // against) can reuse the exact same writes instead of a second hand-rolled
 // copy. `actorId`/`actorName` attribute the history/audit/notification rows —
 // executeTransition passes the human user; autoAssign.js passes the
-// service's owner_id, since there's no human actor for an auto-fired pick.
+// service's department head, since there's no human actor for an auto-fired
+// pick (and skips auto-assign entirely for a headless department — see
+// lib/autoAssign.js — so this is never null coming from that caller).
 async function applyTransition(client, {
   request,
   transition,
@@ -266,12 +268,18 @@ async function applyTransition(client, {
         ];
       } else {
         // assignee_manager: the assignee's department head (§10 gate); a
-        // headless/departmentless assignee falls back to the service owner
-        // so the alert never drops.
+        // headless/departmentless assignee falls back to the SERVICE's own
+        // department head instead (2026-09-04 — service_type.owner_id is
+        // gone; normally the same person, since assignment is department-
+        // scoped, but a view_all_company holder can assign across
+        // departments, so this can genuinely differ). Silently drops the
+        // notification if that's null too — no more guaranteed-non-null
+        // owner to catch it, same as every other headless-department edge
+        // case in this file.
         // ponytail: the one seeded use is the reject transition, so the type
         // and wording say "rejected" — generalize both when a workflow
         // notifies managers on other transitions.
-        const to = a[0].manager_id || request.owner_id;
+        const to = a[0].manager_id || request.department_head_id;
         if (!to) continue;
         row = [
           to,
@@ -320,10 +328,12 @@ async function executeTransition({
     // Lock the request row before any validation (Section 5 locking rule).
     const { rows } = await client.query(
       `SELECT r.id, r.user_id, r.status, r.service_type_id, st.name AS service_name,
-              st.key AS service_key, st.department_id, st.owner_id, w.statuses, w.transitions
+              st.key AS service_key, st.department_id, dept.head_user_id AS department_head_id,
+              w.statuses, w.transitions
        FROM request r
        JOIN service_type st ON st.id = r.service_type_id
        JOIN workflow_definition w ON w.service_type_id = r.service_type_id
+       LEFT JOIN department dept ON dept.id = st.department_id
        WHERE r.id = $1
        FOR UPDATE OF r`,
       [requestId]
@@ -364,13 +374,13 @@ async function executeTransition({
           formValidated,
         });
 
-    // Gate 2 (subtree) for any oversight transition — an override or a
-    // capability-gated transition (e.g. assign). It needs the DB, so it runs
-    // here rather than in the pure resolver; out-of-subtree looks nonexistent
-    // (404-over-403, Section 6).
+    // Gate 2 (department scope) for any oversight transition — an override
+    // or a capability-gated transition (e.g. assign). It needs the DB, so it
+    // runs here rather than in the pure resolver; out-of-scope looks
+    // nonexistent (404-over-403, Section 6).
     if (
       (override || transition.required_capability) &&
-      !(await ownerInScope(user.id, request.owner_id, client))
+      !(await inDepartmentScope(user.id, request.department_id, client))
     ) {
       throw new WorkflowError(404, 'Not found');
     }

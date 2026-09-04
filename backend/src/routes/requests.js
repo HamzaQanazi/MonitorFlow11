@@ -16,7 +16,7 @@ const {
 } = require('../lib/workflowEngine');
 const { buildRequestFilter, PRIORITIES } = require('../lib/requestQuery');
 const { isOversight } = require('../lib/capabilities');
-const { subtreeIds, ownerInScope } = require('../lib/scope');
+const { subtreeIds, inDepartmentScope, departmentScopeIds } = require('../lib/scope');
 const { pick } = require('../lib/i18nLabel');
 const { logAudit } = require('../lib/audit');
 const { maybeAutoAssign } = require('../lib/autoAssign');
@@ -57,7 +57,7 @@ router.post('/', async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT st.id, st.key, st.name, st.owner_id, st.default_priority, st.accepts_external_users,
+      `SELECT st.id, st.key, st.name, st.department_id, st.default_priority, st.accepts_external_users,
               st.accepts_employee_submitters, st.auto_assign, fd.field_schema, w.statuses, w.transitions
        FROM service_type st
        JOIN form_definition fd ON fd.service_type_id = st.id AND fd.form_type = 'request'
@@ -148,7 +148,7 @@ router.post('/', async (req, res, next) => {
       autoAssigned = await maybeAutoAssign(client, {
         request: { id: created.id, user_id: req.user.id, status: created.status },
         service: {
-          ownerId: service.owner_id,
+          departmentId: service.department_id,
           name: service.name,
           autoAssign: service.auto_assign,
           statuses: service.statuses,
@@ -191,7 +191,7 @@ router.get('/', async (req, res, next) => {
     // Field-only employees (no oversight, never submitted anything) get an
     // empty list here — the filter's ownership union naturally excludes them;
     // they use GET /tasks for their assignments instead.
-    const scope = isOversight(req.user) ? await subtreeIds(req.user.id) : null;
+    const scope = isOversight(req.user) ? await departmentScopeIds(req.user) : null;
     const filter = buildRequestFilter(req.query, req.user, scope);
     if (filter.error) return res.status(400).json({ error: filter.error });
     const { where, params, page, pageSize } = filter;
@@ -239,7 +239,7 @@ router.get('/:id', async (req, res, next) => {
     if (!Number.isInteger(id)) return res.status(404).json({ error: 'Not found' });
 
     const { rows } = await pool.query(
-      `SELECT r.*, st.name AS service_type_name, st.owner_id AS service_owner_id,
+      `SELECT r.*, st.name AS service_type_name, st.department_id AS service_department_id,
               w.statuses AS workflow_statuses,
               u.id AS requester_id, u.name AS requester_name, u.email AS requester_email,
               u.phone AS requester_phone
@@ -255,12 +255,12 @@ router.get('/:id', async (req, res, next) => {
     if (req.user.role === 'user' && r.user_id !== req.user.id) {
       return res.status(404).json({ error: 'Not found' });
     }
-    // An employee always sees a request they submitted themselves (e.g. Time
-    // Off). Otherwise (a non-oversight employee uses GET /tasks/{id} for
-    // assignments instead) they need Gate 2: oversight, and the service owner
-    // inside their subtree (404-over-403).
+    // An employee always sees a request they submitted themselves (e.g. a
+    // checklist). Otherwise (a non-oversight employee uses GET /tasks/{id}
+    // for assignments instead) they need Gate 2: oversight, and the
+    // service's department inside their scope (404-over-403).
     if (req.user.role === 'employee' && r.user_id !== req.user.id) {
-      if (!isOversight(req.user) || !(await ownerInScope(req.user.id, r.service_owner_id))) {
+      if (!isOversight(req.user) || !(await inDepartmentScope(req.user.id, r.service_department_id))) {
         return res.status(404).json({ error: 'Not found' });
       }
     }
@@ -624,8 +624,11 @@ async function loadCommentableRequest(req, res) {
     return null;
   }
   const { rows } = await pool.query(
-    `SELECT r.id, r.user_id, st.name AS service_name, st.owner_id
-     FROM request r JOIN service_type st ON st.id = r.service_type_id
+    `SELECT r.id, r.user_id, st.name AS service_name, st.department_id,
+            dept.head_user_id AS department_head_id
+     FROM request r
+     JOIN service_type st ON st.id = r.service_type_id
+     LEFT JOIN department dept ON dept.id = st.department_id
      WHERE r.id = $1`,
     [id]
   );
@@ -633,10 +636,10 @@ async function loadCommentableRequest(req, res) {
     !rows.length ||
     (req.user.role === 'user' && rows[0].user_id !== req.user.id) ||
     // An employee always reaches a request they submitted themselves.
-    // Otherwise Gate 2: oversight, and only within their subtree.
+    // Otherwise Gate 2: oversight, and only within their department scope.
     (req.user.role === 'employee' &&
       rows[0].user_id !== req.user.id &&
-      (!isOversight(req.user) || !(await ownerInScope(req.user.id, rows[0].owner_id))))
+      (!isOversight(req.user) || !(await inDepartmentScope(req.user.id, rows[0].department_id))))
   ) {
     res.status(404).json({ error: 'Not found' });
     return null;
@@ -675,12 +678,14 @@ router.post('/:id/comments', async (req, res, next) => {
            VALUES ($1, $2, 'comment', $3)`,
           [request.user_id, request.id, message]
         );
-      } else if (request.owner_id) {
-        // Requester → the service's oversight owner (the other party).
+      } else if (request.department_head_id) {
+        // Requester → the service's department head (the other party) —
+        // silently skipped if the department has no head, same as every
+        // other department-head-fallback notification (§10).
         await client.query(
           `INSERT INTO notification (user_id, request_id, type, message)
            VALUES ($1, $2, 'comment', $3)`,
-          [request.owner_id, request.id, message]
+          [request.department_head_id, request.id, message]
         );
       }
       await client.query('COMMIT');
@@ -745,13 +750,13 @@ router.patch('/:id/priority', requireCapability('set_priority'), async (req, res
 
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `SELECT r.id, r.status, r.priority, st.owner_id
+      `SELECT r.id, r.status, r.priority, st.department_id
        FROM request r JOIN service_type st ON st.id = r.service_type_id
        WHERE r.id = $1 FOR UPDATE OF r`,
       [id]
     );
-    // Gate 2: out-of-subtree requests look nonexistent (404-over-403).
-    if (!rows.length || !(await ownerInScope(req.user.id, rows[0].owner_id, client))) {
+    // Gate 2: out-of-scope requests look nonexistent (404-over-403).
+    if (!rows.length || !(await inDepartmentScope(req.user.id, rows[0].department_id, client))) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }
@@ -806,7 +811,7 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
 
     await client.query('BEGIN');
     const { rows } = await client.query(
-      `SELECT r.id, r.status, r.service_type_id, st.owner_id, st.name AS service_name,
+      `SELECT r.id, r.status, r.service_type_id, st.department_id, st.name AS service_name,
               w.statuses, w.transitions
        FROM request r
        JOIN service_type st ON st.id = r.service_type_id
@@ -815,9 +820,9 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
        FOR UPDATE OF r`,
       [id]
     );
-    // Gate 2: an oversight employee assigns only within their subtree; an
-    // out-of-subtree request looks nonexistent (404-over-403).
-    if (!rows.length || !(await ownerInScope(req.user.id, rows[0].owner_id, client))) {
+    // Gate 2: an oversight employee assigns only within their department
+    // scope; an out-of-scope request looks nonexistent (404-over-403).
+    if (!rows.length || !(await inDepartmentScope(req.user.id, rows[0].department_id, client))) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'Not found' });
     }

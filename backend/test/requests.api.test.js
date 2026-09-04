@@ -36,7 +36,6 @@ before(async () => {
       acceptsExternalUsers: false,
       acceptsEmployeeSubmitters: true,
       featureKey: null,
-      ownerId: fixtures.employeeIds.root,
       requestFields: [{ id: 'note', label: { en: 'Note', ar: 'ملاحظة' }, type: 'text', required: true }],
       completionFields: [{ id: 'done_note', label: { en: 'Done', ar: 'تم' }, type: 'text', required: true }],
       statuses: [

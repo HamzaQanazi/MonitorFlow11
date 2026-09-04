@@ -1,0 +1,13 @@
+-- Re-scoped, user-directed: drop service_type.owner_id (006). Since the
+-- manager-tree removal (032), owner_id's only remaining job was naming an
+-- employee purely so Gate 2 could resolve THEIR department — department_id
+-- (already on the row) now anchors Gate 2 directly. Every scope check that
+-- used to resolve through an owner employee (lib/scope.js's ownerInScope/
+-- ownerScopeIds) now compares department_id directly (inDepartmentScope/
+-- departmentScopeIds); every "no human actor" fallback that pointed at the
+-- owner (auto-assign's audit attribution, escalation's last-resort
+-- notification, the assignee_manager comment-notification fallback) now
+-- falls back to the service's own department.head_user_id instead, and
+-- silently drops the notification for a headless department rather than
+-- guaranteeing a target the way a NOT NULL owner_id used to.
+ALTER TABLE service_type DROP COLUMN owner_id;

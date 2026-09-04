@@ -15,11 +15,13 @@ const REQUESTER_ROLES = ['user', 'employee'];
 // caller must join those the same way. A user is always scoped to own rows
 // regardless of params. An employee sees the union of: requests they
 // personally submitted (a service with accepts_employee_submitters) and, if
-// oversight, services whose owner is inside their subtree (`ownerScope`, an
-// array of user ids the caller resolves via subtreeIds). A non-oversight
-// employee passes ownerScope as null/empty, so that half of the union
-// contributes nothing and they only ever see their own submissions.
-function buildRequestFilter(q, user, ownerScope = null) {
+// oversight, services whose department is inside their scope (`departmentScope`,
+// an array of department ids the caller resolves via departmentSubtree/
+// departmentScopeIds — service_type.owner_id is gone, 2026-09-04). A
+// non-oversight employee passes departmentScope as null/empty, so that half
+// of the union contributes nothing and they only ever see their own
+// submissions.
+function buildRequestFilter(q, user, departmentScope = null) {
   const page = q.page === undefined ? 1 : Number(q.page);
   const pageSize = q.pageSize === undefined ? 20 : Number(q.pageSize);
   const bad = [];
@@ -46,11 +48,12 @@ function buildRequestFilter(q, user, ownerScope = null) {
 
   if (user.role === 'user') add('r.user_id = ?', user.id);
   // Gate 2 union: an employee sees requests they own themselves, plus (if
-  // oversight) any whose service owner is in their subtree. No scope (or an
-  // empty one) contributes nothing to the second half: fail closed, not open.
+  // oversight) any whose service's department is in their scope. No scope
+  // (or an empty one) contributes nothing to the second half: fail closed,
+  // not open.
   if (user.role === 'employee') {
-    params.push(user.id, ownerScope || []);
-    where.push(`(r.user_id = $${params.length - 1} OR st.owner_id = ANY($${params.length}))`);
+    params.push(user.id, departmentScope || []);
+    where.push(`(r.user_id = $${params.length - 1} OR st.department_id = ANY($${params.length}))`);
   }
   if (q.status !== undefined) add('r.status = ?', q.status);
   if (q.state !== undefined) add("(s->>'is_terminal')::bool = ?", q.state === 'closed');

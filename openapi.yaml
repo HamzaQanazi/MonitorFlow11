@@ -455,9 +455,10 @@ paths:
           required: false
           schema: { type: boolean }
           description: >
-            When true, restrict to services the caller oversees — owner_id in
-            their subtree (Gate 2). Powers the monitor Requests/Reports filter
-            dropdowns so they never offer a service the caller can't see rows for.
+            When true, restrict to services the caller oversees — the
+            service's department_id in their scope (Gate 2). Powers the
+            monitor Requests/Reports filter dropdowns so they never offer a
+            service the caller can't see rows for.
       responses:
         '200':
           description: OK
@@ -482,7 +483,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, departmentId, defaultPriority, acceptsExternalUsers, acceptsEmployeeSubmitters, ownerId, requestFields, completionFields, statuses, transitions]
+              required: [name, departmentId, defaultPriority, acceptsExternalUsers, acceptsEmployeeSubmitters, requestFields, completionFields, statuses, transitions]
               properties:
                 name: { $ref: '#/components/schemas/LocalizedText' }
                 departmentId: { type: integer }
@@ -496,16 +497,15 @@ paths:
                   default: false
                   description: >
                     Opt-in (§13 re-scope). When true, a new request auto-picks
-                    the least-loaded active employee in ownerId's subtree and
-                    fires the workflow's assign-capability transition — a
-                    no-op if the workflow has none. Toggle later via PATCH
-                    /services/{id}/auto-assign.
+                    the least-loaded active employee in the service's own
+                    department and fires the workflow's assign-capability
+                    transition — a no-op if the workflow has none, or if that
+                    department has no head to attribute the auto-fire to.
+                    Toggle later via PATCH /services/{id}/auto-assign.
                 featureKey:
                   type: string
                   nullable: true
-                  description: optional tag from the onboarding feature catalogue (lib/onboardingOptions.js), e.g. time_off, forms_checklists — lets clients tell same-flagged services apart
-
-                ownerId: { type: integer, description: an existing employee — the Gate-2 visibility anchor }
+                  description: optional tag from the onboarding feature catalogue (lib/onboardingOptions.js), e.g. forms_checklists — lets clients tell same-flagged services apart
                 requestFields:
                   type: array
                   description: field_schema for the request form — see formSchema.js's FIELD_TYPES
@@ -547,10 +547,9 @@ paths:
     get:
       tags: [services]
       summary: >
-        The whole service definition in one read - the row (including ownerId,
-        which the summary omits), both form schemas, the workflow, and whether
-        it is still editable. Admin-only, like the writes; backs the Add Service
-        wizard's edit mode.
+        The whole service definition in one read - the row, both form
+        schemas, the workflow, and whether it is still editable. Admin-only,
+        like the writes; backs the Add Service wizard's edit mode.
       parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
         '200':
@@ -565,7 +564,6 @@ paths:
                       - $ref: '#/components/schemas/ServiceSummary'
                       - type: object
                         properties:
-                          ownerId: { type: integer }
                           departmentId: { type: integer }
                           defaultPriority: { type: string, enum: [low, medium, high] }
                           editable:

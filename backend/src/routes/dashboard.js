@@ -4,14 +4,20 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireCapabilityOrAdmin } = require('../middleware/auth');
-const { ownerScopeIds } = require('../lib/scope');
+const { ownerScopeIds, departmentScopeIds } = require('../lib/scope');
 
 const router = express.Router();
 router.use(requireAuth, requireCapabilityOrAdmin('view_all'));
 
 router.get('/stats', async (req, res, next) => {
   try {
-    const dept = [await ownerScopeIds(req.user)];
+    // Two different scope shapes: department ids for "which services can this
+    // actor see" (everything below but workload), employee ids for "which
+    // employees' tasks" (workload) — service_type no longer has an owner_id
+    // to resolve into an employee-shaped scope, so these can't share one
+    // array the way they used to.
+    const dept = [await departmentScopeIds(req.user)];
+    const empScope = [await ownerScopeIds(req.user)];
     const [byState, byDepartment, byRequesterRole, slaBreach, reopen, workload] = await Promise.all([
       pool.query(
         `SELECT (s->>'is_terminal')::bool AS is_terminal, COUNT(*)::int AS count
@@ -19,7 +25,7 @@ router.get('/stats', async (req, res, next) => {
          JOIN service_type st ON st.id = r.service_type_id
          JOIN workflow_definition w ON w.service_type_id = r.service_type_id
          JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
-         WHERE st.owner_id = ANY($1)
+         WHERE st.department_id = ANY($1)
          GROUP BY 1`,
         dept
       ),
@@ -48,7 +54,7 @@ router.get('/stats', async (req, res, next) => {
                LIMIT 1
              )
          ) comp ON TRUE
-         WHERE st.enabled AND st.owner_id = ANY($1)
+         WHERE st.enabled AND st.department_id = ANY($1)
          GROUP BY d.id, d.name
          ORDER BY d.id`,
         dept
@@ -61,7 +67,7 @@ router.get('/stats', async (req, res, next) => {
          FROM request r
          JOIN service_type st ON st.id = r.service_type_id
          JOIN users u ON u.id = r.user_id
-         WHERE st.owner_id = ANY($1)
+         WHERE st.department_id = ANY($1)
          GROUP BY u.role`,
         dept
       ),
@@ -75,7 +81,7 @@ router.get('/stats', async (req, res, next) => {
          JOIN service_type st ON st.id = r.service_type_id
          JOIN workflow_definition w ON w.service_type_id = r.service_type_id
          JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
-         WHERE st.owner_id = ANY($1)
+         WHERE st.department_id = ANY($1)
            AND s->>'sla_minutes' IS NOT NULL
            AND NOT (s->>'is_terminal')::bool
            AND r.updated_at < now() - (s->>'sla_minutes')::int * INTERVAL '1 minute'`,
@@ -97,7 +103,7 @@ router.get('/stats', async (req, res, next) => {
            JOIN service_type st ON st.id = r.service_type_id
            JOIN workflow_definition w ON w.service_type_id = r.service_type_id
            JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = h.status
-           WHERE st.owner_id = ANY($1)
+           WHERE st.department_id = ANY($1)
          )
          SELECT
            COUNT(DISTINCT request_id) FILTER (WHERE is_terminal)::int AS ever_closed,
@@ -106,11 +112,12 @@ router.get('/stats', async (req, res, next) => {
         dept
       ),
       // Open workload per employee (I10 outcome metric: "open workload", not
-      // behaviour) — count of each employee's non-terminal tasks, scoped to the
-      // actor's subtree (Gate 2, same `dept` scope array as everything above).
-      // Top 8 by load; employees with zero open tasks just don't appear.
-      // total_employees (COUNT(*) OVER(), pre-LIMIT) lets the client show
-      // "+N more" instead of silently truncating.
+      // behaviour) — count of each employee's non-terminal tasks, scoped to
+      // the actor's subtree (Gate 2, the employee-id `empScope` array — this
+      // one is about employees, not services, so it's unaffected by the
+      // owner_id removal). Top 8 by load; employees with zero open tasks
+      // just don't appear. total_employees (COUNT(*) OVER(), pre-LIMIT) lets
+      // the client show "+N more" instead of silently truncating.
       pool.query(
         `SELECT u.id AS employee_id, u.name AS employee_name, COUNT(*)::int AS open_count,
                 COUNT(*) OVER()::int AS total_employees
@@ -124,7 +131,7 @@ router.get('/stats', async (req, res, next) => {
          GROUP BY u.id, u.name
          ORDER BY open_count DESC
          LIMIT 8`,
-        dept
+        empScope
       ),
     ]);
 
@@ -211,9 +218,9 @@ router.get('/chart', async (req, res, next) => {
        JOIN workflow_definition w ON w.service_type_id = r.service_type_id
        JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
        WHERE r.created_at >= (CURRENT_DATE - INTERVAL '29 days')
-         AND st.owner_id = ANY($1)
+         AND st.department_id = ANY($1)
        GROUP BY 1`,
-      [await ownerScopeIds(req.user)]
+      [await departmentScopeIds(req.user)]
     );
     const byDay = Object.fromEntries(rows.map((r) => [r.day, { open: r.open, closed: r.closed }]));
     const days = [];

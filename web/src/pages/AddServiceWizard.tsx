@@ -4,7 +4,6 @@ import { apiFetch, ApiError } from '../lib/api'
 import { useI18n, type Loc } from '../i18n'
 import { TranslateButton } from '../components/TranslateButton'
 import { TranslateAllButton } from '../components/TranslateAllButton'
-import { ownerLabel, type EmployeeOption } from '../lib/ownerLabel'
 import './RequestsPage.css'
 import './EmployeesPage.css'
 import './AddServiceWizard.css'
@@ -302,8 +301,8 @@ function classifyErrors(errors: string[]): ClassifiedErrors {
     ) {
       result.byStep[3].push(msg)
     } else {
-      // name / departmentId / defaultPriority / accepts* / ownerId /
-      // featureKey — everything Step 1 (Basics) owns, plus a safe default
+      // name / departmentId / defaultPriority / accepts* / featureKey —
+      // everything Step 1 (Basics) owns, plus a safe default
       // bucket for anything not explicitly recognized above.
       result.byStep[0].push(msg)
     }
@@ -344,8 +343,6 @@ interface StoredService {
   name: Loc
   departmentId: number
   defaultPriority: (typeof PRIORITIES)[number]
-  ownerId: number
-  ownerName: string
   acceptsExternalUsers: boolean
   acceptsEmployeeSubmitters: boolean
   autoAssign: boolean
@@ -432,11 +429,6 @@ export default function AddServiceWizard() {
   const { t, L } = useI18n()
 
   const [departments, setDepartments] = useState<Department[]>([])
-  const [employees, setEmployees] = useState<EmployeeOption[]>([])
-  const [ownerQuery, setOwnerQuery] = useState('')
-  // Held separately so the chosen owner stays visible once a later search
-  // filters them out of `employees`.
-  const [ownerName, setOwnerName] = useState('')
   const [loadError, setLoadError] = useState(false)
   const [step, setStep] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -465,7 +457,6 @@ export default function AddServiceWizard() {
   const [acceptsExternalUsers, setAcceptsExternalUsers] = useState(true)
   const [acceptsEmployeeSubmitters, setAcceptsEmployeeSubmitters] = useState(false)
   const [autoAssign, setAutoAssign] = useState(false)
-  const [ownerId, setOwnerId] = useState('')
   // Step 2 / 3
   const [requestFields, setRequestFields] = useState<FieldRow[]>([newFieldRow()])
   const [completionFields, setCompletionFields] = useState<FieldRow[]>([newFieldRow()])
@@ -505,8 +496,6 @@ export default function AddServiceWizard() {
         setAcceptsExternalUsers(service.acceptsExternalUsers)
         setAcceptsEmployeeSubmitters(service.acceptsEmployeeSubmitters)
         setAutoAssign(service.autoAssign)
-        setOwnerId(String(service.ownerId))
-        setOwnerName(service.ownerName)
         setRequestFields(storedToRows(service.requestFields))
         setCompletionFields(storedToRows(service.completionFields))
         setStatuses(flow.statuses)
@@ -518,24 +507,6 @@ export default function AddServiceWizard() {
       .catch(() => setLoadError(true))
       .finally(() => setHydrating(false))
   }, [editId])
-
-  // The owner list is searched on the server rather than fetched once and
-  // filtered here: pageSize caps at 100 (the contract's max), so a company
-  // with more staff than that silently lost the rest of its employees from
-  // the picker. isActive=true because owner_id is Gate 2's visibility anchor
-  // — a deactivated owner makes the service's requests invisible to everyone
-  // (services.js rejects one now, this stops it being offered at all).
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      const q = ownerQuery.trim()
-      apiFetch<{ employees: EmployeeOption[] }>(
-        `/employees?isActive=true&pageSize=50${q ? `&q=${encodeURIComponent(q)}` : ''}`,
-      )
-        .then((e) => setEmployees(e.employees))
-        .catch(() => setLoadError(true))
-    }, 250)
-    return () => clearTimeout(handle)
-  }, [ownerQuery])
 
   const { statusKeys, cancelKey, statusSchemas, edges } = buildFlow(statuses, allowCancel, cancelLabelEn, cancelLabelAr)
   const transitionSchemas = edgesToTransitions(edges, statusKeys, cancelKey, oversightAllowed)
@@ -553,7 +524,7 @@ export default function AddServiceWizard() {
   function stepValid(s: number): boolean {
     switch (s) {
       case 0:
-        return !!(nameEn.trim() && nameAr.trim() && departmentId && ownerId)
+        return !!(nameEn.trim() && nameAr.trim() && departmentId)
       case 1:
         return requestFields.length > 0 && requestFields.every(fieldRowValid)
       case 2:
@@ -586,7 +557,6 @@ export default function AddServiceWizard() {
           acceptsExternalUsers,
           acceptsEmployeeSubmitters,
           autoAssign,
-          ownerId: Number(ownerId),
           requestFields: fieldsToSchema(requestFields),
           completionFields: fieldsToSchema(completionFields),
           statuses: statusSchemas,
@@ -764,57 +734,6 @@ export default function AddServiceWizard() {
               <span>{t('svc_auto_assign')}</span>
             </label>
             <p className="ob-hint">{t('svc_auto_assign_hint')}</p>
-            <div className="field svc-owner">
-              <span className="svc-owner-label" id="svc-owner-label">
-                {t('svc_owner')}
-              </span>
-              {ownerId ? (
-                <div className="svc-owner-picked">
-                  <span>{ownerName || ownerId}</span>
-                  <button
-                    type="button"
-                    className="action-btn"
-                    onClick={() => {
-                      setOwnerId('')
-                      setOwnerName('')
-                      setOwnerQuery('')
-                    }}
-                  >
-                    {t('svc_owner_change')}
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <input
-                    type="search"
-                    aria-labelledby="svc-owner-label"
-                    placeholder={t('svc_owner_search')}
-                    value={ownerQuery}
-                    onChange={(e) => setOwnerQuery(e.target.value)}
-                  />
-                  {employees.length === 0 ? (
-                    <p className="ob-hint">{t('svc_owner_no_match')}</p>
-                  ) : (
-                    <ul className="svc-owner-results">
-                      {employees.map((emp) => (
-                        <li key={emp.id}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setOwnerId(String(emp.id))
-                              setOwnerName(ownerLabel(emp, L))
-                            }}
-                          >
-                            {ownerLabel(emp, L)}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              )}
-              <p className="ob-hint">{t('svc_owner_hint')}</p>
-            </div>
           </>
         )}
 

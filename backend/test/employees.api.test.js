@@ -57,16 +57,30 @@ test('deactivate an employee holding an open task → 409; reassign then deactiv
 });
 
 test('deactivated account: JWT rejected on the next call, not just at login', async () => {
-  // head2 (a separate subtree's root) never holds a task in this suite.
-  // root's own subtree doesn't include head2 (Gate 2) — use the Owner
-  // (admin), who is company-wide.
-  const deactivate = await api('PATCH', `/employees/${fixtures.employeeIds.head2}/deactivate`, {
+  // A fresh throwaway employee: every fixture employee by this point either
+  // holds an open task (field1, reassigned above), is already deactivated
+  // (field2), or is a department head (root/head2 both are, 2026-09-04 — a
+  // service's department needs one for auto-assign) — any of which 409s
+  // deactivation for a reason unrelated to what this test checks. Admin's
+  // company-wide reach (I2) is what's under test here, not scope.
+  const hire = await api('POST', '/employees', {
+    token: tokens.admin,
+    body: {
+      firstName: 'Temp', lastName: 'Deactivate', email: 'temp.deactivate@fixture.test',
+      phone: '0590000001', birthdate: '1995-01-01', gender: 'female', workerType: 'full_time',
+      departmentId: fixtures.departmentId,
+    },
+  });
+  assert.equal(hire.status, 201, JSON.stringify(hire.body));
+  const tempToken = await login(hire.body.employee.loginIdentifier, hire.body.tempPassword);
+
+  const deactivate = await api('PATCH', `/employees/${hire.body.employee.id}/deactivate`, {
     token: tokens.admin,
   });
   assert.equal(deactivate.status, 200, JSON.stringify(deactivate.body));
 
-  // tokens.head2 was issued before deactivation — still a validly-signed JWT.
-  const res = await api('GET', '/requests', { token: tokens.head2 });
+  // tempToken was issued before deactivation — still a validly-signed JWT.
+  const res = await api('GET', '/requests', { token: tempToken });
   assert.equal(res.status, 401);
 });
 

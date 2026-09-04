@@ -340,6 +340,22 @@ async function buildFixtures() {
   const field1 = await hire('Field', 'One', { levelId: staffLevelId });
   const field2 = await hire('Field', 'Two', { levelId: staffLevelId });
 
+  // A department with no head can't attribute an auto-assign audit row
+  // (2026-09-04 — service_type.owner_id is gone, so auto-assign falls back
+  // to the service's own department head instead) — every service-scoping
+  // test that exercises real auto-assignment needs one, so both fixture
+  // departments get theirs set to the manager already hired into them.
+  const rootHead = await api('PATCH', `/departments/${departmentId}/head`, {
+    token: ownerToken,
+    body: { headEmployeeId: root.id },
+  });
+  if (rootHead.status !== 204) throw new Error(`fixture department head: ${rootHead.status} ${JSON.stringify(rootHead.body)}`);
+  const otherHead = await api('PATCH', `/departments/${otherDepartmentId}/head`, {
+    token: ownerToken,
+    body: { headEmployeeId: head2.id },
+  });
+  if (otherHead.status !== 204) throw new Error(`fixture other department head: ${otherHead.status} ${JSON.stringify(otherHead.body)}`);
+
   WHO.root = root.loginIdentifier;
   WHO.head2 = head2.loginIdentifier;
   WHO.field1 = field1.loginIdentifier;

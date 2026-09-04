@@ -87,9 +87,9 @@ test('enabled: picks the least-loaded active employee in the service owner subtr
   assert.equal(detail.status, 200);
   assert.equal(detail.body.request.task.employeeId, firstAssignee);
 
-  // Cross-subtree safety: head2 (an unrelated subtree root, no relation to
-  // "Home Nursing"'s owner) must never be picked — Gate 2 holds by
-  // construction (candidates come only from subtreeIds(service.ownerId)).
+  // Cross-department safety: head2 (an employee in an unrelated department)
+  // must never be picked — Gate 2 holds by construction (candidates come
+  // only from the service's own department, service.departmentId).
   assert.notEqual(firstAssignee, fixtures.employeeIds.head2);
   assert.notEqual(second.body.assignedTask.employeeId, fixtures.employeeIds.head2);
 
@@ -110,7 +110,6 @@ test('enabled but no assign-capability transition on the workflow: stays unassig
       acceptsEmployeeSubmitters: false,
       autoAssign: true,
       featureKey: null,
-      ownerId: fixtures.employeeIds.root,
       requestFields: A_FIELD,
       completionFields: A_FIELD,
       ...CLOSED_WORKFLOW,

@@ -7,7 +7,7 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { subtreeIds } = require('../lib/scope');
+const { departmentScopeIds } = require('../lib/scope');
 const { withTx, logAudit } = require('../lib/audit');
 const { validateFieldSchema } = require('../lib/formSchema');
 const { validateWorkflowDefinition } = require('../lib/workflowSchema');
@@ -27,10 +27,10 @@ router.get('/', async (req, res, next) => {
     // external users; staff (employees/admins) reading config see all enabled
     // services. Paired with the POST /requests 403 guard — never UI-only.
     const externalOnly = req.user.role === 'user';
-    // `?owned=true` scopes the list to services the caller oversees — owner_id
-    // in their subtree (Gate 2), i.e. exactly the services whose requests they
-    // can see. Used by the monitor Requests/Reports filter dropdowns so the
-    // filter never offers a service that returns no rows.
+    // `?owned=true` scopes the list to services the caller oversees — its
+    // department_id in their scope (Gate 2), i.e. exactly the services whose
+    // requests they can see. Used by the monitor Requests/Reports filter
+    // dropdowns so the filter never offers a service that returns no rows.
     // Admin-only: include disabled services. Without this the console had no
     // way to see (or re-enable) anything an admin had switched off — PATCH
     // /:id/enabled could turn a service off and it vanished from every list.
@@ -38,8 +38,8 @@ router.get('/', async (req, res, next) => {
     const params = [];
     let ownedClause = '';
     if (req.query.owned === 'true' && !externalOnly) {
-      params.push(await subtreeIds(req.user.id));
-      ownedClause = `AND st.owner_id = ANY($${params.length})`;
+      params.push(await departmentScopeIds(req.user));
+      ownedClause = `AND st.department_id = ANY($${params.length})`;
     }
     const { rows } = await pool.query(
       `SELECT st.id, st.name, st.department_id, d.name AS department_name,
@@ -142,7 +142,6 @@ function validateServicePayload(b) {
   if (b.featureKey != null && !FEATURE_KEYS.has(b.featureKey)) {
     errors.push('featureKey must be null or a known onboarding feature key');
   }
-  if (!Number.isInteger(b.ownerId)) errors.push('ownerId is required');
 
   errors.push(...validateFieldSchema(b.requestFields).map((e) => `requestFields ${e}`));
   errors.push(...validateFieldSchema(b.completionFields).map((e) => `completionFields ${e}`));
@@ -159,20 +158,9 @@ function validateServicePayload(b) {
   return errors;
 }
 
-// Gate 2's visibility anchor must be a real, ACTIVE employee inside the
-// management tree - an admin, a deactivated account, or a non-existent id
-// would make the service creatable but invisible: no employee's subtree would
-// ever resolve it into scope, so its requests would reach nobody.
-async function ownerError(ownerId) {
-  const { rows } = await pool.query("SELECT is_active FROM users WHERE id = $1 AND role = 'employee'", [ownerId]);
-  if (!rows.length) return 'ownerId must reference an existing employee';
-  if (!rows[0].is_active) return 'ownerId must reference an active employee';
-  return null;
-}
-
 // GET /:id - everything the Add Service wizard needs to reopen a service in
-// edit mode: the row itself (including owner_id, which the list omits) plus
-// both forms and the workflow, in one round trip. Admin-only, like the writes.
+// edit mode: the row itself plus both forms and the workflow, in one round
+// trip. Admin-only, like the writes.
 router.get('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -181,10 +169,8 @@ router.get('/:id', requireRole('admin'), async (req, res, next) => {
     const [{ rows: svc }, { rows: forms }, { rows: wf }, { rows: used }] = await Promise.all([
       pool.query(
         `SELECT st.id, st.key, st.name, st.department_id, st.default_priority, st.enabled,
-                st.owner_id, o.name AS owner_name,
                 st.accepts_external_users, st.accepts_employee_submitters, st.auto_assign, st.feature_key
          FROM service_type st
-         JOIN users o ON o.id = st.owner_id
          WHERE st.id = $1`,
         [id]
       ),
@@ -203,8 +189,6 @@ router.get('/:id', requireRole('admin'), async (req, res, next) => {
         departmentId: r.department_id,
         defaultPriority: r.default_priority,
         enabled: r.enabled,
-        ownerId: r.owner_id,
-        ownerName: r.owner_name,
         acceptsExternalUsers: r.accepts_external_users,
         acceptsEmployeeSubmitters: r.accepts_employee_submitters,
         autoAssign: r.auto_assign,
@@ -234,9 +218,6 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
     const errors = validateServicePayload(b);
     if (errors.length) return res.status(422).json({ errors });
 
-    const badOwner = await ownerError(b.ownerId);
-    if (badOwner) return res.status(422).json({ errors: [badOwner] });
-
     const baseKey = slugify(b.name.en);
 
     const result = await withTx(async (tx) => {
@@ -255,15 +236,14 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
 
       const { rows: st } = await tx.query(
         `INSERT INTO service_type
-           (name, department_id, default_priority, enabled, owner_id, key,
+           (name, department_id, default_priority, enabled, key,
             accepts_external_users, accepts_employee_submitters, auto_assign, feature_key)
-         VALUES ($1::jsonb, $2, $3, TRUE, $4, $5, $6, $7, $8, $9)
+         VALUES ($1::jsonb, $2, $3, TRUE, $4, $5, $6, $7, $8)
          RETURNING id`,
         [
           JSON.stringify(b.name),
           b.departmentId,
           b.defaultPriority,
-          b.ownerId,
           key,
           b.acceptsExternalUsers,
           b.acceptsEmployeeSubmitters,
@@ -315,9 +295,6 @@ router.patch('/:id', requireRole('admin'), async (req, res, next) => {
     const errors = validateServicePayload(b);
     if (errors.length) return res.status(422).json({ errors });
 
-    const badOwner = await ownerError(b.ownerId);
-    if (badOwner) return res.status(422).json({ errors: [badOwner] });
-
     const result = await withTx(async (tx) => {
       // Lock the row so a request created concurrently can't slip past the
       // in-use check between here and the write.
@@ -329,15 +306,14 @@ router.patch('/:id', requireRole('admin'), async (req, res, next) => {
 
       await tx.query(
         `UPDATE service_type SET
-           name = $1::jsonb, department_id = $2, default_priority = $3, owner_id = $4,
-           accepts_external_users = $5, accepts_employee_submitters = $6,
-           auto_assign = $7, feature_key = $8
-         WHERE id = $9`,
+           name = $1::jsonb, department_id = $2, default_priority = $3,
+           accepts_external_users = $4, accepts_employee_submitters = $5,
+           auto_assign = $6, feature_key = $7
+         WHERE id = $8`,
         [
           JSON.stringify(b.name),
           b.departmentId,
           b.defaultPriority,
-          b.ownerId,
           b.acceptsExternalUsers,
           b.acceptsEmployeeSubmitters,
           b.autoAssign ?? false,

@@ -86,4 +86,67 @@ async function inOwnerScope(user, targetId, db = pool) {
   return ownerInScope(user.id, targetId, db);
 }
 
-module.exports = { subtreeIds, ownerInScope, ownerScopeIds, inOwnerScope };
+// service_type's Gate 2 anchor (2026-09-04, user-directed): a service no
+// longer names an owning EMPLOYEE (service_type.owner_id, dropped —
+// migration 036) — its own department_id IS its Gate 2 scope directly, since
+// the manager-tree removal already made "the owner's department" the only
+// thing owner_id actually contributed. These are the department-rooted
+// counterparts of subtreeIds/ownerInScope/ownerScopeIds/inOwnerScope above,
+// which stay unchanged for actual employee-to-employee scope checks
+// (assignment candidates, /employees, /departments).
+
+// Raw, non-admin-aware: is `departmentId` inside `rootId`'s reach — their own
+// department, or every department if their level holds view_all_company?
+// Mirrors ownerInScope's shape for the same reason ownerInScope stays raw:
+// every caller here already excludes admin at the router level.
+async function inDepartmentScope(rootId, departmentId, db = pool) {
+  if (departmentId == null) return false;
+  const { rows } = await db.query(
+    `SELECT 1 FROM users u
+     WHERE u.id = $1
+       AND (
+         u.department_id = $2
+         OR EXISTS (
+           SELECT 1 FROM level_capability lc
+           WHERE lc.level_id = u.level_id AND lc.capability_key = 'view_all_company'
+         )
+       )`,
+    [rootId, departmentId]
+  );
+  return rows.length > 0;
+}
+
+// Admin-aware: every department id `user` can reach — every department for
+// the admin (I2's "no department filter" rule, same as ownerScopeIds), their
+// own (widened to every department by view_all_company) otherwise. Feeds the
+// `department_id = ANY(...)` filter buildRequestFilter/dashboard.js/
+// checklists.js use in place of the old owner_id-based one.
+async function departmentScopeIds(user, db = pool) {
+  if (user.role === 'admin') {
+    const { rows } = await db.query('SELECT id FROM department');
+    return rows.map((r) => r.id);
+  }
+  const { rows } = await db.query(
+    `SELECT d.id
+     FROM users u
+     JOIN department d ON (
+       d.id = u.department_id
+       OR EXISTS (
+         SELECT 1 FROM level_capability lc
+         WHERE lc.level_id = u.level_id AND lc.capability_key = 'view_all_company'
+       )
+     )
+     WHERE u.id = $1`,
+    [user.id]
+  );
+  return rows.map((r) => r.id);
+}
+
+module.exports = {
+  subtreeIds,
+  ownerInScope,
+  ownerScopeIds,
+  inOwnerScope,
+  inDepartmentScope,
+  departmentScopeIds,
+};

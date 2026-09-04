@@ -1,9 +1,11 @@
 // Forms & Checklists — creates the checklist service types the same way an
 // admin would through the Add Service wizard (POST /services). seed.js can't
-// do this itself: post-v7 it seeds zero employees, and a service_type needs a
-// real employee as its owner_id (Gate 2's visibility anchor). Run this once
-// after onboarding + hiring/promoting at least one oversight-capable
-// (view_all) employee. Safe to re-run — existing keys are skipped.
+// do this itself: post-v7 it seeds zero employees, and creating a service_type
+// still needs an existing department. Run this once after onboarding +
+// hiring/promoting at least one oversight-capable (view_all) employee (used
+// only to attribute the audit-log row — Gate 2 itself is the service's own
+// department_id, 2026-09-04, not an owning employee). Safe to re-run —
+// existing keys are skipped.
 //
 //   cd backend && node src/seedChecklists.js
 //   CHECKLIST_OWNER_EMAIL=someone@company.org node src/seedChecklists.js
@@ -110,7 +112,9 @@ const CHECKLISTS = [
   },
 ];
 
-async function resolveOwnerId() {
+// Audit-log actor only now — service_type has no owner_id to store this
+// into (Gate 2 is the service's own department_id).
+async function resolveActorId() {
   if (OWNER_EMAIL) {
     const { rows } = await pool.query(
       `SELECT id FROM users WHERE role = 'employee' AND is_active AND lower(login_identifier) = lower($1)`,
@@ -142,7 +146,7 @@ async function resolveDepartmentId() {
   return rows[0].id;
 }
 
-async function seedOne(def, ownerId, departmentId) {
+async function seedOne(def, actorId, departmentId) {
   const { rows: existing } = await pool.query('SELECT id FROM service_type WHERE key = $1', [def.key]);
   if (existing.length) {
     console.log(`Skipping "${def.key}" — already exists (service_type ${existing[0].id}).`);
@@ -161,11 +165,11 @@ async function seedOne(def, ownerId, departmentId) {
   const serviceTypeId = await withTx(async (tx) => {
     const { rows: st } = await tx.query(
       `INSERT INTO service_type
-         (name, department_id, default_priority, enabled, owner_id, key,
+         (name, department_id, default_priority, enabled, key,
           accepts_external_users, accepts_employee_submitters, feature_key)
-       VALUES ($1::jsonb, $2, 'low', TRUE, $3, $4, FALSE, TRUE, 'forms_checklists')
+       VALUES ($1::jsonb, $2, 'low', TRUE, $3, FALSE, TRUE, 'forms_checklists')
        RETURNING id`,
-      [JSON.stringify(def.name), departmentId, ownerId, def.key]
+      [JSON.stringify(def.name), departmentId, def.key]
     );
     const id = st[0].id;
 
@@ -180,7 +184,7 @@ async function seedOne(def, ownerId, departmentId) {
       [id, JSON.stringify(CHECKLIST_WORKFLOW.statuses), JSON.stringify(CHECKLIST_WORKFLOW.transitions)]
     );
 
-    await logAudit(tx, ownerId, 'service.created', 'service_type', id, { key: def.key });
+    await logAudit(tx, actorId, 'service.created', 'service_type', id, { key: def.key });
     return id;
   });
 
@@ -189,11 +193,11 @@ async function seedOne(def, ownerId, departmentId) {
 
 async function main() {
   try {
-    const ownerId = await resolveOwnerId();
+    const actorId = await resolveActorId();
     const departmentId = await resolveDepartmentId();
     for (const def of CHECKLISTS) {
       // eslint-disable-next-line no-await-in-loop
-      await seedOne(def, ownerId, departmentId);
+      await seedOne(def, actorId, departmentId);
     }
   } catch (err) {
     console.error(`seedChecklists failed: ${err.message}`);

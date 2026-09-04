@@ -2,7 +2,10 @@
 // per-status `sla_minutes` in the workflow JSONB (null/absent = no SLA), and a
 // breach escalates to the assignee's DEPARTMENT HEAD (re-scoped, user-
 // directed — the manager tree is gone, §6/lib/scope.js), falling back to the
-// service owner when the request is unassigned, the assignee has no
+// SERVICE's own department head (2026-09-04 — service_type.owner_id is gone;
+// normally the same person as the assignee's, since assignment is
+// department-scoped, but a view_all_company holder can assign across
+// departments) when the request is unassigned, the assignee has no
 // department, their department has no head, or they themselves are the head
 // (escalating to yourself isn't an escalation). No status key appears here
 // (Section 9): the completion-target
@@ -56,7 +59,7 @@ const COMPLETION_TARGET = `COALESCE((
 async function runEscalationSweep() {
   // Rule 1: any SLA'd status breached → the assignee's department head. mgr
   // resolves only when a task exists and the assignee heads a different
-  // department than themselves; otherwise the service owner.
+  // department than themselves; otherwise the service's own department head.
   const tree = await pool.query(
     `INSERT INTO notification (user_id, request_id, type, message)
      SELECT COALESCE(mgr.id, own.id), r.id, 'escalation',
@@ -76,7 +79,8 @@ async function runEscalationSweep() {
      LEFT JOIN users emp ON emp.id = t.employee_id
      LEFT JOIN department dept ON dept.id = emp.department_id
      LEFT JOIN users mgr ON mgr.id = dept.head_user_id AND mgr.is_active AND mgr.id <> emp.id
-     LEFT JOIN users own ON own.id = st.owner_id AND own.is_active
+     LEFT JOIN department svcdept ON svcdept.id = st.department_id
+     LEFT JOIN users own ON own.id = svcdept.head_user_id AND own.is_active
      WHERE s->>'sla_minutes' IS NOT NULL
        AND NOT (s->>'is_terminal')::bool
        AND r.status <> ${COMPLETION_TARGET}

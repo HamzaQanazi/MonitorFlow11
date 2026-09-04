@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { apiFetch, ApiError } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n, type Loc } from '../i18n'
-import { ownerLabel, type EmployeeOption } from '../lib/ownerLabel'
 import { TranslateButton } from '../components/TranslateButton'
 import { TranslateAllButton } from '../components/TranslateAllButton'
 import './RequestsPage.css'
@@ -22,7 +21,6 @@ import './ChecklistsPage.css'
 interface ChecklistTemplateStats {
   serviceTypeId: number
   name: { en: string; ar: string }
-  ownerName: string
   departmentName: Loc
   submittedToday: number
   loggedToday: number
@@ -125,12 +123,10 @@ export default function ChecklistsPage() {
                   <h3 className="cl-card-title">
                     <Link to={`/requests?service=${tpl.serviceTypeId}`}>{tpl.name[lang] ?? tpl.name.en}</Link>
                   </h3>
-                  {/* Whose checklist this is. The card used to show a name and
-                      two numbers with no way to tell which department it
-                      belonged to or who owns it. */}
-                  <p className="cl-card-owner">
-                    {tpl.departmentName[lang] ?? tpl.departmentName.en} · {tpl.ownerName}
-                  </p>
+                  {/* Which department this checklist belongs to. The card
+                      used to show a name and two numbers with no way to
+                      tell. */}
+                  <p className="cl-card-owner">{tpl.departmentName[lang] ?? tpl.departmentName.en}</p>
                   <div className="cl-card-stats">
                     <Link className="cl-stat" to={`/requests?service=${tpl.serviceTypeId}`}>
                       <span className="cl-stat-num">{tpl.submittedToday}</span>
@@ -170,33 +166,21 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
   const { t, L } = useI18n()
   const [open, setOpen] = useState(false)
   const [departments, setDepartments] = useState<Department[]>([])
-  const [employees, setEmployees] = useState<EmployeeOption[]>([])
   const [loadError, setLoadError] = useState(false)
 
   const [nameEn, setNameEn] = useState('')
   const [nameAr, setNameAr] = useState('')
-  const [ownerId, setOwnerId] = useState('')
-  // The department was never asked for — it silently used departments[0], so
-  // every checklist landed in whatever department happened to sort first,
-  // however unrelated to the owner. It follows the chosen owner now (their own
-  // department), and stays overridable like the Add Employee manager picker.
   const [departmentId, setDepartmentId] = useState('')
   const [items, setItems] = useState<ItemRow[]>([newItemRow()])
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState('')
 
   useEffect(() => {
-    if (!open || departments.length || employees.length) return
-    Promise.all([
-      apiFetch<{ departments: Department[] }>('/departments'),
-      apiFetch<{ employees: EmployeeOption[] }>('/employees?isActive=true&pageSize=100'),
-    ])
-      .then(([d, e]) => {
-        setDepartments(d.departments)
-        setEmployees(e.employees)
-      })
+    if (!open || departments.length) return
+    apiFetch<{ departments: Department[] }>('/departments')
+      .then((d) => setDepartments(d.departments))
       .catch(() => setLoadError(true))
-  }, [open, departments.length, employees.length])
+  }, [open, departments.length])
 
   function updateItem(i: number, patch: Partial<ItemRow>) {
     setItems((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
@@ -207,7 +191,7 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
 
   async function save() {
     setSaveError('')
-    if (!nameEn.trim() || !nameAr.trim() || !ownerId || !departmentId) {
+    if (!nameEn.trim() || !nameAr.trim() || !departmentId) {
       setSaveError(t('cl_new_err_required'))
       return
     }
@@ -230,7 +214,6 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
           acceptsExternalUsers: false,
           acceptsEmployeeSubmitters: true,
           featureKey: 'forms_checklists',
-          ownerId: Number(ownerId),
           requestFields,
           completionFields: [{ id: 'notes', label: { en: 'Notes', ar: 'ملاحظات' }, type: 'text', required: false }],
           statuses: [
@@ -254,7 +237,6 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
       })
       setNameEn('')
       setNameAr('')
-      setOwnerId('')
       setDepartmentId('')
       setItems([newItemRow()])
       setOpen(false)
@@ -303,25 +285,6 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
             </label>
             <TranslateButton en={nameEn} ar={nameAr} setEn={setNameEn} setAr={setNameAr} />
             <label className="field">
-              <span>{t('svc_owner')}</span>
-              <select
-                className="req-select"
-                value={ownerId}
-                onChange={(e) => {
-                  setOwnerId(e.target.value)
-                  const picked = employees.find((emp) => String(emp.id) === e.target.value)
-                  if (picked?.departmentId != null) setDepartmentId(String(picked.departmentId))
-                }}
-              >
-                <option value="">{t('ob_select')}</option>
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {ownerLabel(emp, L)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
               <span>{t('emp_department')}</span>
               <select
                 className="req-select"
@@ -335,7 +298,6 @@ function NewChecklistPanel({ onCreated }: { onCreated: () => void }) {
                   </option>
                 ))}
               </select>
-              <p className="ob-hint">{t('cl_new_department_hint')}</p>
             </label>
           </div>
 
