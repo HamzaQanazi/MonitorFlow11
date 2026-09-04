@@ -26,14 +26,15 @@ const STEPS = [
   { titleKey: 'landing_how_3_title', bodyKey: 'landing_how_3_body' },
 ] as const
 
-// Mirrors backend/src/lib/onboardingOptions.js's PLANS/FEATURE_GROUPS. Static
-// here (not fetched) because this page is public/pre-auth — GET
-// /onboarding/options requires a session, same reason brand.ts is build-time.
-// Record-only: no prices, no billing (§13).
+// Mirrors backend/src/lib/onboardingOptions.js's PLANS. Static here (not
+// fetched) because this page is public/pre-auth — GET /onboarding/options
+// requires a session, same reason brand.ts is build-time. Record-only: no
+// prices, no billing (§13). Plans differ only by employeeCap — they never
+// gate feature modules (re-scoped 2026-09-03, user-directed).
 const PLANS = [
-  { nameKey: 'landing_plan_starter', cap: 10 as number | null, groupKeys: ['nav_group_operations'] },
-  { nameKey: 'landing_plan_growth', cap: 50 as number | null, groupKeys: ['nav_group_operations', 'nav_group_communication'] },
-  { nameKey: 'landing_plan_enterprise', cap: null as number | null, groupKeys: ['nav_group_operations', 'nav_group_communication', 'landing_group_hr_skills'] },
+  { nameKey: 'landing_plan_starter', cap: 10 as number | null },
+  { nameKey: 'landing_plan_growth', cap: 50 as number | null },
+  { nameKey: 'landing_plan_enterprise', cap: null as number | null },
 ] as const
 
 export default function LandingPage() {
@@ -119,9 +120,6 @@ export default function LandingPage() {
               <h3>{t(p.nameKey)}</h3>
               <p className="landing-plan-cap">
                 {p.cap === null ? t('ob_plan_unlimited') : `${t('ob_plan_up_to')} ${p.cap} ${t('ob_plan_employees')}`}
-              </p>
-              <p className="landing-plan-includes">
-                {t('ob_plan_includes')}: {p.groupKeys.map((k) => t(k)).join(' · ')}
               </p>
             </li>
           ))}

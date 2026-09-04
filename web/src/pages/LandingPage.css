@@ -281,12 +281,6 @@
   font-weight: 600;
 }
 
-.landing-plan-includes {
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.45;
-}
-
 .landing-bilingual {
   background: var(--pane);
   color: var(--pane-ink);

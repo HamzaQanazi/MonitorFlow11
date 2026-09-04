@@ -13,7 +13,6 @@ const {
   FEATURE_GROUPS,
   PLANS,
   INDUSTRY_KEYS,
-  SUBS_BY_INDUSTRY,
   FEATURE_KEYS,
   EMPLOYEE_RANGE_SET,
   PLAN_KEYS,
@@ -91,13 +90,11 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
 
   const name = bilingual(b.name);
   const address = bilingual(b.address);
-  const ownerJobTitle = bilingual(b.ownerJobTitle);
   const phone = str(b.phone);
   const emailDomain = str(b.emailDomain).toLowerCase();
 
   if (!name) errors.name = 'Company name (English and Arabic) is required';
   if (!address) errors.address = 'Company address (English and Arabic) is required';
-  if (!ownerJobTitle) errors.ownerJobTitle = 'Job title (English and Arabic) is required';
   // Step 5: the domain suffix for generated employee login emails
   // (ha.qanazi@<emailDomain> — lib/employeeEmail.js). Same shape a browser's
   // native <input type="email"> domain part accepts.
@@ -106,9 +103,6 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
   }
   if (!EMPLOYEE_RANGE_SET.has(b.employeeRange)) errors.employeeRange = 'Select a valid employee range';
   if (!INDUSTRY_KEYS.has(b.industry)) errors.industry = 'Select a valid industry';
-  else if (!SUBS_BY_INDUSTRY.get(b.industry).has(b.subIndustry)) {
-    errors.subIndustry = 'Select a valid sub-industry';
-  }
   if (!phone) errors.phone = 'Phone number is required';
 
   const branches = (Array.isArray(b.branches) ? b.branches : []).map(bilingual);
@@ -175,13 +169,13 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
 
     await client.query(
       `UPDATE company
-         SET name=$1, address=$2, owner_job_title=$3, employee_range=$4, industry=$5,
-             sub_industry=$6, features=$7, logo_file_id=$8, phone=$9,
-             plan=$10, email_domain=$11, onboarding_completed=TRUE
-       WHERE id=$12`,
+         SET name=$1, address=$2, employee_range=$3, industry=$4,
+             features=$5, logo_file_id=$6, phone=$7,
+             plan=$8, email_domain=$9, onboarding_completed=TRUE
+       WHERE id=$10`,
       [
-        JSON.stringify(name), JSON.stringify(address), JSON.stringify(ownerJobTitle),
-        b.employeeRange, b.industry, b.subIndustry,
+        JSON.stringify(name), JSON.stringify(address),
+        b.employeeRange, b.industry,
         features, logoFileId, phone, b.plan, emailDomain, req.user.company_id,
       ]
     );
@@ -203,7 +197,6 @@ router.patch('/company/onboarding', requireRole('admin'), async (req, res, next)
     // one in the product and wrote none.
     await logAudit(client, req.user.id, 'company.onboarded', 'company', req.user.company_id, {
       industry: b.industry,
-      subIndustry: b.subIndustry,
       plan: b.plan,
       features,
       branchCount: branchIds.length,

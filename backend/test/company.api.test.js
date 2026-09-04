@@ -17,11 +17,9 @@ before(async () => {
   base = {
     name: c.name,
     address: c.address,
-    ownerJobTitle: c.ownerJobTitle,
     phone: c.phone,
     employeeRange: c.employeeRange,
     industry: c.industry,
-    subIndustry: c.subIndustry,
     emailDomain: c.emailDomain,
     plan: c.plan,
     features: c.features,
@@ -63,13 +61,6 @@ test('the catalogue is re-validated on edit, not only at onboarding', async () =
   const bad = await api('PATCH', '/company', { token: tokens.admin, body: { ...base, industry: 'not_a_thing' } });
   assert.equal(bad.status, 422);
   assert.ok(bad.body.errors.industry);
-
-  const mismatch = await api('PATCH', '/company', {
-    token: tokens.admin,
-    body: { ...base, industry: 'healthcare', subIndustry: 'maintenance' },
-  });
-  assert.equal(mismatch.status, 422);
-  assert.ok(mismatch.body.errors.subIndustry);
 
   const domain = await api('PATCH', '/company', { token: tokens.admin, body: { ...base, emailDomain: 'not a domain' } });
   assert.equal(domain.status, 422);

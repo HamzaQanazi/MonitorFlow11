@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { apiFetch, ApiError, getToken } from '../lib/api'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n, type Loc } from '../i18n'
@@ -18,9 +18,9 @@ import './SettingsPage.css'
 
 interface Options {
   employeeRanges: string[]
-  industries: { key: string; label: Loc; subs: { key: string; label: Loc }[] }[]
+  industries: { key: string; label: Loc }[]
   featureGroups: { key: string; label: Loc; features: { key: string; label: Loc }[] }[]
-  plans: { key: string; name: Loc; employeeCap: number | null; featureGroups: string[] }[]
+  plans: { key: string; name: Loc; employeeCap: number | null }[]
 }
 interface BranchRow {
   id: number | null
@@ -32,10 +32,8 @@ interface CompanyResponse {
   company: {
     name: Loc | null
     address: Loc | null
-    ownerJobTitle: Loc | null
     employeeRange: string | null
     industry: string | null
-    subIndustry: string | null
     plan: string | null
     emailDomain: string | null
     features: string[]
@@ -62,12 +60,9 @@ export default function SettingsPage() {
   const [nameAr, setNameAr] = useState('')
   const [addressEn, setAddressEn] = useState('')
   const [addressAr, setAddressAr] = useState('')
-  const [jobEn, setJobEn] = useState('')
-  const [jobAr, setJobAr] = useState('')
   const [phone, setPhone] = useState('')
   const [employeeRange, setEmployeeRange] = useState('')
   const [industry, setIndustry] = useState('')
-  const [subIndustry, setSubIndustry] = useState('')
   const [emailDomain, setEmailDomain] = useState('')
   const [plan, setPlan] = useState('')
   const [features, setFeatures] = useState<string[]>([])
@@ -84,12 +79,9 @@ export default function SettingsPage() {
         setNameAr(c.name?.ar ?? '')
         setAddressEn(c.address?.en ?? '')
         setAddressAr(c.address?.ar ?? '')
-        setJobEn(c.ownerJobTitle?.en ?? '')
-        setJobAr(c.ownerJobTitle?.ar ?? '')
         setPhone(c.phone ?? '')
         setEmployeeRange(c.employeeRange ?? '')
         setIndustry(c.industry ?? '')
-        setSubIndustry(c.subIndustry ?? '')
         setEmailDomain(c.emailDomain ?? '')
         setPlan(c.plan ?? '')
         // Keys for modules removed since onboarding (§13's Directory and
@@ -103,11 +95,6 @@ export default function SettingsPage() {
       .catch((err: Error) => setLoadError(err.message))
       .finally(() => setLoaded(true))
   }, [])
-
-  const subs = useMemo(
-    () => options?.industries.find((i) => i.key === industry)?.subs ?? [],
-    [options, industry],
-  )
 
   function toggleFeature(key: string) {
     setFeatures((prev) => (prev.includes(key) ? prev.filter((f) => f !== key) : [...prev, key]))
@@ -156,11 +143,9 @@ export default function SettingsPage() {
         body: {
           name,
           address: { en: addressEn, ar: addressAr },
-          ownerJobTitle: { en: jobEn, ar: jobAr },
           phone,
           employeeRange,
           industry,
-          subIndustry,
           emailDomain,
           plan,
           features,
@@ -242,18 +227,6 @@ export default function SettingsPage() {
           </div>
 
           <div className="set-pair">
-            <SetField label={t('ob_job_title_en')} error={errors.ownerJobTitle}>
-              <input value={jobEn} onChange={(e) => setJobEn(e.target.value)} aria-invalid={!!errors.ownerJobTitle || undefined} />
-            </SetField>
-            <SetField label={t('ob_job_title_ar')}>
-              <input dir="rtl" value={jobAr} onChange={(e) => setJobAr(e.target.value)} />
-            </SetField>
-          </div>
-          <div className="set-pair-action">
-            <TranslateButton en={jobEn} ar={jobAr} setEn={setJobEn} setAr={setJobAr} />
-          </div>
-
-          <div className="set-pair">
             <SetField label={t('ob_phone')} error={errors.phone}>
               <input value={phone} inputMode="tel" onChange={(e) => setPhone(e.target.value)} aria-invalid={!!errors.phone || undefined} />
             </SetField>
@@ -266,24 +239,10 @@ export default function SettingsPage() {
           </header>
           <div className="set-pair">
             <SetField label={t('ob_industry')} error={errors.industry}>
-              <select
-                value={industry}
-                onChange={(e) => {
-                  setIndustry(e.target.value)
-                  setSubIndustry('')
-                }}
-              >
+              <select value={industry} onChange={(e) => setIndustry(e.target.value)}>
                 <option value="">{t('ob_select')}</option>
                 {options.industries.map((i) => (
                   <option key={i.key} value={i.key}>{L(i.label)}</option>
-                ))}
-              </select>
-            </SetField>
-            <SetField label={t('ob_sub_industry')} error={errors.subIndustry}>
-              <select value={subIndustry} onChange={(e) => setSubIndustry(e.target.value)} disabled={!industry}>
-                <option value="">{t('ob_select')}</option>
-                {subs.map((sub) => (
-                  <option key={sub.key} value={sub.key}>{L(sub.label)}</option>
                 ))}
               </select>
             </SetField>

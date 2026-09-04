@@ -13,12 +13,10 @@ let tokens;
 const VALID = {
   name: { en: 'Second Try Co', ar: 'شركة أخرى' },
   address: { en: '2 Test St', ar: 'شارع الاختبار 2' },
-  ownerJobTitle: { en: 'Owner', ar: 'المالك' },
   phone: '0590000001',
   emailDomain: 'second.test',
   employeeRange: '11-30',
   industry: 'field_services',
-  subIndustry: 'maintenance',
   branches: [{ en: 'Main', ar: 'الرئيسي' }],
   features: ['time_clock'],
   plan: 'enterprise',
@@ -43,15 +41,6 @@ test('unknown industry → 422', async () => {
   });
   assert.equal(res.status, 422);
   assert.ok(res.body.errors.industry);
-});
-
-test('sub-industry not belonging to the chosen industry → 422', async () => {
-  const res = await api('PATCH', '/company/onboarding', {
-    token: tokens.admin,
-    body: { ...VALID, industry: 'healthcare', subIndustry: 'maintenance' },
-  });
-  assert.equal(res.status, 422);
-  assert.ok(res.body.errors.subIndustry);
 });
 
 test('unknown plan → 422', async () => {

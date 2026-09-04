@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n, type Loc } from '../i18n'
 import { ApiError, apiFetch, getToken } from '../lib/api'
 import { Wordmark } from '../components/Wordmark'
 import { TranslateButton } from '../components/TranslateButton'
+import { TranslateAllButton } from '../components/TranslateAllButton'
 import './OnboardingWizard.css'
 
 // The first-login "Customize your app in 1 minute" wizard. Six steps, one save
@@ -14,9 +15,9 @@ import './OnboardingWizard.css'
 
 type Options = {
   employeeRanges: string[]
-  industries: { key: string; label: Loc; subs: { key: string; label: Loc }[] }[]
+  industries: { key: string; label: Loc }[]
   featureGroups: { key: string; label: Loc; features: { key: string; label: Loc }[] }[]
-  plans: { key: string; name: Loc; employeeCap: number | null; featureGroups: string[] }[]
+  plans: { key: string; name: Loc; employeeCap: number | null }[]
 }
 
 const STEP_COUNT = 7
@@ -30,11 +31,9 @@ const STEP_COUNT = 7
 const SERVER_FIELD_MAP: Record<string, [number, string[]]> = {
   name: [0, ['nameEn', 'nameAr']],
   address: [0, ['addressEn', 'addressAr']],
-  ownerJobTitle: [0, ['ownerJobTitleEn', 'ownerJobTitleAr']],
   phone: [0, ['phone']],
   employeeRange: [1, ['employeeRange']],
   industry: [1, ['industry']],
-  subIndustry: [1, ['subIndustry']],
   branches: [2, ['branches']],
   features: [3, ['features']],
   emailDomain: [4, ['emailDomain']],
@@ -95,13 +94,10 @@ export default function OnboardingWizard() {
   const [nameAr, setNameAr] = useState('')
   const [addressEn, setAddressEn] = useState('')
   const [addressAr, setAddressAr] = useState('')
-  const [ownerJobTitleEn, setOwnerJobTitleEn] = useState('')
-  const [ownerJobTitleAr, setOwnerJobTitleAr] = useState('')
   const [phone, setPhone] = useState('')
   // Step 2
   const [employeeRange, setEmployeeRange] = useState('')
   const [industry, setIndustry] = useState('')
-  const [subIndustry, setSubIndustry] = useState('')
   // Step 3 — bilingual, same rationale as the company name above.
   const [branchNames, setBranchNames] = useState<{ en: string; ar: string }[]>([{ en: '', ar: '' }])
   // Step 4
@@ -146,11 +142,6 @@ export default function OnboardingWizard() {
     return () => clearTimeout(handle)
   }, [addressEn])
 
-  const subs = useMemo(
-    () => options?.industries.find((i) => i.key === industry)?.subs ?? [],
-    [options, industry],
-  )
-
   function setBranchCount(n: number) {
     const count = Math.max(1, Math.min(20, n || 1))
     setBranchNames((prev) => {
@@ -175,13 +166,10 @@ export default function OnboardingWizard() {
       req('nameAr', nameAr)
       req('addressEn', addressEn)
       req('addressAr', addressAr)
-      req('ownerJobTitleEn', ownerJobTitleEn)
-      req('ownerJobTitleAr', ownerJobTitleAr)
       req('phone', phone)
     } else if (s === 1) {
       if (!employeeRange) e.employeeRange = t('ob_err_required')
       if (!industry) e.industry = t('ob_err_required')
-      if (!subIndustry) e.subIndustry = t('ob_err_required')
     } else if (s === 2) {
       branchNames.forEach((b, i) => {
         if (!b.en.trim()) e[`branch${i}en`] = t('ob_err_required')
@@ -245,10 +233,8 @@ export default function OnboardingWizard() {
         body: {
           name,
           address: { en: addressEn, ar: addressAr },
-          ownerJobTitle: { en: ownerJobTitleEn, ar: ownerJobTitleAr },
           employeeRange,
           industry,
-          subIndustry,
           branches: branchNames,
           features,
           logoFileId,
@@ -303,6 +289,9 @@ export default function OnboardingWizard() {
     )
   }
 
+  const allFeatureKeys = options.featureGroups.flatMap((g) => g.features.map((f) => f.key))
+  const allFeaturesSelected = allFeatureKeys.every((k) => features.includes(k))
+
   // 'ob_s6_title' (the old standalone Contact step) is gone — phone moved into
   // step 0 — so this list skips straight from s5 to s7 by position.
   const stepTitles = [
@@ -349,13 +338,7 @@ export default function OnboardingWizard() {
               <Field label={t('ob_company_address_ar')} error={errors.addressAr}>
                 <input dir="rtl" value={addressAr} onChange={(e) => setAddressAr(e.target.value)} aria-invalid={!!errors.addressAr || undefined} />
               </Field>
-              <Field label={t('ob_job_title_en')} error={errors.ownerJobTitleEn}>
-                <input value={ownerJobTitleEn} onChange={(e) => setOwnerJobTitleEn(e.target.value)} aria-invalid={!!errors.ownerJobTitleEn || undefined} />
-              </Field>
-              <Field label={t('ob_job_title_ar')} error={errors.ownerJobTitleAr}>
-                <input dir="rtl" value={ownerJobTitleAr} onChange={(e) => setOwnerJobTitleAr(e.target.value)} aria-invalid={!!errors.ownerJobTitleAr || undefined} />
-              </Field>
-              <TranslateButton en={ownerJobTitleEn} ar={ownerJobTitleAr} setEn={setOwnerJobTitleEn} setAr={setOwnerJobTitleAr} />
+              <TranslateButton en={addressEn} ar={addressAr} setEn={setAddressEn} setAr={setAddressAr} />
               <Field label={t('ob_phone')} error={errors.phone}>
                 <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" aria-invalid={!!errors.phone || undefined} />
               </Field>
@@ -375,23 +358,12 @@ export default function OnboardingWizard() {
               <Field label={t('ob_industry')} error={errors.industry}>
                 <select
                   value={industry}
-                  onChange={(e) => {
-                    setIndustry(e.target.value)
-                    setSubIndustry('')
-                  }}
+                  onChange={(e) => setIndustry(e.target.value)}
                   aria-invalid={!!errors.industry || undefined}
                 >
                   <option value="">{t('ob_select')}</option>
                   {options.industries.map((i) => (
                     <option key={i.key} value={i.key}>{L(i.label)}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label={t('ob_sub_industry')} error={errors.subIndustry}>
-                <select value={subIndustry} onChange={(e) => setSubIndustry(e.target.value)} disabled={!industry} aria-invalid={!!errors.subIndustry || undefined}>
-                  <option value="">{t('ob_select')}</option>
-                  {subs.map((s) => (
-                    <option key={s.key} value={s.key}>{L(s.label)}</option>
                   ))}
                 </select>
               </Field>
@@ -410,6 +382,16 @@ export default function OnboardingWizard() {
                   onChange={(e) => setBranchCount(Number(e.target.value))}
                 />
               </Field>
+              <TranslateAllButton
+                rows={branchNames}
+                getEn={(b) => b.en}
+                getAr={(b) => b.ar}
+                setPair={(i, en, ar) => {
+                  const next = [...branchNames]
+                  next[i] = { en, ar }
+                  setBranchNames(next)
+                }}
+              />
               {branchNames.map((b, i) => (
                 <div key={i} className="ob-branch-pair">
                   <Field label={`${t('ob_branch_name_en')} ${i + 1}`} error={errors[`branch${i}en`]}>
@@ -458,6 +440,15 @@ export default function OnboardingWizard() {
             <>
               <p className="ob-hint">{t('ob_features_hint')}</p>
               {errors.features && <span className="ob-field-error">{errors.features}</span>}
+              <span className="translate-row">
+                <button
+                  type="button"
+                  className="link-button translate-btn"
+                  onClick={() => setFeatures(allFeaturesSelected ? [] : allFeatureKeys)}
+                >
+                  {allFeaturesSelected ? t('ob_clear_all_features') : t('ob_select_all_features')}
+                </button>
+              </span>
               {options.featureGroups.map((g) => (
                 <fieldset key={g.key} className="ob-feature-group">
                   <legend>{L(g.label)}</legend>
@@ -512,12 +503,6 @@ export default function OnboardingWizard() {
                         ? t('ob_plan_unlimited')
                         : `${t('ob_plan_up_to')} ${p.employeeCap} ${t('ob_plan_employees')}`}
                     </span>
-                    <span className="ob-plan-includes">
-                      {t('ob_plan_includes')}:{' '}
-                      {p.featureGroups
-                        .map((gKey) => L(options.featureGroups.find((g) => g.key === gKey)?.label ?? { en: gKey, ar: gKey }))
-                        .join(', ')}
-                    </span>
                     {/* Step 2's employee range is a size hint, not a second cap —
                         the plan's own employeeCap (enforced server-side when
                         adding employees) is the only real limit. */}
@@ -540,19 +525,12 @@ export default function OnboardingWizard() {
                     <ReviewSection label={t('ob_s1_title')} />
                     <ReviewRow label={t('ob_company_name_en')} en={nameEn} ar={nameAr} />
                     <ReviewRow label={t('ob_company_address_en')} en={addressEn} ar={addressAr} />
-                    <ReviewRow label={t('ob_job_title_en')} en={ownerJobTitleEn} ar={ownerJobTitleAr} />
                     <ReviewRow label={t('ob_phone')} value={phone} />
 
                     <ReviewSection label={t('ob_s2_title')} />
                     <ReviewRow
                       label={t('ob_industry')}
-                      value={
-                        <>
-                          {L(options.industries.find((i) => i.key === industry)?.label ?? { en: industry, ar: industry })}
-                          {' · '}
-                          {L(subs.find((sub) => sub.key === subIndustry)?.label ?? { en: subIndustry, ar: subIndustry })}
-                        </>
-                      }
+                      value={L(options.industries.find((i) => i.key === industry)?.label ?? { en: industry, ar: industry })}
                     />
                     <ReviewRow label={t('ob_employee_count')} value={employeeRange} />
 

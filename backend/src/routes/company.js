@@ -12,7 +12,6 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const { withTx, logAudit } = require('../lib/audit');
 const {
   INDUSTRY_KEYS,
-  SUBS_BY_INDUSTRY,
   FEATURE_KEYS,
   EMPLOYEE_RANGE_SET,
   PLAN_KEYS,
@@ -43,7 +42,7 @@ router.get('/company', adminOnly, async (req, res, next) => {
   try {
     const [{ rows: co }, { rows: branches }] = await Promise.all([
       pool.query(
-        `SELECT id, name, address, owner_job_title, employee_range, industry, sub_industry,
+        `SELECT id, name, address, employee_range, industry,
                 plan, email_domain, features, logo_file_id, phone, onboarding_completed
          FROM company WHERE id = $1`,
         [req.user.company_id]
@@ -61,10 +60,8 @@ router.get('/company', adminOnly, async (req, res, next) => {
       company: {
         name: c.name,
         address: c.address,
-        ownerJobTitle: c.owner_job_title,
         employeeRange: c.employee_range,
         industry: c.industry,
-        subIndustry: c.sub_industry,
         plan: c.plan,
         emailDomain: c.email_domain,
         features: c.features ?? [],
@@ -90,18 +87,15 @@ router.patch('/company', adminOnly, async (req, res, next) => {
 
   const name = bilingual(b.name);
   const address = bilingual(b.address);
-  const ownerJobTitle = bilingual(b.ownerJobTitle);
   const phone = str(b.phone);
   const emailDomain = str(b.emailDomain).toLowerCase();
 
   if (!name) errors.name = 'Company name (English and Arabic) is required';
   if (!address) errors.address = 'Company address (English and Arabic) is required';
-  if (!ownerJobTitle) errors.ownerJobTitle = 'Job title (English and Arabic) is required';
   if (!phone) errors.phone = 'Phone number is required';
   if (!DOMAIN_RE.test(emailDomain)) errors.emailDomain = 'Enter a valid domain, e.g. company.org';
   if (!EMPLOYEE_RANGE_SET.has(b.employeeRange)) errors.employeeRange = 'Select a valid employee range';
   if (!INDUSTRY_KEYS.has(b.industry)) errors.industry = 'Select a valid industry';
-  else if (!SUBS_BY_INDUSTRY.get(b.industry).has(b.subIndustry)) errors.subIndustry = 'Select a valid sub-industry';
   if (!PLAN_KEYS.has(b.plan)) errors.plan = 'Select a valid plan';
 
   const features = Array.isArray(b.features) ? [...new Set(b.features)] : [];
@@ -196,13 +190,13 @@ router.patch('/company', adminOnly, async (req, res, next) => {
 
       await tx.query(
         `UPDATE company
-           SET name=$1::jsonb, address=$2::jsonb, owner_job_title=$3::jsonb, employee_range=$4,
-               industry=$5, sub_industry=$6, features=$7, phone=$8, plan=$9, email_domain=$10,
-               logo_file_id = COALESCE($11, logo_file_id)
-         WHERE id=$12`,
+           SET name=$1::jsonb, address=$2::jsonb, employee_range=$3,
+               industry=$4, features=$5, phone=$6, plan=$7, email_domain=$8,
+               logo_file_id = COALESCE($9, logo_file_id)
+         WHERE id=$10`,
         [
-          JSON.stringify(name), JSON.stringify(address), JSON.stringify(ownerJobTitle),
-          b.employeeRange, b.industry, b.subIndustry, features, phone, b.plan, emailDomain,
+          JSON.stringify(name), JSON.stringify(address),
+          b.employeeRange, b.industry, features, phone, b.plan, emailDomain,
           b.logoFileId || null, req.user.company_id,
         ]
       );

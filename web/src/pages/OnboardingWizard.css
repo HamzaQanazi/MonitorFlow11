@@ -261,11 +261,6 @@
   color: var(--muted);
 }
 
-.ob-plan-includes {
-  font-size: 13px;
-  color: var(--muted);
-}
-
 /* Soft, non-blocking — the plan is still pickable, just flagged. */
 .ob-plan-warning {
   font-size: 13px;
