@@ -1063,18 +1063,21 @@ const dict: Record<string, Loc> = {
   // landing page (public marketing page, /welcome — not part of the console)
   landing_eyebrow: { en: 'Workforce operations platform', ar: 'منصة عمليات القوى العاملة' },
   landing_hero_title: {
-    en: 'One console for your team’s requests, schedules, and field work.',
-    ar: 'لوحة واحدة لطلبات فريقك وجداوله وعمله الميداني.',
+    en: 'One system for requests, schedules, and the field team running them.',
+    ar: 'نظام واحد للطلبات والجداول والفريق الميداني الذي ينفذها.',
   },
   landing_hero_sub: {
-    en: 'MonitorFlow provisions your company with an Owner account and a one-minute setup wizard — no configuration files, no IT project.',
-    ar: 'يزوّد مونيتر فلو شركتك بحساب مالك ومعالج إعداد يستغرق دقيقة واحدة — دون ملفات إعداد أو مشروع تقني.',
+    en: 'MonitorFlow gives every request a form, a workflow, and an owner — from submission to completion, tracked on the console and in the field.',
+    ar: 'يمنح مونيتر فلو كل طلب نموذجًا وسير عمل ومسؤولًا — من التقديم حتى الإنجاز، بمتابعة من لوحة الإشراف ومن الميدان.',
   },
   landing_hero_cta: { en: 'Sign in to console', ar: 'تسجيل الدخول إلى وحدة الإشراف' },
+  landing_hero_cta_secondary: { en: 'See how it works', ar: 'شاهد كيف يعمل' },
   landing_hero_note: {
     en: 'Console accounts are provisioned at purchase — there’s no self-registration here.',
     ar: 'تُنشأ حسابات وحدة الإشراف عند الشراء — لا يوجد تسجيل ذاتي هنا.',
   },
+  landing_hero_mock_user_app: { en: 'User app', ar: 'تطبيق المستخدم' },
+  landing_hero_mock_employee_app: { en: 'Employee app', ar: 'تطبيق الموظف' },
 
   landing_how_title: { en: 'How it comes online', ar: 'كيف يبدأ العمل' },
   landing_how_1_title: { en: 'You get an Owner account', ar: 'تحصل على حساب مالك' },
@@ -1093,7 +1096,60 @@ const dict: Record<string, Loc> = {
     ar: 'أضف الموظفين، وتصبح وحدة الإشراف وتطبيقات الجوال جاهزة للاستخدام.',
   },
 
-  landing_features_title: { en: 'Feature modules', ar: 'الميزات' },
+  // Operational workflow — "show, don't tell" request lifecycle diagram.
+  landing_flow_eyebrow: { en: 'Operational workflow', ar: 'سير العمل التشغيلي' },
+  landing_flow_title: {
+    en: 'From request to completion — the same validated chain, every time.',
+    ar: 'من الطلب إلى الإنجاز — السلسلة ذاتها المُتحقَّق منها، في كل مرة.',
+  },
+  landing_flow_sub: {
+    en: 'Every request moves through a defined set of statuses. The engine enforces who can move it, and when.',
+    ar: 'يمر كل طلب بمجموعة محددة من الحالات. يفرض المحرك من يملك صلاحية نقله، ومتى.',
+  },
+  landing_flow_step_created: { en: 'Request created', ar: 'إنشاء الطلب' },
+  landing_flow_step_assigned: { en: 'Assigned', ar: 'تم التعيين' },
+  landing_flow_step_started: { en: 'Employee starts work', ar: 'يبدأ الموظف العمل' },
+  landing_flow_step_submitted: { en: 'Submitted', ar: 'تم الإرسال' },
+  landing_flow_step_approval: { en: 'Manager approval', ar: 'موافقة المدير' },
+  landing_flow_step_completed: { en: 'Completed', ar: 'مكتمل' },
+
+  // Dynamic workflow engine — the configuration-driven differentiator (dark section).
+  landing_engine2_eyebrow: { en: 'Configuration, not code', ar: 'تهيئة، لا برمجة' },
+  landing_engine2_title: { en: 'One engine. Every operation.', ar: 'محرك واحد. لكل عملية.' },
+  landing_engine2_sub: {
+    en: 'Field maintenance, deliveries, inspections, approvals — different operations, the same unmodified engine underneath.',
+    ar: 'صيانة ميدانية، توصيل، تفتيش، موافقات — عمليات مختلفة، والمحرك ذاته دون تعديل من تحتها.',
+  },
+  landing_engine2_root: { en: 'MonitorFlow engine', ar: 'محرك مونيتر فلو' },
+  landing_engine2_branch_maintenance: { en: 'Field Maintenance', ar: 'الصيانة الميدانية' },
+  landing_engine2_branch_delivery: { en: 'Delivery Operations', ar: 'عمليات التوصيل' },
+  landing_engine2_branch_inspection: { en: 'Inspection Workflow', ar: 'سير عمل التفتيش' },
+  landing_engine2_branch_approval: { en: 'Approval Process', ar: 'عملية الموافقة' },
+  landing_engine2_chip_forms: { en: 'Forms', ar: 'النماذج' },
+  landing_engine2_chip_statuses: { en: 'Statuses', ar: 'الحالات' },
+  landing_engine2_chip_permissions: { en: 'Permissions', ar: 'الصلاحيات' },
+  landing_engine2_chip_transitions: { en: 'Transitions', ar: 'الانتقالات' },
+  landing_engine2_note: {
+    en: 'No new code ships when a new workflow does — only new configuration.',
+    ar: 'لا يُنشر أي كود جديد عند إطلاق سير عمل جديد — تهيئة جديدة فقط.',
+  },
+
+  // Dynamic form engine.
+  landing_form_eyebrow: { en: 'Dynamic form engine', ar: 'محرك النماذج الديناميكي' },
+  landing_form_title: { en: 'Forms that come from data, not code.', ar: 'نماذج تُبنى من البيانات، لا من الكود.' },
+  landing_form_sub: {
+    en: 'Add a field to a service’s schema, and it appears — validated on the server — everywhere that service is used.',
+    ar: 'أضف حقلًا إلى مخطط الخدمة، وسيظهر — مُتحقَّقًا منه من الخادم — أينما استُخدمت تلك الخدمة.',
+  },
+  landing_form_step_schema: { en: 'Field schema', ar: 'مخطط الحقول' },
+  landing_form_step_render: { en: 'Rendered form', ar: 'النموذج المعروض' },
+  landing_form_step_record: { en: 'Submitted record', ar: 'السجل المُرسل' },
+  landing_form_field_issue: { en: 'Issue description', ar: 'وصف المشكلة' },
+  landing_form_field_photo: { en: 'Photo', ar: 'صورة' },
+  landing_form_field_parts: { en: 'Parts used', ar: 'القطع المستخدمة' },
+  landing_form_field_location: { en: 'Location', ar: 'الموقع' },
+
+  landing_features_title: { en: 'Five modules, one console.', ar: 'خمس ميزات، لوحة واحدة.' },
   landing_features_sub: {
     en: 'Turn on only what your team needs — the same modules for every industry.',
     ar: 'فعّل ما يحتاجه فريقك فقط — الميزات ذاتها لكل مجال عمل.',
@@ -1104,22 +1160,84 @@ const dict: Record<string, Loc> = {
   landing_feat_kb_desc: { en: 'Shared articles for how things get done.', ar: 'مقالات مشتركة لطريقة إنجاز العمل.' },
   landing_feat_events_desc: { en: 'A company calendar with RSVP.', ar: 'تقويم للشركة مع تأكيد الحضور.' },
 
-  landing_engine_title: { en: 'Built on one configurable engine', ar: 'مبني على محرك واحد قابل للتهيئة' },
-  landing_engine_sub: {
-    en: 'Nothing is hardcoded per industry — every service, form, and workflow is data, not code.',
-    ar: 'لا شيء مخصّص لمجال عمل بعينه — كل خدمة ونموذج وسير عمل هو بيانات، لا برمجة.',
+  // Permissions & department scope — Gate 1 + Gate 2 -> allowed action.
+  landing_perm_eyebrow: { en: 'Permissions', ar: 'الصلاحيات' },
+  landing_perm_title: { en: 'Two gates. Checked every time.', ar: 'بوابتان. يُتحقَّق منهما في كل مرة.' },
+  landing_perm_sub: {
+    en: 'What an employee can do, and where — resolved server-side, on every action, not just shown or hidden in the UI.',
+    ar: 'ما يستطيع الموظف فعله، وأين — يُحسم من الخادم في كل إجراء، لا مجرد إظهار أو إخفاء في الواجهة.',
   },
-  landing_engine_1_title: { en: 'Dynamic forms', ar: 'نماذج ديناميكية' },
-  landing_engine_1_body: { en: 'Any request or completion form renders from a stored schema.', ar: 'يُعرض أي نموذج طلب أو إنجاز من مخطط مُخزَّن.' },
-  landing_engine_2_title: { en: 'Dynamic workflows', ar: 'سير عمل ديناميكي' },
-  landing_engine_2_body: { en: 'Statuses and transitions are configured, not coded, per service.', ar: 'تُهيَّأ الحالات والانتقالات، ولا تُبرمَج، لكل خدمة.' },
-  landing_engine_3_title: { en: 'Two-gate permissions', ar: 'صلاحيات بوابتين' },
-  landing_engine_3_body: { en: 'What an employee can do, and who they can do it to — both checked, every time.', ar: 'ما يستطيع الموظف فعله، ولمن يستطيع فعله — كلاهما يُتحقّق منه في كل مرة.' },
+  landing_perm_gate1_label: { en: 'Capability', ar: 'الصلاحية' },
+  landing_perm_gate2_label: { en: 'Department scope', ar: 'نطاق الدائرة' },
+  landing_perm_result_label: { en: 'Allowed action', ar: 'إجراء مسموح' },
+  landing_perm_result_value: { en: 'Assign this request to Khaled Hamdan', ar: 'تعيين هذا الطلب إلى خالد حمدان' },
+  landing_perm_denied_label: { en: 'Denied', ar: 'مرفوض' },
+  landing_perm_denied_value: { en: 'Outside department scope', ar: 'خارج نطاق الدائرة' },
 
+  // Mobile field experience.
+  landing_mobile_eyebrow: { en: 'Mobile field experience', ar: 'تجربة الميدان عبر الجوال' },
+  landing_mobile_title: { en: 'Two apps. One field team.', ar: 'تطبيقان. فريق ميداني واحد.' },
+  landing_mobile_sub: {
+    en: 'A submitter app for the people requesting work, and an operator app for the people doing it.',
+    ar: 'تطبيق للمُقدِّمين الذين يطلبون العمل، وتطبيق للمشغّلين الذين ينفذونه.',
+  },
+  landing_mobile_user_title: { en: 'User app', ar: 'تطبيق المستخدم' },
+  landing_mobile_user_point1: { en: 'Submit requests', ar: 'تقديم الطلبات' },
+  landing_mobile_user_point2: { en: 'Track progress', ar: 'متابعة الحالة' },
+  landing_mobile_user_point3: { en: 'Fill dynamic forms', ar: 'تعبئة نماذج ديناميكية' },
+  landing_mobile_emp_title: { en: 'Employee app', ar: 'تطبيق الموظف' },
+  landing_mobile_emp_point1: { en: 'View assigned work', ar: 'عرض المهام المُسندة' },
+  landing_mobile_emp_point2: { en: 'Complete checklists', ar: 'إنجاز القوائم' },
+  landing_mobile_emp_point3: { en: 'Clock in and out', ar: 'تسجيل الحضور والانصراف' },
+
+  // Scheduling & time clock.
+  landing_sched_eyebrow: { en: 'Scheduling & time clock', ar: 'الجدولة وساعة الدوام' },
+  landing_sched_title: { en: 'Rosters and time, in sync.', ar: 'الجداول والوقت، بتزامن.' },
+  landing_sched_sub: {
+    en: 'Managers build the week from shift templates. Employees clock in from the field — location captured once, at the moment they start.',
+    ar: 'يبني المديرون الأسبوع من قوالب الورديات. يسجل الموظفون حضورهم من الميدان — يُلتقط الموقع مرة واحدة، لحظة البدء.',
+  },
+
+  // AI-assisted features.
+  landing_ai_eyebrow: { en: 'AI-assisted features', ar: 'ميزات مدعومة بالذكاء الاصطناعي' },
+  landing_ai_title: { en: 'A few things the system does for you.', ar: 'بعض ما يقوم به النظام نيابةً عنك.' },
+  landing_ai_sub: {
+    en: 'Local ranking over your own operational data — never behavioral tracking, never a live model call at request time.',
+    ar: 'ترتيب محلي مبني على بيانات عملياتك ذاتها — لا تتبع سلوكي، ولا استدعاء نموذج حيّ لحظة الطلب.',
+  },
+  landing_ai_assign_title: { en: 'Auto-assign ranking', ar: 'ترتيب التعيين التلقائي' },
+  landing_ai_assign_body: {
+    en: 'Ranks eligible employees by reopen rate, resolution time, and open workload.',
+    ar: 'يرتّب الموظفين المؤهلين حسب معدل إعادة الفتح، ووقت الإنجاز، وعبء العمل المفتوح.',
+  },
+  landing_ai_translate_title: { en: 'Bilingual auto-fill', ar: 'تعبئة تلقائية ثنائية اللغة' },
+  landing_ai_translate_body: {
+    en: 'Type one language, suggest the other — for every label an admin would otherwise write twice.',
+    ar: 'اكتب بلغة واحدة، ويُقترح المقابل باللغة الأخرى — لكل تسمية كان سيكتبها المسؤول مرتين.',
+  },
+  landing_ai_schedule_title: { en: 'AI-suggested scheduling', ar: 'جدولة مقترحة بالذكاء الاصطناعي' },
+  landing_ai_schedule_body: {
+    en: 'Proposes a fair rotation from recent shift history. A manager still reviews and applies it.',
+    ar: 'تقترح تناوبًا عادلًا بناءً على سجل الورديات الأخير. يبقى القرار والتطبيق بيد المدير.',
+  },
+
+  // Auditability & traceability.
+  landing_audit_eyebrow: { en: 'Auditability', ar: 'إمكانية التدقيق' },
+  landing_audit_title: { en: 'Every change, kept.', ar: 'كل تغيير، محفوظ.' },
+  landing_audit_sub: {
+    en: 'Status changes write to an immutable history in the same transaction — never edited, never deleted.',
+    ar: 'تُكتب تغييرات الحالة في سجل ثابت ضمن المعاملة ذاتها — لا تُعدَّل ولا تُحذف أبدًا.',
+  },
+
+  landing_bilingual_eyebrow: { en: 'Bilingual & RTL', ar: 'ثنائية اللغة واتجاه RTL' },
   landing_bilingual_title: { en: 'Arabic and English, both first-class', ar: 'العربية والإنجليزية، كلتاهما بالدرجة الأولى' },
   landing_bilingual_body: {
     en: 'Every screen works right-to-left and left-to-right — try it.',
     ar: 'تعمل كل شاشة من اليمين إلى اليسار ومن اليسار إلى اليمين — جرّب ذلك.',
+  },
+  landing_bilingual_note: {
+    en: 'The layout mirrors — sidebar, icons, spacing — not just the words.',
+    ar: 'يُعكس التخطيط نفسه — الشريط الجانبي والأيقونات والمسافات — لا الكلمات فقط.',
   },
   landing_bilingual_toggle: { en: 'Switch to Arabic', ar: 'التبديل إلى الإنجليزية' },
 
@@ -1136,6 +1254,22 @@ const dict: Record<string, Loc> = {
   landing_plan_starter: { en: 'Starter', ar: 'أساسي' },
   landing_plan_growth: { en: 'Growth', ar: 'نمو' },
   landing_plan_enterprise: { en: 'Enterprise', ar: 'مؤسسات' },
+
+  // landing page — department/service names used in the page's own product
+  // mockups. Values are the real department/service names from the live
+  // seeded demo (Nablus Municipality) the accompanying screenshots are
+  // captured from — key names are just internal ids, chosen before this
+  // page switched from a fictional persona to real seeded data, and are
+  // otherwise never user-visible. Bilingual because these mirror real
+  // department/service-name fields (I5); the fictional people/times/
+  // locations inside the same mockups stay plain text, matching
+  // users.name's own non-localized shape.
+  landing_dept_facilities: { en: 'Waste Management', ar: 'إدارة النفايات' },
+  landing_dept_warehouse: { en: 'Permits & Licensing', ar: 'التراخيص والتصاريح' },
+  landing_svc_generator: { en: 'Waste Pickup Request', ar: 'طلب جمع النفايات' },
+  landing_svc_electrical: { en: 'Pothole & Road Damage Report', ar: 'بلاغ حفرة أو ضرر في الطريق' },
+  landing_svc_warehouse_pickup: { en: 'Land / Building Permit Application', ar: 'طلب ترخيص أرض / بناء' },
+  landing_flow_screenshot_caption: { en: 'The actual request timeline in MonitorFlow', ar: 'الجدول الزمني الفعلي للطلب في مونيتر فلو' },
 }
 
 type Ctx = {
