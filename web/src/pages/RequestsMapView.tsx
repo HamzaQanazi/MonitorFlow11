@@ -19,7 +19,8 @@ interface MapRow {
   serviceTypeName: Loc
   status: { key: string; label: Loc; isTerminal: boolean }
   location: { lat: number; lng: number } | null
-  assignedEmployee: { id: number; name: string } | null
+  // Multi-assignee re-scope: a request may hold several assignees now.
+  assignedEmployees: { id: number; name: string }[]
 }
 
 interface Props {
@@ -168,7 +169,9 @@ export default function RequestsMapView({
                 >
                   <Tooltip direction="top" offset={[0, -16]}>
                     #{r.id} · {loc(r.serviceTypeName)} · {loc(r.status.label)}
-                    {r.assignedEmployee ? ` · ${r.assignedEmployee.name}` : ''}
+                    {r.assignedEmployees.length > 0
+                      ? ` · ${r.assignedEmployees.map((e) => e.name).join(', ')}`
+                      : ''}
                   </Tooltip>
                 </Marker>
               ))}

@@ -2423,7 +2423,9 @@ components:
         A transition the caller may fire right now (both gates already
         applied). Response fields are camelCase like every other response
         body. requires_assignee arrives with assignee-as-transition (Phase
-        5/7); until then assignment stays on PATCH /requests/{id}/assign.
+        5/7); until then assignment stays on PATCH /requests/{id}/assign
+        (additive only, multi-assignee re-scope — adds one more employee to
+        the request; there is no reassign/replace or remove path).
       properties:
         key: { type: string }
         label: { $ref: '#/components/schemas/LocalizedText' }
@@ -2462,7 +2464,15 @@ components:
         priority: { type: string, enum: [low, medium, high] }
         data: { type: object }
         location: { $ref: '#/components/schemas/Point' }
-        assigned_to: { type: integer, nullable: true }
+        assigned_to:
+          type: array
+          items: { type: integer }
+          description: >
+            Employee ids currently assigned (multi-assignee re-scope — a
+            request may hold several task rows, one per assignee, each a
+            solo task; there is no "lead", any assignee may fire an
+            actor-gated transition and it moves the one shared status for
+            everyone). Empty when unassigned.
         created_at: { type: string, format: date-time }
 
     RequestDetail:

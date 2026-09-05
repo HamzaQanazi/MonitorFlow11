@@ -127,8 +127,9 @@ class RequestDetail {
   final List<HistoryEntry> statusHistory;
   final List<RequestComment> comments;
 
-  /// Whether a task was ever created — gates the user's own cancel
-  /// (Section 6: only while unassigned).
+  /// Whether any task exists yet — gates the user's own cancel (Section 6:
+  /// only while unassigned). Multi-assignee re-scope: the server now returns
+  /// `tasks` (an array, possibly several), not a single `task`.
   final bool taskExists;
 
   const RequestDetail({
@@ -142,7 +143,7 @@ class RequestDetail {
   factory RequestDetail.fromJson(Map<String, dynamic> json) => RequestDetail(
         summary: RequestSummary.fromJson(json),
         formResponse: (json['formResponse'] as Map<String, dynamic>?) ?? const {},
-        taskExists: json['task'] != null,
+        taskExists: (json['tasks'] as List<dynamic>? ?? const []).isNotEmpty,
         statusHistory: (json['statusHistory'] as List<dynamic>? ?? const [])
             .map((h) => HistoryEntry.fromJson(h as Map<String, dynamic>))
             .toList(),

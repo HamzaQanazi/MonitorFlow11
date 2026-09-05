@@ -60,9 +60,13 @@ async function runEscalationSweep() {
   // Rule 1: any SLA'd status breached → the assignee's department head. mgr
   // resolves only when a task exists and the assignee heads a different
   // department than themselves; otherwise the service's own department head.
+  // DISTINCT: a request may have several assignees now (multi-assignee
+  // re-scope) — every column here besides the recipient is per-REQUEST, not
+  // per-assignee, so two assignees sharing one department head would
+  // otherwise insert the identical notification twice in one sweep.
   const tree = await pool.query(
     `INSERT INTO notification (user_id, request_id, type, message)
-     SELECT COALESCE(mgr.id, own.id), r.id, 'escalation',
+     SELECT DISTINCT COALESCE(mgr.id, own.id), r.id, 'escalation',
             jsonb_build_object(
               'en', 'Request #' || r.id || ' (' || (st.name->>'en') || ') has been in “' ||
                     (s->'label'->>'en') || '” for over ' || (${durationSql(SLA_MIN, 'en')}) ||

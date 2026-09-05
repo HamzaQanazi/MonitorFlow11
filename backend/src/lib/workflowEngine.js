@@ -76,16 +76,16 @@ function resolveTransition({
   currentStatus,
   user,
   requestUserId,
-  taskEmployeeId, // null when no task exists
+  taskEmployeeIds, // [] when no task exists — a request may have several assignees
   transitionKey,
   note = null,
   formValidated = false,
 }) {
   // Ownership first (404-over-403, Section 6): a requester must own the
   // request; a non-oversight employee must own either the request (they
-  // submitted it, e.g. Time Off) or the task (they're the assignee). An
-  // oversight actor owns nothing — its scope is checked as Gate 2 (subtree)
-  // in executeTransition, which needs the DB.
+  // submitted it, e.g. Time Off) or one of the request's tasks (they're an
+  // assignee). An oversight actor owns nothing — its scope is checked as
+  // Gate 2 (subtree) in executeTransition, which needs the DB.
   const oversight = isOversight(user);
   if (user.role === 'user' && requestUserId !== user.id) {
     throw new WorkflowError(404, 'Not found');
@@ -94,7 +94,7 @@ function resolveTransition({
     user.role === 'employee' &&
     !oversight &&
     requestUserId !== user.id &&
-    taskEmployeeId !== user.id
+    !taskEmployeeIds.includes(user.id)
   ) {
     throw new WorkflowError(404, 'Not found');
   }
@@ -126,7 +126,7 @@ function resolveTransition({
     t.actor === 'requester' &&
     isTerminal(statuses, t.to) &&
     (statusMeta(statuses, t.from) || {}).is_initial &&
-    taskEmployeeId !== null
+    taskEmployeeIds.length > 0
   ) {
     throw new WorkflowError(409, 'This request can no longer be cancelled — it has been assigned');
   }
@@ -200,9 +200,13 @@ async function applyTransition(client, {
     transition.to,
     request.id,
   ]);
-  if (task) {
-    await client.query('UPDATE task SET status = $1 WHERE id = $2', [transition.to, task.id]);
-  }
+  // TASK.status mirrors REQUEST.status (I6/§6 denormalization) for every
+  // assignee on the request — the status is request-wide regardless of how
+  // many task rows exist for it.
+  await client.query('UPDATE task SET status = $1 WHERE request_id = $2', [
+    transition.to,
+    request.id,
+  ]);
   await client.query(
     `INSERT INTO request_status_history (request_id, status, changed_by, note)
      VALUES ($1, $2, $3, $4)`,
@@ -227,10 +231,14 @@ async function applyTransition(client, {
   // `assigned_to` sees the task row /assign just wrote. Messages are
   // bilingual {en, ar} (deferred here by Phase 3).
   const svc = (l) => pick(request.service_name, l);
+  const notify = (userId, type, message) =>
+    client.query(
+      'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
+      [userId, request.id, type, JSON.stringify(message)]
+    );
   for (const target of transition.notify || []) {
-    let row = null; // [user_id, type, {en, ar}]
     if (target === 'created_by') {
-      row = [
+      await notify(
         request.user_id,
         // A transition carrying a required form is the "completed" event
         // (only completion transitions do); the rest are status_changed.
@@ -238,63 +246,53 @@ async function applyTransition(client, {
         {
           en: `Your request #${request.id} (${svc('en')}) is now “${pick(newStatus.label, 'en')}”.`,
           ar: `طلبك رقم ${request.id} (${svc('ar')}) أصبح الآن «${pick(newStatus.label, 'ar')}».`,
-        },
-      ];
-    } else {
-      // assigned_to / assignee_manager both hang off the task's current
-      // assignee — re-read, the row may have been written in beforeCommit.
-      // manager_id here is the assignee's DEPARTMENT HEAD (re-scoped,
-      // user-directed — the manager tree is gone, §6/lib/scope.js), null
-      // when the assignee has no department, no head, or is the head
-      // themselves (never escalate to yourself).
-      const { rows: a } = await client.query(
-        `SELECT t.employee_id,
-                CASE WHEN dept.head_user_id = u.id THEN NULL ELSE dept.head_user_id END AS manager_id
-         FROM task t
-         JOIN users u ON u.id = t.employee_id
-         LEFT JOIN department dept ON dept.id = u.department_id
-         WHERE t.request_id = $1`,
+        }
+      );
+    } else if (target === 'assigned_to') {
+      // Every current assignee — re-read, a row may have been written in
+      // beforeCommit (a fresh /assign inserts its own task row there). A
+      // request can now hold several task rows (multi-assignee re-scope),
+      // so this notifies each one instead of assuming a single assignee.
+      const { rows: assignees } = await client.query(
+        'SELECT employee_id FROM task WHERE request_id = $1',
         [request.id]
       );
-      if (!a.length) continue;
-      if (target === 'assigned_to') {
-        row = [
-          a[0].employee_id,
-          'assigned',
-          {
-            en: `You have been assigned request #${request.id} (${svc('en')}).`,
-            ar: `تم إسنادك إلى الطلب رقم ${request.id} (${svc('ar')}).`,
-          },
-        ];
-      } else {
-        // assignee_manager: the assignee's department head (§10 gate); a
-        // headless/departmentless assignee falls back to the SERVICE's own
-        // department head instead (2026-09-04 — service_type.owner_id is
-        // gone; normally the same person, since assignment is department-
-        // scoped, but a view_all_company holder can assign across
-        // departments, so this can genuinely differ). Silently drops the
-        // notification if that's null too — no more guaranteed-non-null
-        // owner to catch it, same as every other headless-department edge
-        // case in this file.
-        // ponytail: the one seeded use is the reject transition, so the type
-        // and wording say "rejected" — generalize both when a workflow
-        // notifies managers on other transitions.
-        const to = a[0].manager_id || request.department_head_id;
-        if (!to) continue;
-        row = [
-          to,
-          'task_rejected',
-          {
-            en: `${actorName} rejected the task for request #${request.id} (${svc('en')}): ${note}`,
-            ar: `رفض ${actorName} المهمة الخاصة بالطلب رقم ${request.id} (${svc('ar')}): ${note}`,
-          },
-        ];
+      for (const a of assignees) {
+        await notify(a.employee_id, 'assigned', {
+          en: `You have been assigned request #${request.id} (${svc('en')}).`,
+          ar: `تم إسنادك إلى الطلب رقم ${request.id} (${svc('ar')}).`,
+        });
       }
+    } else {
+      // assignee_manager: escalate from the ACTING employee (whoever fired
+      // this transition, e.g. a reject) — not "the" assignee. Re-querying
+      // the task table for that stopped being unambiguous once a request
+      // can have more than one assignee, and the acting employee's own id
+      // is already right here, so resolving from actorId is both simpler
+      // and correct in the single-assignee case too. manager_id is their
+      // DEPARTMENT HEAD (re-scoped, user-directed — the manager tree is
+      // gone, §6/lib/scope.js), null when they have no department, no head,
+      // or are the head themselves (never escalate to yourself) — falls
+      // back to the SERVICE's own department head (2026-09-04 —
+      // service_type.owner_id is gone), and silently drops the notification
+      // if that's null too, same as every other headless-department edge
+      // case in this file.
+      // ponytail: the one seeded use is the reject transition, so the type
+      // and wording say "rejected" — generalize both when a workflow
+      // notifies managers on other transitions.
+      const { rows: mgr } = await client.query(
+        `SELECT CASE WHEN dept.head_user_id = u.id THEN NULL ELSE dept.head_user_id END AS manager_id
+         FROM users u LEFT JOIN department dept ON dept.id = u.department_id
+         WHERE u.id = $1`,
+        [actorId]
+      );
+      const to = (mgr[0] && mgr[0].manager_id) || request.department_head_id;
+      if (!to) continue;
+      await notify(to, 'task_rejected', {
+        en: `${actorName} rejected the task for request #${request.id} (${svc('en')}): ${note}`,
+        ar: `رفض ${actorName} المهمة الخاصة بالطلب رقم ${request.id} (${svc('ar')}): ${note}`,
+      });
     }
-    await client.query(
-      'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
-      [row[0], request.id, row[1], JSON.stringify(row[2])]
-    );
   }
 
   return { status: newStatus, extra };
@@ -348,11 +346,15 @@ async function executeTransition({
       throw new WorkflowError(409, 'The request has changed — reload and try again');
     }
 
+    // A request may hold several task rows now (multi-assignee re-scope) —
+    // `task` here is specifically the CALLER's own row (what a
+    // required_form_key completion write should target), null for an
+    // oversight actor or a requester with no task of their own.
     const { rows: taskRows } = await client.query(
       'SELECT id, employee_id FROM task WHERE request_id = $1',
       [request.id]
     );
-    const task = taskRows[0] || null;
+    const task = taskRows.find((t) => t.employee_id === user.id) || null;
 
     const transition = override
       ? resolveOverride({
@@ -368,7 +370,7 @@ async function executeTransition({
           currentStatus: request.status,
           user,
           requestUserId: request.user_id,
-          taskEmployeeId: task ? task.employee_id : null,
+          taskEmployeeIds: taskRows.map((t) => t.employee_id),
           transitionKey,
           note,
           formValidated,

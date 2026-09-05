@@ -38,7 +38,10 @@ interface Detail {
   formResponse: Record<string, unknown>
   createdAt: string
   requester: { id: number; name: string; email: string; phone: string | null }
-  task: { id: number; employeeId: number; employeeName: string; assignedAt: string } | null
+  // Multi-assignee re-scope: a request may hold several solo tasks, one per
+  // assignee — any of them may fire an actor-gated transition (it moves the
+  // one shared status for everyone). No "lead", no reassign/replace.
+  tasks: { id: number; employeeId: number; employeeName: string; assignedAt: string }[]
   statusHistory: { status: Status; changedBy: { id: number; name: string }; changedAt: string; note: string | null }[]
   comments: { id: number; body: string; createdAt: string; author: { id: number; name: string } }[]
   attachments: {
@@ -347,8 +350,9 @@ export default function RequestDetailPane({
   const assignable = !detail.status.isTerminal
   // Spec v4 E2: least-loaded first — the top pick is the suggestion. The
   // server does not enforce it; the monitor stays free to pick anyone.
+  // Multi-assignee re-scope: excludes everyone already assigned, not just one.
   const pickable = employees
-    .filter((e) => e.id !== detail.task?.employeeId)
+    .filter((e) => !detail.tasks.some((task) => task.employeeId === e.id))
     .sort((a, b) => a.openTaskCount - b.openTaskCount)
 
   // Oversight actions come from the workflow data — no status key is named in
@@ -393,7 +397,7 @@ export default function RequestDetailPane({
           (s) =>
             !s.is_terminal &&
             !s.is_initial &&
-            (detail.task !== null || s.key !== assignTarget)
+            (detail.tasks.length > 0 || s.key !== assignTarget)
         )
       : []
   const hasActions = monitorMoves.length > 0 || showCancel || reopenTargets.length > 0
@@ -531,18 +535,20 @@ export default function RequestDetailPane({
 
       <section className="detail-section" aria-labelledby={`assign-h-${detail.id}`}>
         <h3 id={`assign-h-${detail.id}`}>{t('detail_assignment')}</h3>
-        {detail.task ? (
-          <p className="detail-assignee">
-            {t('detail_assigned_to')} <strong>{detail.task.employeeName}</strong> {t('detail_since')}{' '}
-            {formatDateTime(detail.task.assignedAt)}
-          </p>
+        {detail.tasks.length > 0 ? (
+          detail.tasks.map((task) => (
+            <p className="detail-assignee" key={task.id}>
+              {t('detail_assigned_to')} <strong>{task.employeeName}</strong> {t('detail_since')}{' '}
+              {formatDateTime(task.assignedAt)}
+            </p>
+          ))
         ) : (
           <p className="detail-assignee is-none">{t('detail_not_assigned')}</p>
         )}
         {assignable && (
           <div className="assign-row">
             <select
-              aria-label={detail.task ? t('detail_reassign_to') : t('detail_assign_to')}
+              aria-label={t('detail_assign_to')}
               className="req-select"
               value={pick}
               onChange={(e) => setPick(e.target.value)}
@@ -559,7 +565,7 @@ export default function RequestDetailPane({
               ))}
             </select>
             <button type="button" className="req-retry" onClick={assign} disabled={!pick || assignBusy}>
-              {assignBusy ? t('detail_assigning') : detail.task ? t('detail_reassign') : t('detail_assign')}
+              {assignBusy ? t('detail_assigning') : t('detail_assign')}
             </button>
           </div>
         )}

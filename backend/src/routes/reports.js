@@ -137,11 +137,16 @@ router.get('/export.csv', requireCapability('export'), async (req, res, next) =>
       `SELECT r.id, st.name->>'en' AS service_type_name,
               s->'label'->>'en' AS status_label, (s->>'is_terminal')::bool AS is_terminal,
               r.priority, u.name AS requester_name, u.role AS requester_role,
-              emp.name AS employee_name, r.created_at,
+              assignees.employee_name, r.created_at,
               comp.completed_at
        ${FROM}
-       LEFT JOIN task t ON t.request_id = r.id
-       LEFT JOIN users emp ON emp.id = t.employee_id
+       LEFT JOIN LATERAL (
+         -- A request may have several assignees now (multi-assignee
+         -- re-scope); keep one CSV row per request by joining their names.
+         SELECT string_agg(emp.name, '; ') AS employee_name
+         FROM task t JOIN users emp ON emp.id = t.employee_id
+         WHERE t.request_id = r.id
+       ) assignees ON TRUE
        LEFT JOIN LATERAL (
          SELECT MIN(h.changed_at) AS completed_at
          FROM request_status_history h

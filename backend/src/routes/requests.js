@@ -42,9 +42,10 @@ function listItem(row) {
     requester: { id: row.requester_id, name: row.requester_name },
     // v5 map amendment: the web map's data — pin position + tooltip employee.
     location: row.location_lat === null ? null : { lat: row.location_lat, lng: row.location_lng },
-    assignedEmployee: row.assigned_employee_id
-      ? { id: row.assigned_employee_id, name: row.assigned_employee_name }
-      : null,
+    // A request may have several assignees now (multi-assignee re-scope) —
+    // aggregated in SQL (json_agg) rather than joined flat, so this list
+    // query never returns more than one row per request.
+    assignedEmployees: row.assigned_employees || [],
   };
 }
 
@@ -203,15 +204,18 @@ router.get('/', async (req, res, next) => {
               r.priority, r.created_at, r.updated_at,
               u.id AS requester_id, u.name AS requester_name,
               ST_Y(r.location::geometry) AS location_lat, ST_X(r.location::geometry) AS location_lng,
-              tk.employee_id AS assigned_employee_id, emp.name AS assigned_employee_name,
+              assignees.assigned_employees,
               COUNT(*) OVER()::int AS total
        FROM request r
        JOIN service_type st ON st.id = r.service_type_id
        JOIN users u ON u.id = r.user_id
        JOIN workflow_definition w ON w.service_type_id = r.service_type_id
        JOIN LATERAL jsonb_array_elements(w.statuses) s ON s->>'key' = r.status
-       LEFT JOIN task tk ON tk.request_id = r.id
-       LEFT JOIN users emp ON emp.id = tk.employee_id
+       LEFT JOIN LATERAL (
+         SELECT json_agg(json_build_object('id', tk.employee_id, 'name', emp.name)) AS assigned_employees
+         FROM task tk JOIN users emp ON emp.id = tk.employee_id
+         WHERE tk.request_id = r.id
+       ) assignees ON true
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
        ORDER BY r.created_at DESC
        LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -293,13 +297,15 @@ router.get('/:id', async (req, res, next) => {
          ORDER BY fa.uploaded_at`,
         [id]
       ),
-      // Current assignment, so the Monitor detail pane can render and change
-      // it without a second endpoint (progress still reads via status).
+      // Current assignees (a request may hold several now, multi-assignee
+      // re-scope), so the Monitor detail pane can render and change them
+      // without a second endpoint (progress still reads via status).
       pool.query(
         `SELECT t.id, t.employee_id, t.assigned_at, u.name AS employee_name
          FROM task t
          JOIN users u ON u.id = t.employee_id
-         WHERE t.request_id = $1`,
+         WHERE t.request_id = $1
+         ORDER BY t.assigned_at`,
         [id]
       ),
     ]);
@@ -320,14 +326,14 @@ router.get('/:id', async (req, res, next) => {
           email: r.requester_email,
           phone: r.requester_phone,
         },
-        task: task.rows[0]
-          ? {
-              id: task.rows[0].id,
-              employeeId: task.rows[0].employee_id,
-              employeeName: task.rows[0].employee_name,
-              assignedAt: task.rows[0].assigned_at,
-            }
-          : null,
+        // Multi-assignee re-scope: an array, not a single object — one entry
+        // per assigned employee, each with their own task id.
+        tasks: task.rows.map((t) => ({
+          id: t.id,
+          employeeId: t.employee_id,
+          employeeName: t.employee_name,
+          assignedAt: t.assigned_at,
+        })),
         statusHistory: history.rows.map((h) => ({
           status: statusOf(r.workflow_statuses, h.status),
           changedBy: { id: h.by_id, name: h.by_name },
@@ -400,11 +406,15 @@ async function loadTransitionContext(req, res) {
     return { id, request, party: 'requester' };
   }
   if (request.user_id === req.user.id) return { id, request, party: 'requester' };
+  // A request may have several assignees (multi-assignee re-scope) — any one
+  // of them counts as the "assignee" party ("either moves it, moves for
+  // both": whoever fires an actor-gated transition drives the one shared
+  // request status).
   const { rows: taskRows } = await pool.query(
     'SELECT employee_id FROM task WHERE request_id = $1',
     [id]
   );
-  if (taskRows.length && taskRows[0].employee_id === req.user.id) {
+  if (taskRows.some((t) => t.employee_id === req.user.id)) {
     return { id, request, party: 'assignee' };
   }
   if (isOversight(req.user)) return { id, request, party: null };
@@ -844,15 +854,24 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
       });
     }
 
+    // A request may hold several task rows now (multi-assignee re-scope,
+    // "tasks stay solo assignee" — each employee gets their own row, never a
+    // shared or overwritten one; there is no reassignment/replace path, only
+    // adding a new assignee — removing one is a documented gap, not built).
     const { rows: taskRows } = await client.query(
       'SELECT id, employee_id FROM task WHERE request_id = $1',
       [request.id]
     );
-    const task = taskRows[0] || null;
+    if (taskRows.some((t) => t.employee_id === employee.id)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This request is already assigned to that employee' });
+    }
 
     // The assign transition is the oversight (assign-capability) transition
-    // out of the current status; its target is where work begins. Derived
-    // from the data — no status key in code (§9).
+    // out of the current status; its target is where work begins. Only
+    // reachable pre-work — the initial status, or after every current
+    // assignee has rejected back to it — derived from the data, no status
+    // key in code (§9).
     const assignTransition = request.transitions.find(
       (t) => t.from === request.status && t.required_capability === 'assign'
     );
@@ -860,32 +879,27 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
     if (assignTransition) {
       // Engine path needs its own transaction — release this lock first; the
       // engine re-locks and re-validates, so a race degrades to its 409.
+      // Always a fresh row: even if a stale rejected assignee's row is still
+      // sitting here (ponytail: rare multi-reject edge, not cleaned up), the
+      // new employee never reuses someone else's row identity.
       await client.query('ROLLBACK');
-      const note = task
-        ? `Reassigned to ${employee.name} after rejection`
-        : `Assigned to ${employee.name}`;
       const result = await executeTransition({
         requestId: request.id,
         user: req.user,
         transitionKey: assignTransition.key,
-        note,
+        note: `Assigned to ${employee.name}`,
         // Audit this as an assignment (not a bare status change), with the
         // assignee — written in executeTransition's transaction.
         auditAction: 'request.assigned',
         auditDetail: { assigneeId: employee.id, assignee: employee.name, to: assignTransition.to },
         beforeCommit: async (tx, ctx) => {
-          const upsert = ctx.task
-            ? await tx.query(
-                'UPDATE task SET employee_id = $1, assigned_at = now() WHERE id = $2 RETURNING id, assigned_at',
-                [employee.id, ctx.task.id]
-              )
-            : await tx.query(
-                'INSERT INTO task (request_id, employee_id, status) VALUES ($1, $2, $3) RETURNING id, assigned_at',
-                [ctx.request.id, employee.id, ctx.transition.to]
-              );
+          const inserted = await tx.query(
+            'INSERT INTO task (request_id, employee_id, status) VALUES ($1, $2, $3) RETURNING id, assigned_at',
+            [ctx.request.id, employee.id, ctx.transition.to]
+          );
           // The `assigned` notification is the transition's notify:
           // ['assigned_to'], resolved by the engine after this hook (Phase 5).
-          return upsert.rows[0];
+          return inserted.rows[0];
         },
       });
       return res.json({
@@ -899,42 +913,33 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
       });
     }
 
-    // No transition into the assign target from here: only an in-place
-    // reassignment of an existing, still-open task is possible. A terminal
-    // request can't be reassigned.
-    if (!task || isTerminal(request.statuses, request.status)) {
+    // No transition into the assign target from here: work is already
+    // underway for at least one assignee. Adding another doesn't touch the
+    // shared request status — just a new task row, a history note, and a
+    // notification (Section 5), written directly since there's no
+    // transition here to carry them. A terminal request can't take a new
+    // assignee at all.
+    if (isTerminal(request.statuses, request.status)) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'This request cannot be assigned in its current state' });
     }
-    if (task.employee_id === employee.id) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'This task is already assigned to that employee' });
-    }
 
-    const { rows: prevRows } = await client.query('SELECT name FROM users WHERE id = $1', [
-      task.employee_id,
-    ]);
-    const { rows: updated } = await client.query(
-      'UPDATE task SET employee_id = $1, assigned_at = now() WHERE id = $2 RETURNING id, assigned_at',
-      [employee.id, task.id]
+    const { rows: inserted } = await client.query(
+      'INSERT INTO task (request_id, employee_id, status) VALUES ($1, $2, $3) RETURNING id, assigned_at',
+      [request.id, employee.id, request.status]
     );
-    // Reassignment writes a history row with a descriptive note (Section 5);
-    // the status column repeats the unchanged current status.
     await client.query(
       `INSERT INTO request_status_history (request_id, status, changed_by, note)
        VALUES ($1, $2, $3, $4)`,
-      [request.id, request.status, req.user.id, `Reassigned from ${prevRows[0].name} to ${employee.name}`]
+      [request.id, request.status, req.user.id, `Added ${employee.name} to the request`]
     );
     // Operational audit, same transaction (§6 re-scope, I9). The engine-path
-    // (first) assignment is audited inside executeTransition below; this covers
-    // in-place reassignment, which never enters the engine.
+    // (first) assignment is audited inside executeTransition above; this
+    // covers adding an assignee mid-flight, which never enters the engine.
     await logAudit(client, req.user.id, 'request.assigned', 'request', request.id, {
       assigneeId: employee.id,
       assignee: employee.name,
-      previous: prevRows[0].name,
     });
-    // In-place reassignment is not a transition, so no notify data fires —
-    // insert the `assigned` notification directly (bilingual, Phase 5).
     await client.query(
       'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
       [
@@ -952,10 +957,10 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
     res.json({
       request: { id: request.id, status: statusOf(request.statuses, request.status) },
       task: {
-        id: updated[0].id,
+        id: inserted[0].id,
         employeeId: employee.id,
         employeeName: employee.name,
-        assignedAt: updated[0].assigned_at,
+        assignedAt: inserted[0].assigned_at,
       },
     });
   } catch (err) {
