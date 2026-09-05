@@ -52,6 +52,19 @@ class TaskSummary {
   }
 }
 
+/// One other employee also assigned to the same request (multi-assignee
+/// re-scope — each holds their own solo task; this is just "who else is on
+/// this one", not a scope/capability-gated view).
+class Coworker {
+  final int id;
+  final String name;
+
+  const Coworker({required this.id, required this.name});
+
+  factory Coworker.fromJson(Map<String, dynamic> json) =>
+      Coworker(id: json['id'] as int, name: json['name'] as String);
+}
+
 class TaskDetail {
   final TaskSummary summary;
   final Map<String, dynamic> requestFormResponse;
@@ -59,6 +72,7 @@ class TaskDetail {
   final String requesterName;
   final String? requesterPhone;
   final Map<String, dynamic>? completionFormResponse;
+  final List<Coworker> coworkers;
 
   const TaskDetail({
     required this.summary,
@@ -67,6 +81,7 @@ class TaskDetail {
     required this.requesterName,
     this.requesterPhone,
     this.completionFormResponse,
+    this.coworkers = const [],
   });
 
   factory TaskDetail.fromJson(Map<String, dynamic> json) {
@@ -80,6 +95,9 @@ class TaskDetail {
       requesterName: requester['name'] as String,
       requesterPhone: requester['phone'] as String?,
       completionFormResponse: json['completionFormResponse'] as Map<String, dynamic>?,
+      coworkers: (json['coworkers'] as List<dynamic>? ?? const [])
+          .map((c) => Coworker.fromJson(c as Map<String, dynamic>))
+          .toList(),
     );
   }
 }

@@ -147,7 +147,7 @@ router.get('/:id', async (req, res, next) => {
   try {
     const t = await loadOwnTask(Number(req.params.id), req.user.id);
 
-    const [form, attachments] = await Promise.all([
+    const [form, attachments, coworkers] = await Promise.all([
       pool.query(
         `SELECT field_schema FROM form_definition
          WHERE service_type_id = $1 AND form_type = 'request'`,
@@ -159,6 +159,17 @@ router.get('/:id', async (req, res, next) => {
          WHERE request_id = $1 OR task_id = $2
          ORDER BY uploaded_at`,
         [t.request_id, t.id]
+      ),
+      // Multi-assignee re-scope: the other employees also assigned to this
+      // request (each with their own solo task) — not a scope/capability
+      // check, just "who else is on this one I'm already assigned to."
+      pool.query(
+        `SELECT u.id, u.name
+         FROM task t2
+         JOIN users u ON u.id = t2.employee_id
+         WHERE t2.request_id = $1 AND t2.employee_id != $2
+         ORDER BY u.name`,
+        [t.request_id, req.user.id]
       ),
     ]);
 
@@ -177,6 +188,7 @@ router.get('/:id', async (req, res, next) => {
           formResponse: stripHiddenFields(form.rows[0].field_schema, t.form_response),
           requester: { name: t.requester_name, phone: t.requester_phone },
         },
+        coworkers: coworkers.rows.map((c) => ({ id: c.id, name: c.name })),
         attachments: attachments.rows.map((a) => ({
           id: a.id,
           originalFilename: a.original_filename,

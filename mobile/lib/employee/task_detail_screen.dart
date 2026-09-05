@@ -320,6 +320,29 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
               ],
             ),
           ),
+          if (d.coworkers.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            _SectionTitle(i18n.tr('td_coworkers')),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: MfColors.surface,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final c in d.coworkers)
+                    Chip(
+                      avatar: const Icon(Icons.person_outline, size: 18),
+                      label: Text(c.name),
+                    ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           _SectionTitle(i18n.tr('td_request_details')),
           const SizedBox(height: 10),

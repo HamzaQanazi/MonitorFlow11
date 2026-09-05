@@ -283,6 +283,7 @@ const Map<String, Map<String, String>> _dict = {
   'td_load_fail': {'en': 'Could not load this task.', 'ar': 'تعذّر تحميل هذه المهمة.'},
   'td_no_phone': {'en': 'No phone app available on this device', 'ar': 'لا يوجد تطبيق هاتف على هذا الجهاز'},
   'td_requester': {'en': 'Requester', 'ar': 'مقدّم الطلب'},
+  'td_coworkers': {'en': 'Also assigned', 'ar': 'مُسند أيضًا لـ'},
   'td_request_details': {'en': 'Request details', 'ar': 'تفاصيل الطلب'},
   'td_assigned': {'en': 'assigned', 'ar': 'أُسندت'},
   'td_complete_btn': {'en': 'Complete task', 'ar': 'إكمال المهمة'},
