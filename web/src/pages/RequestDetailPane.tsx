@@ -177,6 +177,8 @@ export default function RequestDetailPane({
   const [pick, setPick] = useState('')
   const [assignBusy, setAssignBusy] = useState(false)
   const [assignError, setAssignError] = useState<string | null>(null)
+  const [removePending, setRemovePending] = useState<{ employeeId: number; employeeName: string } | null>(null)
+  const [removeBusy, setRemoveBusy] = useState(false)
   const [workflow, setWorkflow] = useState<Workflow | null>(null)
   const [pending, setPending] = useState<PendingAction | null>(null)
   const [note, setNote] = useState('')
@@ -234,11 +236,12 @@ export default function RequestDetailPane({
       if (e.key !== 'Escape') return
       // Esc dismisses the open dialog before it dismisses the pane.
       if (pending) setPending(null)
+      else if (removePending) setRemovePending(null)
       else onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, pending])
+  }, [onClose, pending, removePending])
 
   async function assign() {
     if (!pick) return
@@ -257,6 +260,27 @@ export default function RequestDetailPane({
       }
     } finally {
       setAssignBusy(false)
+    }
+  }
+
+  async function removeAssignee() {
+    if (!removePending) return
+    setRemoveBusy(true)
+    setAssignError(null)
+    try {
+      await apiFetch(`/requests/${id}/assign/${removePending.employeeId}`, { method: 'DELETE' })
+      setRemovePending(null)
+      await load()
+      onChanged()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setAssignError(t('detail_remove_fail_attachments'))
+      } else {
+        setAssignError(err instanceof Error ? err.message : t('detail_remove_fail_generic'))
+      }
+      setRemovePending(null)
+    } finally {
+      setRemoveBusy(false)
     }
   }
 
@@ -540,6 +564,15 @@ export default function RequestDetailPane({
             <p className="detail-assignee" key={task.id}>
               {t('detail_assigned_to')} <strong>{task.employeeName}</strong> {t('detail_since')}{' '}
               {formatDateTime(task.assignedAt)}
+              {assignable && (
+                <button
+                  type="button"
+                  className="link-button detail-remove-assignee"
+                  onClick={() => setRemovePending({ employeeId: task.employeeId, employeeName: task.employeeName })}
+                >
+                  {t('detail_remove_assignee')}
+                </button>
+              )}
             </p>
           ))
         ) : (
@@ -716,6 +749,41 @@ export default function RequestDetailPane({
                 disabled={pendingBusy}
               >
                 {pendingBusy ? t('detail_working') : pending.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {removePending && (
+        <div className="dialog-backdrop" onClick={() => !removeBusy && setRemovePending(null)}>
+          <div
+            className="dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${t('detail_remove_assignee_q')} ${removePending.employeeName}?`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4>
+              {t('detail_remove_assignee_q')} <strong>{removePending.employeeName}</strong>?
+            </h4>
+            <p className="req-status-msg">{t('detail_remove_assignee_p')}</p>
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="detail-close-text"
+                onClick={() => setRemovePending(null)}
+                disabled={removeBusy}
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                className="req-retry is-danger"
+                onClick={removeAssignee}
+                disabled={removeBusy}
+              >
+                {removeBusy ? t('detail_working') : t('detail_remove_assignee')}
               </button>
             </div>
           </div>

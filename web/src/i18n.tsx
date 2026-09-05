@@ -262,6 +262,17 @@ const dict: Record<string, Loc> = {
     ar: 'لا يمكن لهذا الموظف استلام هذا الطلب (دائرة غير مطابقة أو غير مُفعّل).',
   },
   detail_assign_fail_generic: { en: 'Assignment failed', ar: 'فشل الإسناد' },
+  detail_remove_assignee: { en: 'Remove', ar: 'إزالة' },
+  detail_remove_assignee_q: { en: 'Remove', ar: 'إزالة' },
+  detail_remove_assignee_p: {
+    en: 'They will no longer be assigned to this request. This does not change the request’s status.',
+    ar: 'لن يعد مُسندًا إلى هذا الطلب. هذا لا يغيّر حالة الطلب.',
+  },
+  detail_remove_fail_attachments: {
+    en: 'This assignee has attachments on their task and cannot be removed.',
+    ar: 'لدى هذا الموظف مرفقات على مهمته ولا يمكن إزالته.',
+  },
+  detail_remove_fail_generic: { en: 'Removing the assignee failed', ar: 'فشلت إزالة الموظف' },
   detail_reopen_to: { en: 'Reopen to…', ar: 'إعادة الفتح إلى…' },
   detail_reopen_to_aria: { en: 'Reopen to status', ar: 'إعادة الفتح إلى حالة' },
   detail_reopen: { en: 'Reopen', ar: 'إعادة فتح' },

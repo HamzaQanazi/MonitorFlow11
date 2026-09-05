@@ -487,6 +487,11 @@
   color: var(--muted);
 }
 
+.detail-remove-assignee {
+  margin-inline-start: 10px;
+  font-size: 13px;
+}
+
 .assign-row {
   display: flex;
   gap: 10px;
