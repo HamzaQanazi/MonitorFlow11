@@ -971,4 +971,76 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
   }
 });
 
+// DELETE /requests/{id}/assign/{employeeId} — remove one assignee (multi-
+// assignee re-scope's counterpart to the additive PATCH /assign above). The
+// gap this closes: without it there was no way to free an employee from a
+// request so they could be deactivated (routes/employees.js's open-task
+// guard) once /assign stopped supporting replace-in-place. Same two gates as
+// assign; no status write (removing someone doesn't change the shared
+// request status, same reasoning as adding one). No notification — removal
+// isn't in the fixed notify trigger list (§10) and this file doesn't invent one.
+router.delete('/:id/assign/:employeeId', requireCapability('assign'), async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const id = Number(req.params.id);
+    const employeeId = Number(req.params.employeeId);
+    if (!Number.isInteger(id) || !Number.isInteger(employeeId)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT r.id, r.status, st.department_id
+       FROM request r JOIN service_type st ON st.id = r.service_type_id
+       WHERE r.id = $1
+       FOR UPDATE OF r`,
+      [id]
+    );
+    if (!rows.length || !(await inDepartmentScope(req.user.id, rows[0].department_id, client))) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const request = rows[0];
+
+    const { rows: taskRows } = await client.query(
+      'SELECT id, employee_id FROM task WHERE request_id = $1 AND employee_id = $2',
+      [id, employeeId]
+    );
+    if (!taskRows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const task = taskRows[0];
+
+    // A task with its own completion-photo attachments can't be silently
+    // deleted (file_attachment.task_id has no ON DELETE) — surface that as a
+    // clear 409 rather than a raw FK-violation 500.
+    const { rows: attachments } = await client.query(
+      'SELECT 1 FROM file_attachment WHERE task_id = $1 LIMIT 1',
+      [task.id]
+    );
+    if (attachments.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'This assignee has attachments on their task and cannot be removed' });
+    }
+
+    const { rows: empRows } = await client.query('SELECT name FROM users WHERE id = $1', [employeeId]);
+    await client.query('DELETE FROM task WHERE id = $1', [task.id]);
+    await client.query(
+      `INSERT INTO request_status_history (request_id, status, changed_by, note)
+       VALUES ($1, $2, $3, $4)`,
+      [id, request.status, req.user.id, `Removed ${empRows[0]?.name ?? `employee #${employeeId}`} from the request`]
+    );
+    await logAudit(client, req.user.id, 'request.unassigned', 'request', id, { employeeId });
+    await client.query('COMMIT');
+
+    res.status(204).send();
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;

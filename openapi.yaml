@@ -2425,7 +2425,11 @@ components:
         body. requires_assignee arrives with assignee-as-transition (Phase
         5/7); until then assignment stays on PATCH /requests/{id}/assign
         (additive only, multi-assignee re-scope — adds one more employee to
-        the request; there is no reassign/replace or remove path).
+        the request; no reassign/replace) plus its counterpart
+        DELETE /requests/{id}/assign/{employeeId} (removes one assignee's own
+        task row; 409 if it carries attachments, 404 if that employee isn't
+        actually assigned) — the only way to free an employee from a request
+        so they can be deactivated, now that assign no longer replaces.
       properties:
         key: { type: string }
         label: { $ref: '#/components/schemas/LocalizedText' }

@@ -31,7 +31,7 @@ test('duplicate assign (same employee twice) → 409', async () => {
   assert.equal(again.status, 409);
 });
 
-test('deactivate an employee holding an open task → 409; reassign then deactivate succeeds', async () => {
+test('deactivate an employee holding an open task → 409; removing them then deactivate succeeds', async () => {
   const req = await submitRequest(tokens.resident, fixtures.serviceTypeId);
   const assign = await api('PATCH', `/requests/${req.id}/assign`, {
     token: tokens.root,
@@ -44,16 +44,50 @@ test('deactivate an employee holding an open task → 409; reassign then deactiv
   });
   assert.equal(blocked.status, 409);
 
-  const reassign = await api('PATCH', `/requests/${req.id}/assign`, {
+  // Multi-assignee re-scope: /assign is additive only (adding field1 would
+  // NOT free field2 the way the old replace-in-place semantics did) — the
+  // way to free an employee from a request is the dedicated remove endpoint.
+  const remove = await api('DELETE', `/requests/${req.id}/assign/${fixtures.employeeIds.field2}`, {
     token: tokens.root,
-    body: { employeeId: fixtures.employeeIds.field1 },
   });
-  assert.equal(reassign.status, 200);
+  assert.equal(remove.status, 204);
 
   const ok = await api('PATCH', `/employees/${fixtures.employeeIds.field2}/deactivate`, {
     token: tokens.root,
   });
   assert.equal(ok.status, 200);
+});
+
+test('removing an assignee: cross-department refused, unknown assignment 404s, double-remove 404s', async () => {
+  const req = await submitRequest(tokens.resident, fixtures.serviceTypeId);
+  const assign = await api('PATCH', `/requests/${req.id}/assign`, {
+    token: tokens.root,
+    body: { employeeId: fixtures.employeeIds.field1 },
+  });
+  assert.equal(assign.status, 200);
+
+  // head2 is in a different department (harness's cross-department actor) —
+  // Gate 2 refuses before it even looks at the assignment itself.
+  const crossDept = await api('DELETE', `/requests/${req.id}/assign/${fixtures.employeeIds.field1}`, {
+    token: tokens.head2,
+  });
+  assert.equal(crossDept.status, 404);
+
+  // field2 was never assigned to this request.
+  const notAssigned = await api('DELETE', `/requests/${req.id}/assign/${fixtures.employeeIds.field2}`, {
+    token: tokens.root,
+  });
+  assert.equal(notAssigned.status, 404);
+
+  const remove = await api('DELETE', `/requests/${req.id}/assign/${fixtures.employeeIds.field1}`, {
+    token: tokens.root,
+  });
+  assert.equal(remove.status, 204);
+
+  const again = await api('DELETE', `/requests/${req.id}/assign/${fixtures.employeeIds.field1}`, {
+    token: tokens.root,
+  });
+  assert.equal(again.status, 404);
 });
 
 test('deactivated account: JWT rejected on the next call, not just at login', async () => {

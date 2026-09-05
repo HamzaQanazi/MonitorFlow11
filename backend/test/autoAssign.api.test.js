@@ -85,7 +85,8 @@ test('enabled: picks the least-loaded active employee in the service owner subtr
   // Reflected via the standard read path too, not just the create response.
   const detail = await api('GET', `/requests/${first.body.request.id}`, { token: tokens.root });
   assert.equal(detail.status, 200);
-  assert.equal(detail.body.request.task.employeeId, firstAssignee);
+  // Multi-assignee re-scope: tasks is an array now, not a single object.
+  assert.deepEqual(detail.body.request.tasks.map((t) => t.employeeId), [firstAssignee]);
 
   // Cross-department safety: head2 (an employee in an unrelated department)
   // must never be picked — Gate 2 holds by construction (candidates come

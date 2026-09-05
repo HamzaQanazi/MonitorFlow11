@@ -39,7 +39,8 @@ const OWNER = { id: 1, role: 'user', name: 'Owner' };
 const EMPLOYEE = { id: 2, role: 'employee', name: 'Emp', capabilities: new Set() };
 const MONITOR = { id: 3, role: 'employee', name: 'Mon', capabilities: new Set(CAPABILITIES) };
 
-const base = { statuses, transitions, requestUserId: OWNER.id, taskEmployeeId: EMPLOYEE.id };
+// taskEmployeeIds: multi-assignee re-scope — every assignee's id, not just one.
+const base = { statuses, transitions, requestUserId: OWNER.id, taskEmployeeIds: [EMPLOYEE.id] };
 
 const throwsWith = (status, fn) => {
   try {
@@ -88,7 +89,7 @@ test('terminal request locks the task: no transition out, accept → 409', () =>
 });
 
 test('requires_note without a note → 422; with note passes', () => {
-  const unassigned = { ...base, taskEmployeeId: null };
+  const unassigned = { ...base, taskEmployeeIds: [] };
   throwsWith(422, () =>
     resolveTransition({ ...unassigned, currentStatus: 'submitted', user: OWNER, transitionKey: 'cancel' })
   );
@@ -143,9 +144,27 @@ test('employee not assigned to the task → 404', () => {
   );
 });
 
+test('multi-assignee: either assignee may fire the actor transition, a third employee may not', () => {
+  const SECOND_ASSIGNEE = { id: 7, role: 'employee', capabilities: new Set() };
+  const multi = { ...base, taskEmployeeIds: [EMPLOYEE.id, SECOND_ASSIGNEE.id] };
+  // The assignee the transition table would find "first" isn't special —
+  // the second one can act too ("either moves it, moves for both").
+  const t = resolveTransition({
+    ...multi, currentStatus: 'assigned', user: SECOND_ASSIGNEE, transitionKey: 'accept',
+  });
+  assert.equal(t.to, 'working');
+  // A third employee with no task on this request still 404s.
+  throwsWith(404, () =>
+    resolveTransition({
+      ...multi, currentStatus: 'assigned', user: { id: 99, role: 'employee', capabilities: new Set() },
+      transitionKey: 'accept',
+    })
+  );
+});
+
 test('employee requester (Time Off style, no task) can fire their own cancel', () => {
   const EMPLOYEE_REQUESTER = { id: 42, role: 'employee', capabilities: new Set() };
-  const noTask = { ...base, requestUserId: EMPLOYEE_REQUESTER.id, taskEmployeeId: null };
+  const noTask = { ...base, requestUserId: EMPLOYEE_REQUESTER.id, taskEmployeeIds: [] };
   const t = resolveTransition({
     ...noTask, currentStatus: 'submitted', user: EMPLOYEE_REQUESTER, transitionKey: 'cancel', note: 'plans changed',
   });
@@ -156,7 +175,7 @@ test('employee who owns neither the request nor the task → 404', () => {
   const outsider = { id: 43, role: 'employee', capabilities: new Set() };
   throwsWith(404, () =>
     resolveTransition({
-      ...base, requestUserId: OWNER.id, taskEmployeeId: EMPLOYEE.id,
+      ...base, requestUserId: OWNER.id, taskEmployeeIds: [EMPLOYEE.id],
       currentStatus: 'submitted', user: outsider, transitionKey: 'cancel', note: 'x',
     })
   );
