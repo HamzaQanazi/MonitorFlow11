@@ -142,7 +142,7 @@ router.post('/register', async (req, res, next) => {
     let rows;
     try {
       // Self-registration creates the `user` kind only; login_identifier is the
-      // email (employees get an allocated 4-digit number at creation instead).
+      // email (employees get a generated company login email instead, lib/employeeEmail.js).
       ({ rows } = await pool.query(
         `INSERT INTO users (name, email, password_hash, role, phone, login_identifier)
          VALUES ($1, $2, $3, 'user', $4, $2)
@@ -165,9 +165,9 @@ router.post('/register', async (req, res, next) => {
 
 router.post('/login', rateLimitLogin, async (req, res, next) => {
   try {
-    // Generic login: users authenticate with their email, employees with an
-    // 4-digit number — both stored in login_identifier. `email` still accepted for
-    // back-compat with existing clients. Case-insensitive match.
+    // Generic login: users authenticate with their email, employees with their
+    // generated company login email — both stored in login_identifier. `email`
+    // still accepted for back-compat with existing clients. Case-insensitive match.
     const identifier = (req.body || {}).identifier || (req.body || {}).email;
     const { password } = req.body || {};
     if (!identifier || !password) {
