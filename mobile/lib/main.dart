@@ -2,6 +2,7 @@
 // `user` to the User app and `employee` to the Employee app. Admin (and any
 // other kind) is web-only and rejected here (the server still enforces
 // per-route).
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -13,7 +14,7 @@ import 'i18n.dart';
 import 'theme.dart';
 import 'user/user_home.dart';
 
-void main() {
+void main() async {
   // AuthState.init() below reaches SharedPreferences on its first await,
   // which needs a platform channel — that channel doesn't exist until the
   // binding is initialized. runApp() normally does this implicitly, but
@@ -22,6 +23,14 @@ void main() {
   // stuck on the restoring spinner forever. Explicit and first, so there's
   // no race.
   WidgetsFlutterBinding.ensureInitialized();
+  // Push notifications (CLAUDE.md §13, FCM exception): reads
+  // android/app/google-services.json baked in at build time — no
+  // per-platform options object needed since this is Android-only for now.
+  // Best-effort: a missing/misconfigured google-services.json must not
+  // crash the whole app on launch.
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {}
   final auth = AuthState(ApiClient())..init();
   final i18n = I18n()..init();
   runApp(

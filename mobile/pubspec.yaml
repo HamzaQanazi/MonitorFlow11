@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  firebase_core: ^4.1.1
+  firebase_messaging: ^16.0.4
   flutter_map: ^8.3.1
   geolocator: ^13.0.1
   http: ^1.6.0

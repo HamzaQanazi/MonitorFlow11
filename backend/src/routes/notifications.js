@@ -1,7 +1,8 @@
 // Notifications (Section 7). Own-only for every role — a notification always
 // belongs to req.user; there is no cross-user read. Triggers that create rows
 // live in the workflow engine and requests route; this file is read + mark-read
-// only. Polled every 30s by the apps (Section 2 — no WebSockets).
+// (plus device-token registration for push, below) only. Polled every 30s by
+// the apps (Section 2 — no WebSockets) as the always-on fallback to push.
 const express = require('express');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
@@ -81,6 +82,28 @@ router.patch('/:id/read', async (req, res, next) => {
       [id, req.user.id]
     );
     if (!rowCount) return res.status(404).json({ error: 'Not found' });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /notifications/devices — registers this device's FCM token against
+// the caller (CLAUDE.md §13, push exception). `token` alone is UNIQUE in the
+// DB (a token identifies a device, not a person), so re-registering the same
+// device under a different logged-in user just re-points the existing row —
+// no separate "unregister on logout" endpoint needed (039_device_tokens.sql).
+router.post('/devices', async (req, res, next) => {
+  try {
+    const { token } = req.body || {};
+    if (typeof token !== 'string' || !token.trim()) {
+      return res.status(422).json({ errors: { token: 'A device token is required' } });
+    }
+    await pool.query(
+      `INSERT INTO device_token (user_id, token) VALUES ($1, $2)
+       ON CONFLICT (token) DO UPDATE SET user_id = $1, updated_at = now()`,
+      [req.user.id, token.trim()]
+    );
     res.status(204).end();
   } catch (err) {
     next(err);

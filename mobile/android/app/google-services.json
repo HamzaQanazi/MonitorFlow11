@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "728536402891",
+    "project_id": "monitorflow-3f568",
+    "storage_bucket": "monitorflow-3f568.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:728536402891:android:30a1c307f09578d82dc44e",
+        "android_client_info": {
+          "package_name": "dev.monitorflow.monitorflow_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAh5t_z0xDrMwYwhf67g5COQfnNEwRnrNE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

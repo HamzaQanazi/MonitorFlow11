@@ -20,6 +20,7 @@ const { subtreeIds, inDepartmentScope, departmentScopeIds } = require('../lib/sc
 const { pick } = require('../lib/i18nLabel');
 const { logAudit } = require('../lib/audit');
 const { maybeAutoAssign } = require('../lib/autoAssign');
+const { createNotification } = require('../lib/notify');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -677,26 +678,18 @@ router.post('/:id/comments', async (req, res, next) => {
          VALUES ($1, $2, $3) RETURNING id, created_at`,
         [request.id, req.user.id, body.trim()]
       ));
-      const message = JSON.stringify({
+      const message = {
         en: `${req.user.name} commented on request #${request.id} (${pick(request.service_name, 'en')}).`,
         ar: `علّق ${req.user.name} على الطلب رقم ${request.id} (${pick(request.service_name, 'ar')}).`,
-      });
+      };
       if (isOversight(req.user)) {
         // Oversight → the requester.
-        await client.query(
-          `INSERT INTO notification (user_id, request_id, type, message)
-           VALUES ($1, $2, 'comment', $3)`,
-          [request.user_id, request.id, message]
-        );
+        await createNotification(client, request.user_id, request.id, 'comment', message);
       } else if (request.department_head_id) {
         // Requester → the service's department head (the other party) —
         // silently skipped if the department has no head, same as every
         // other department-head-fallback notification (§10).
-        await client.query(
-          `INSERT INTO notification (user_id, request_id, type, message)
-           VALUES ($1, $2, 'comment', $3)`,
-          [request.department_head_id, request.id, message]
-        );
+        await createNotification(client, request.department_head_id, request.id, 'comment', message);
       }
       await client.query('COMMIT');
     } catch (err) {
@@ -940,18 +933,10 @@ router.patch('/:id/assign', requireCapability('assign'), async (req, res, next) 
       assigneeId: employee.id,
       assignee: employee.name,
     });
-    await client.query(
-      'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
-      [
-        employee.id,
-        request.id,
-        'assigned',
-        JSON.stringify({
-          en: `You have been assigned request #${request.id} (${pick(request.service_name, 'en')}).`,
-          ar: `تم إسنادك إلى الطلب رقم ${request.id} (${pick(request.service_name, 'ar')}).`,
-        }),
-      ]
-    );
+    await createNotification(client, employee.id, request.id, 'assigned', {
+      en: `You have been assigned request #${request.id} (${pick(request.service_name, 'en')}).`,
+      ar: `تم إسنادك إلى الطلب رقم ${request.id} (${pick(request.service_name, 'ar')}).`,
+    });
     await client.query('COMMIT');
 
     res.json({

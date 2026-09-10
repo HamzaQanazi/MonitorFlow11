@@ -1753,6 +1753,24 @@ paths:
       parameters: [ { $ref: '#/components/parameters/id' } ]
       responses:
         '204': { description: Marked read }
+  /notifications/devices:
+    post:
+      tags: [notifications]
+      summary: >-
+        Register this device's FCM token for push (CLAUDE.md §13, Android
+        only for now). Upserts on token — a token identifies a device, not a
+        person, so re-registering re-points it to the caller.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '204': { description: Registered }
+        '422': { description: Missing token }
 
   # ── Files ────────────────────────────────────────────────────────────────────
   /files:

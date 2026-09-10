@@ -16,6 +16,7 @@
 // notification newer than its updated_at exists — one alert per stagnation
 // period; any status change re-arms the rule.
 const pool = require('../db');
+const { sendPush } = require('./push');
 
 // Human-readable SLA duration, built as a SQL CASE so the sweep keeps composing
 // its bilingual messages inside the one INSERT…SELECT. `m` is a SQL int
@@ -91,8 +92,9 @@ async function runEscalationSweep() {
        AND r.updated_at < now() - (s->>'sla_minutes')::int * INTERVAL '1 minute'
        AND COALESCE(mgr.id, own.id) IS NOT NULL
        AND ${NOT_ALREADY_ESCALATED}
-     RETURNING request_id`
+     RETURNING user_id, message`
   );
+  for (const row of tree.rows) sendPush(row.user_id, 'MonitorFlow', row.message.en);
 
   // Rule 2: completion-target status breached → nudge the requester
   // (created_by) to confirm or dispute.
@@ -112,8 +114,10 @@ async function runEscalationSweep() {
      WHERE r.status = ${COMPLETION_TARGET}
        AND s->>'sla_minutes' IS NOT NULL
        AND r.updated_at < now() - (s->>'sla_minutes')::int * INTERVAL '1 minute'
-       AND ${NOT_ALREADY_ESCALATED}`
+       AND ${NOT_ALREADY_ESCALATED}
+     RETURNING user_id, message`
   );
+  for (const row of confirm.rows) sendPush(row.user_id, 'MonitorFlow', row.message.en);
 
   return { tree: tree.rowCount, confirm: confirm.rowCount };
 }

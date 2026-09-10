@@ -21,6 +21,7 @@ const { inDepartmentScope } = require('./scope');
 const { isOversight } = require('./capabilities');
 const { pick } = require('./i18nLabel');
 const { logAudit } = require('./audit');
+const { createNotification } = require('./notify');
 
 class WorkflowError extends Error {
   constructor(status, message) {
@@ -232,10 +233,7 @@ async function applyTransition(client, {
   // bilingual {en, ar} (deferred here by Phase 3).
   const svc = (l) => pick(request.service_name, l);
   const notify = (userId, type, message) =>
-    client.query(
-      'INSERT INTO notification (user_id, request_id, type, message) VALUES ($1, $2, $3, $4)',
-      [userId, request.id, type, JSON.stringify(message)]
-    );
+    createNotification(client, userId, request.id, type, message);
   for (const target of transition.notify || []) {
     if (target === 'created_by') {
       await notify(

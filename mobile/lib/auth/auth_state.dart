@@ -1,11 +1,14 @@
 // Session state shared by both mobile apps. Restores the stored JWT on
 // launch and revalidates it via GET /auth/me (a deactivated account's old
 // token must be rejected — CLAUDE.md Section 3 security baseline).
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../models/user.dart';
+import '../shared/push_service.dart';
 
 const _tokenKey = 'mf.token';
 
@@ -39,6 +42,7 @@ class AuthState extends ChangeNotifier {
       final json = await api.get('/auth/me');
       _user = AppUser.fromJson(json['user'] as Map<String, dynamic>);
       _status = AuthStatus.signedIn;
+      unawaited(registerPushToken(api));
     } on ApiException {
       await _clearSession(); // 401 already handled; any API error → sign out
     } on NetworkException {
@@ -83,6 +87,7 @@ class AuthState extends ChangeNotifier {
     await prefs.setString(_tokenKey, token);
     _status = AuthStatus.signedIn;
     notifyListeners();
+    unawaited(registerPushToken(api));
   }
 
   Future<void> _clearSession() async {

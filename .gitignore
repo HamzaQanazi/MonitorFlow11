@@ -5,6 +5,7 @@ npm-debug.log*
 # Env / secrets
 .env
 *.env.local
+backend/secrets/
 
 # Uploads (file storage lives outside version control)
 backend/uploads/
