@@ -198,3 +198,104 @@ test('GET /requests?reopened=true — only requests that went terminal back to n
   assert.ok(ids.includes(reopened.id));
   assert.ok(!ids.includes(stillOpen.id));
 });
+
+// Internal employee chat (POST/GET /requests/{id}/comments/internal): a
+// request's current assignees + its department's oversight employees only,
+// never the requester. One test per §14-style allowed/denied combination.
+test('internal chat: requester → 404, always', async () => {
+  const req = await submitRequest(tokens.resident, fixtures.serviceTypeId);
+  const post = await api('POST', `/requests/${req.id}/comments/internal`, {
+    token: tokens.resident,
+    body: { body: 'hello?' },
+  });
+  assert.equal(post.status, 404);
+  const get = await api('GET', `/requests/${req.id}/comments/internal`, { token: tokens.resident });
+  assert.equal(get.status, 404);
+});
+
+test('internal chat: a non-assigned, non-oversight employee → 404', async () => {
+  const req = await submitRequest(tokens.resident, fixtures.serviceTypeId);
+  await api('PATCH', `/requests/${req.id}/assign`, {
+    token: tokens.root,
+    body: { employeeId: fixtures.employeeIds.field1 },
+  });
+  // field2 is neither assigned nor oversight — must not reach the thread.
+  const res = await api('POST', `/requests/${req.id}/comments/internal`, {
+    token: tokens.field2,
+    body: { body: 'let me in' },
+  });
+  assert.equal(res.status, 404);
+});
+
+test('internal chat: oversight out of department scope → 404', async () => {
+  const req = await submitRequest(tokens.resident, fixtures.serviceTypeId);
+  // head2 holds oversight capabilities but is scoped to otherDepartmentId —
+  // the service lives in fixtures.departmentId.
+  const res = await api('GET', `/requests/${req.id}/comments/internal`, { token: tokens.head2 });
+  assert.equal(res.status, 404);
+});
+
+test('internal chat: a current assignee and in-scope oversight can post and read; the customer thread and the internal thread never mix', async () => {
+  const req = await submitRequest(tokens.resident, fixtures.serviceTypeId);
+  const assign = await api('PATCH', `/requests/${req.id}/assign`, {
+    token: tokens.root,
+    body: { employeeId: fixtures.employeeIds.field1 },
+  });
+  assert.equal(assign.status, 200);
+
+  const fromAssignee = await api('POST', `/requests/${req.id}/comments/internal`, {
+    token: tokens.field1,
+    body: { body: 'starting the visit now' },
+  });
+  assert.equal(fromAssignee.status, 201, JSON.stringify(fromAssignee.body));
+
+  const fromOversight = await api('POST', `/requests/${req.id}/comments/internal`, {
+    token: tokens.root,
+    body: { body: 'thanks, ping me if anything comes up' },
+  });
+  assert.equal(fromOversight.status, 201);
+
+  const asAssignee = await api('GET', `/requests/${req.id}/comments/internal`, { token: tokens.field1 });
+  assert.equal(asAssignee.status, 200);
+  assert.equal(asAssignee.body.comments.length, 2);
+
+  const asOversight = await api('GET', `/requests/${req.id}/comments/internal`, { token: tokens.root });
+  assert.equal(asOversight.status, 200);
+  assert.equal(asOversight.body.comments.length, 2);
+
+  // A customer-facing comment must never appear in the internal thread, and
+  // vice versa — the two are separated by the visibility column, not by
+  // caller-side filtering.
+  const customerComment = await api('POST', `/requests/${req.id}/comments`, {
+    token: tokens.resident,
+    body: { body: 'any update?' },
+  });
+  assert.equal(customerComment.status, 201);
+
+  const internalAfter = await api('GET', `/requests/${req.id}/comments/internal`, { token: tokens.root });
+  assert.equal(internalAfter.body.comments.length, 2);
+  assert.ok(!internalAfter.body.comments.some((c) => c.body === 'any update?'));
+
+  const detail = await api('GET', `/requests/${req.id}`, { token: tokens.root });
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.request.comments.length, 1);
+  assert.ok(!detail.body.request.comments.some((c) => c.body === 'starting the visit now'));
+});
+
+test('internal chat: removing an assignee revokes access immediately', async () => {
+  const req = await submitRequest(tokens.resident, fixtures.serviceTypeId);
+  await api('PATCH', `/requests/${req.id}/assign`, {
+    token: tokens.root,
+    body: { employeeId: fixtures.employeeIds.field1 },
+  });
+  const before = await api('GET', `/requests/${req.id}/comments/internal`, { token: tokens.field1 });
+  assert.equal(before.status, 200);
+
+  const remove = await api('DELETE', `/requests/${req.id}/assign/${fixtures.employeeIds.field1}`, {
+    token: tokens.root,
+  });
+  assert.equal(remove.status, 204, JSON.stringify(remove.body));
+
+  const after = await api('GET', `/requests/${req.id}/comments/internal`, { token: tokens.field1 });
+  assert.equal(after.status, 404);
+});

@@ -288,6 +288,15 @@ const Map<String, Map<String, String>> _dict = {
   'td_assigned': {'en': 'assigned', 'ar': 'أُسندت'},
   'td_complete_btn': {'en': 'Complete task', 'ar': 'إكمال المهمة'},
   'td_no_actions': {'en': 'No actions available — this task is closed or on hold.', 'ar': 'لا إجراءات متاحة — هذه المهمة مغلقة أو معلّقة.'},
+  'td_internal_chat': {'en': 'Internal chat', 'ar': 'المحادثة الداخلية'},
+  'td_internal_chat_hint': {
+    'en': 'Only your coworkers on this request and department oversight can see this.',
+    'ar': 'يراها فقط زملاؤك في هذا الطلب والإشراف في الدائرة.',
+  },
+  'td_no_internal_comments': {'en': 'No messages yet.', 'ar': 'لا رسائل بعد.'},
+  'td_write_internal_comment_ph': {'en': 'Message the crew…', 'ar': 'راسل الفريق…'},
+  'td_send': {'en': 'Send', 'ar': 'إرسال'},
+  'td_internal_comment_fail': {'en': 'Couldn’t send the message.', 'ar': 'تعذّر إرسال الرسالة.'},
 
   // complete task
   'ct_complete_pre': {'en': 'Complete', 'ar': 'إكمال'},
