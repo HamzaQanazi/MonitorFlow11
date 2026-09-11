@@ -884,6 +884,10 @@
 
 .map-pin.is-open { --_c: var(--state-open); }
 .map-pin.is-closed { --_c: var(--state-closed); }
+/* Time Clock live map (I10 re-scope): a fresh ping vs. one past the staleness
+   window (routes/timeclock.js) — same open/muted split as elsewhere. */
+.map-pin.is-live { --_c: var(--state-open); }
+.map-pin.is-stale { --_c: var(--muted); }
 
 /* Clusters mix states — neutral count circle, never a state color. */
 .map-cluster {

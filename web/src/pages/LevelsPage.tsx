@@ -22,6 +22,7 @@ const CAPABILITIES = [
   'manage_events',
   'manage_knowledge_base',
   'view_all_company',
+  'view_live_location',
 ] as const
 
 interface Level {

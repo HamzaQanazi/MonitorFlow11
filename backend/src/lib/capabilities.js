@@ -6,6 +6,12 @@
 // manage_events/manage_knowledge_base (Levels & Capabilities live editor) let
 // a level author just that module without also holding view_all's
 // operational oversight — see routes/events.js et al.
+// view_live_location (added 2026-09-11, user-directed, I10 re-scope): a
+// plain Gate-1 grant like any other here — separate from view_all so a
+// company can hand out the live map more narrowly than general oversight —
+// gating GET /timeclock/live-locations. See 040_employee_live_location.sql
+// and CLAUDE.md §2 I10 for the scope of what this actually exposes (current
+// position, only while clocked in, no history).
 // view_all_company (added 2026-09-04, user-directed): the one capability that
 // widens Gate 2 (scope) itself rather than gating an action within it. Every
 // other capability here is a Gate-1 grant, orthogonal to scope — an employee
@@ -29,6 +35,7 @@ const CAPABILITIES = [
   'manage_events',
   'manage_knowledge_base',
   'view_all_company',
+  'view_live_location',
 ];
 
 // The capability set an employee holds through their level. Non-employees, and

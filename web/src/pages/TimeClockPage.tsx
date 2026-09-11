@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import L from 'leaflet'
+import { MapContainer, Marker, TileLayer, Tooltip, useMap } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
 import { apiFetch, ApiError, getToken } from '../lib/api'
 import { useAuth, hasCapability } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
@@ -8,9 +11,13 @@ import './RequestsPage.css'
 import './EmployeesPage.css'
 import './TimeClockPage.css'
 
-// Time Clock — manager view. Today (attendance + counters) and Timesheets
-// (weekly grid with review/edit/approve/export) share this page and the tab
-// strip; each tab owns its own query-param slice of the URL.
+// Time Clock — manager view. Today (attendance + counters), Timesheets
+// (weekly grid with review/edit/approve/export), and Live Map (I10 re-scope:
+// current position, only while clocked in, never a history — CLAUDE.md §2)
+// share this page and the tab strip; each tab owns its own query-param slice
+// of the URL. Today/Timesheets need `view_all`; Live Map needs the separate,
+// narrower `view_live_location` grant — a level can hold either without the
+// other, so tabs are shown per-capability, not all-or-nothing.
 
 // The viewer's own calendar day, not UTC's — toISOString() would hand a
 // Gaza manager yesterday's date any time before 03:00 local. The backend
@@ -25,15 +32,33 @@ function fmtHours(n: number | null, t: (k: string) => string): string {
   return n == null ? '—' : `${Number(n.toFixed(1))}${t('tc_hrs')}`
 }
 
+type Tab = 'today' | 'timesheets' | 'livemap'
+
 export default function TimeClockPage() {
   const { t } = useI18n()
-  const [params, setParams] = useSearchParams()
-  const tab = params.get('tab') === 'timesheets' ? 'timesheets' : 'today'
+  const { user } = useAuth()
+  // Today/Timesheets are gated server-side on view_all; Live Map on the
+  // separate, narrower view_live_location (routes/timeclock.js) — a level
+  // can hold either without the other (DashboardShell.tsx's nav need array
+  // OR's the two so the page itself is reachable with just one).
+  const canViewAll = hasCapability(user, 'view_all')
+  const canViewLiveLocation = hasCapability(user, 'view_live_location')
 
-  function setTab(next: 'today' | 'timesheets') {
+  const [params, setParams] = useSearchParams()
+  const requested = params.get('tab')
+  const tab: Tab =
+    requested === 'timesheets' && canViewAll
+      ? 'timesheets'
+      : requested === 'livemap' && canViewLiveLocation
+        ? 'livemap'
+        : canViewAll
+          ? 'today'
+          : 'livemap'
+
+  function setTab(next: Tab) {
     const p = new URLSearchParams(params)
-    if (next === 'timesheets') p.set('tab', 'timesheets')
-    else p.delete('tab')
+    if (next === 'today') p.delete('tab')
+    else p.set('tab', next)
     setParams(p, { replace: true })
   }
 
@@ -44,27 +69,42 @@ export default function TimeClockPage() {
       </header>
 
       <div className="tc-tabs" role="tablist" aria-label={t('tc_title')}>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'today'}
-          className={`tc-tab${tab === 'today' ? ' is-active' : ''}`}
-          onClick={() => setTab('today')}
-        >
-          {t('tc_tab_today')}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'timesheets'}
-          className={`tc-tab${tab === 'timesheets' ? ' is-active' : ''}`}
-          onClick={() => setTab('timesheets')}
-        >
-          {t('tc_tab_timesheets')}
-        </button>
+        {canViewAll && (
+          <>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'today'}
+              className={`tc-tab${tab === 'today' ? ' is-active' : ''}`}
+              onClick={() => setTab('today')}
+            >
+              {t('tc_tab_today')}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'timesheets'}
+              className={`tc-tab${tab === 'timesheets' ? ' is-active' : ''}`}
+              onClick={() => setTab('timesheets')}
+            >
+              {t('tc_tab_timesheets')}
+            </button>
+          </>
+        )}
+        {canViewLiveLocation && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'livemap'}
+            className={`tc-tab${tab === 'livemap' ? ' is-active' : ''}`}
+            onClick={() => setTab('livemap')}
+          >
+            {t('tc_tab_livemap')}
+          </button>
+        )}
       </div>
 
-      {tab === 'today' ? <TodayView /> : <TimesheetsView />}
+      {tab === 'today' ? <TodayView /> : tab === 'timesheets' ? <TimesheetsView /> : <LiveMapView />}
     </div>
   )
 }
@@ -530,6 +570,143 @@ function TimesheetsView() {
         />
       )}
     </>
+  )
+}
+
+// ---- Live Map (I10 re-scope) ----
+
+// 5 minutes — matches the mobile app's ping interval (routes/timeclock.js);
+// polling faster than the data actually changes would just be noise.
+const LIVE_MAP_POLL_MS = 5 * 60 * 1000
+const NABLUS: [number, number] = [32.22, 35.26]
+
+interface LiveLocationEmployee {
+  employeeId: number
+  name: string
+  clockInAt: string
+  liveLocation: LatLng | null
+  liveLocationAt: string | null
+  stale: boolean
+}
+
+function livePinIcon(stale: boolean) {
+  return L.divIcon({
+    className: '',
+    html: `<span class="map-pin${stale ? ' is-stale' : ' is-live'}"></span>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 18],
+  })
+}
+
+// Same one-time-fit-then-leave-the-camera-alone behavior as RequestsMapView.
+function FitToMarkers({ points, fitKey }: { points: [number, number][]; fitKey: string }) {
+  const map = useMap()
+  const fitted = useRef<string | null>(null)
+  useEffect(() => {
+    if (fitted.current === fitKey || points.length === 0) return
+    fitted.current = fitKey
+    map.fitBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 16 })
+  }, [map, points, fitKey])
+  return null
+}
+
+function timeSince(iso: string, t: (k: string) => string): string {
+  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000))
+  if (minutes < 1) return t('tc_live_just_now')
+  if (minutes < 60) return `${minutes}${t('tc_live_min_ago')}`
+  return `${Math.round(minutes / 60)}${t('tc_live_hr_ago')}`
+}
+
+function LiveMapView() {
+  const { t } = useI18n()
+  const [employees, setEmployees] = useState<LiveLocationEmployee[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () => {
+      apiFetch<{ employees: LiveLocationEmployee[] }>('/timeclock/live-locations')
+        .then((res) => {
+          if (cancelled) return
+          setEmployees(res.employees)
+          setError(null)
+        })
+        .catch((err: Error) => {
+          // Keep the last good markers on a failed poll, same as RequestsMapView.
+          if (!cancelled) setError(err.message)
+        })
+    }
+    load()
+    const timer = setInterval(load, LIVE_MAP_POLL_MS)
+    // Detail pages refresh on focus elsewhere in this app (CLAUDE.md Section
+    // 2) — this poll matches that spirit for a page with no single "detail".
+    const onFocus = () => load()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+
+  if (employees === null) {
+    return error ? (
+      <div className="req-status">
+        <p className="req-status-msg">
+          {t('tc_load_err')} {error}
+        </p>
+      </div>
+    ) : (
+      <div className="req-skeleton" aria-busy="true">
+        <span className="visually-hidden">{t('tc_loading')}</span>
+        <div className="skel-row" aria-hidden="true" />
+      </div>
+    )
+  }
+
+  const located = employees.filter((e) => e.liveLocation !== null)
+  const noFixYet = employees.length - located.length
+  const points = located.map((e) => [e.liveLocation!.lat, e.liveLocation!.lng] as [number, number])
+
+  return (
+    <div className="req-mapwrap">
+      <p className="req-map-banner" role="status">
+        {t('tc_live_hint')}
+      </p>
+      {employees.length === 0 ? (
+        <div className="req-empty">
+          <h2>{t('tc_live_none_h')}</h2>
+          <p>{t('tc_live_none_p')}</p>
+        </div>
+      ) : located.length === 0 ? (
+        <div className="req-empty">
+          <h2>{t('tc_live_no_fix_h')}</h2>
+        </div>
+      ) : (
+        <div className="req-map">
+          <MapContainer center={NABLUS} zoom={12} scrollWheelZoom>
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <FitToMarkers points={points} fitKey={String(located.length)} />
+            {located.map((e) => (
+              <Marker key={e.employeeId} position={[e.liveLocation!.lat, e.liveLocation!.lng]} icon={livePinIcon(e.stale)}>
+                <Tooltip direction="top" offset={[0, -16]}>
+                  {e.name}
+                  {e.liveLocationAt && ` · ${timeSince(e.liveLocationAt, t)}`}
+                </Tooltip>
+              </Marker>
+            ))}
+          </MapContainer>
+        </div>
+      )}
+      {noFixYet > 0 && (
+        <p className="req-map-footnote">
+          {noFixYet} {t('tc_live_no_fix_footnote')}
+        </p>
+      )}
+    </div>
   )
 }
 

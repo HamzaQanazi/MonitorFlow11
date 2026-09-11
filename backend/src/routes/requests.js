@@ -283,7 +283,7 @@ router.get('/:id', async (req, res, next) => {
         `SELECT c.id, c.body, c.created_at, u.id AS by_id, u.name AS by_name
          FROM request_comment c
          JOIN users u ON u.id = c.user_id
-         WHERE c.request_id = $1
+         WHERE c.request_id = $1 AND c.visibility = 'customer'
          ORDER BY c.created_at, c.id`,
         [id]
       ),
@@ -721,7 +721,145 @@ router.get('/:id/comments', async (req, res, next) => {
       `SELECT c.id, c.body, c.created_at, u.id AS by_id, u.name AS by_name
        FROM request_comment c
        JOIN users u ON u.id = c.user_id
-       WHERE c.request_id = $1
+       WHERE c.request_id = $1 AND c.visibility = 'customer'
+       ORDER BY c.created_at, c.id`,
+      [request.id]
+    );
+    res.json({
+      comments: rows.map((c) => ({
+        id: c.id,
+        body: c.body,
+        createdAt: c.created_at,
+        author: { id: c.by_id, name: c.by_name },
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Shared by the internal comment routes: the employee chat between a
+// request's current assignees and its department's oversight employees
+// (user-directed feature, request-scoped — mirrors the customer thread's
+// shape but a different audience). The requester never reaches this
+// regardless of role — 404 either way, same 404-over-403 rule as everywhere
+// else. Membership is derived from the live `task` rows, not stored: an
+// employee removed as an assignee loses access to the thread immediately,
+// same as every other Gate-2 check in this file.
+async function loadInternalCommentableRequest(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  const { rows } = await pool.query(
+    `SELECT r.id, st.department_id, dept.head_user_id AS department_head_id
+     FROM request r
+     JOIN service_type st ON st.id = r.service_type_id
+     LEFT JOIN department dept ON dept.id = st.department_id
+     WHERE r.id = $1`,
+    [id]
+  );
+  if (!rows.length) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  const request = rows[0];
+  if (req.user.role !== 'employee') {
+    // Not an employee (a user/admin) — the requester (this feature's whole
+    // point) and admin (configuration-only, Section 5) never reach it.
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  const { rows: taskRows } = await pool.query(
+    'SELECT 1 FROM task WHERE request_id = $1 AND employee_id = $2',
+    [id, req.user.id]
+  );
+  const isCurrentAssignee = taskRows.length > 0;
+  if (
+    !isCurrentAssignee &&
+    !(isOversight(req.user) && (await inDepartmentScope(req.user.id, request.department_id)))
+  ) {
+    res.status(404).json({ error: 'Not found' });
+    return null;
+  }
+  return request;
+}
+
+// POST /requests/{id}/comments/internal — the employee chat. Notifies the
+// other participants: every other current assignee, plus the department
+// head (the same single "oversight" recipient the customer thread and every
+// other assignee_manager-style relationship in this app resolves to,
+// Section 10) — silently skipped if the department has none or the author
+// is the head themself.
+router.post('/:id/comments/internal', async (req, res, next) => {
+  try {
+    const request = await loadInternalCommentableRequest(req, res);
+    if (!request) return;
+    const { body } = req.body || {};
+    if (typeof body !== 'string' || !body.trim()) {
+      return res.status(422).json({ errors: { body: 'A comment body is required' } });
+    }
+
+    const client = await pool.connect();
+    let created;
+    try {
+      await client.query('BEGIN');
+      ({ rows: [created] } = await client.query(
+        `INSERT INTO request_comment (request_id, user_id, body, visibility)
+         VALUES ($1, $2, $3, 'internal') RETURNING id, created_at`,
+        [request.id, req.user.id, body.trim()]
+      ));
+      const message = JSON.stringify({
+        en: `${req.user.name} posted in the internal chat for request #${request.id}.`,
+        ar: `أضاف ${req.user.name} رسالة في المحادثة الداخلية للطلب رقم ${request.id}.`,
+      });
+      const { rows: coworkerRows } = await client.query(
+        'SELECT employee_id FROM task WHERE request_id = $1 AND employee_id != $2',
+        [request.id, req.user.id]
+      );
+      const recipientIds = new Set(coworkerRows.map((r) => r.employee_id));
+      if (request.department_head_id && request.department_head_id !== req.user.id) {
+        recipientIds.add(request.department_head_id);
+      }
+      for (const recipientId of recipientIds) {
+        await client.query(
+          `INSERT INTO notification (user_id, request_id, type, message)
+           VALUES ($1, $2, 'comment', $3)`,
+          [recipientId, request.id, message]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    res.status(201).json({
+      comment: {
+        id: created.id,
+        body: body.trim(),
+        createdAt: created.created_at,
+        author: { id: req.user.id, name: req.user.name },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /requests/{id}/comments/internal
+router.get('/:id/comments/internal', async (req, res, next) => {
+  try {
+    const request = await loadInternalCommentableRequest(req, res);
+    if (!request) return;
+    const { rows } = await pool.query(
+      `SELECT c.id, c.body, c.created_at, u.id AS by_id, u.name AS by_name
+       FROM request_comment c
+       JOIN users u ON u.id = c.user_id
+       WHERE c.request_id = $1 AND c.visibility = 'internal'
        ORDER BY c.created_at, c.id`,
       [request.id]
     );

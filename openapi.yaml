@@ -835,6 +835,77 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/Candidate' }
 
+  /requests/{id}/comments/internal:
+    get:
+      tags: [requests]
+      summary: >
+        The internal employee chat for this request — the current assignees and
+        the service department's oversight employees only. The requester (and
+        an employee not currently assigned) gets 404, same 404-over-403 shape
+        as every own-resource check. A separate thread from the customer-facing
+        comments embedded in RequestDetail; never mixed together.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        body: { type: string }
+                        createdAt: { type: string, format: date-time }
+                        author:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            name: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [requests]
+      summary: >
+        Post an internal chat message. Notifies every other current assignee
+        plus the department head (skipped if none, or if the author is the
+        head), same relationship every other assignee_manager-style
+        notification in this app resolves to.
+      parameters: [ { $ref: '#/components/parameters/id' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string }
+      responses:
+        '201':
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comment:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      body: { type: string }
+                      createdAt: { type: string, format: date-time }
+                      author:
+                        type: object
+                        properties:
+                          id: { type: integer }
+                          name: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Validation' }
+
   # ── People / reporting tree ─────────────────────────────────────────────────
   # Every /employees route is gated by the manage_employees capability (Gate 1)
   # and scoped to the caller's subtree (Gate 2): a valid id outside the subtree,
@@ -2201,6 +2272,85 @@ paths:
                         startTime: { type: string }
                         endTime: { type: string }
         '400': { description: from/to missing or malformed }
+
+  # ── Time Clock — live location (I10 re-scope, 2026-09-11) ───────────────────
+  # The rest of the Time Clock surface (clock-in/out, breaks, today, timesheets)
+  # predates this file's reconciliation pass and isn't documented here yet
+  # (CLAUDE.md §12 notes the contract has drifted); these two are new.
+  /timeclock/live-location:
+    patch:
+      tags: [timeclock]
+      summary: >
+        Employee only. Overwrites the caller's active shift's live position —
+        current point only, never a history row (CLAUDE.md I10). 409 if not
+        currently clocked in.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [location]
+              properties:
+                location:
+                  type: object
+                  required: [lat, lng]
+                  properties:
+                    lat: { type: number }
+                    lng: { type: number }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  liveLocation:
+                    type: object
+                    nullable: true
+                    properties:
+                      lat: { type: number }
+                      lng: { type: number }
+                  liveLocationAt: { type: string, format: date-time }
+        '409': { description: Not currently clocked in }
+        '422': { $ref: '#/components/responses/Validation' }
+
+  /timeclock/live-locations:
+    get:
+      tags: [timeclock]
+      summary: >
+        Every currently clocked-in employee in the caller's scope with their
+        live position, if any. Gated by view_live_location (Gate 1) —
+        narrower than view_all. Gate 2 via ownerScopeIds (same as
+        /timeclock/today).
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  employees:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        employeeId: { type: integer }
+                        name: { type: string }
+                        clockInAt: { type: string, format: date-time }
+                        liveLocation:
+                          type: object
+                          nullable: true
+                          properties:
+                            lat: { type: number }
+                            lng: { type: number }
+                        liveLocationAt: { type: string, format: date-time, nullable: true }
+                        stale:
+                          type: boolean
+                          description: "No ping yet, or the last one is older than 15 minutes"
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /checklists/stats:
     get:

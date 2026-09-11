@@ -189,6 +189,28 @@ export default function RequestDetailPane({
   const [comment, setComment] = useState('')
   const [commentBusy, setCommentBusy] = useState(false)
   const [commentError, setCommentError] = useState<string | null>(null)
+  // Internal chat (employee-only thread, separate from the customer comments
+  // above): a request's current assignees + department oversight, never the
+  // requester. A 404 here just means this caller isn't a participant (not
+  // possible from this pane today, since viewing it already required
+  // oversight, but kept defensive rather than assumed).
+  const [internalComments, setInternalComments] = useState<
+    { id: number; body: string; createdAt: string; author: { id: number; name: string } }[]
+  >([])
+  const [internalComment, setInternalComment] = useState('')
+  const [internalCommentBusy, setInternalCommentBusy] = useState(false)
+  const [internalCommentError, setInternalCommentError] = useState<string | null>(null)
+
+  const loadInternal = useCallback(async (requestId: number) => {
+    try {
+      const { comments } = await apiFetch<{
+        comments: { id: number; body: string; createdAt: string; author: { id: number; name: string } }[]
+      }>(`/requests/${requestId}/comments/internal`)
+      setInternalComments(comments)
+    } catch {
+      setInternalComments([])
+    }
+  }, [])
 
   const load = useCallback(async () => {
     const { request } = await apiFetch<{ request: Detail }>(`/requests/${id}`)
@@ -209,7 +231,8 @@ export default function RequestDetailPane({
         .then((r) => setEmployees(r.employees.filter((e) => e.isActive)))
         .catch(() => {})
     }
-  }, [id, departmentIdOf])
+    await loadInternal(id)
+  }, [id, departmentIdOf, loadInternal])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset for the incoming request; fetch states land async
@@ -224,6 +247,9 @@ export default function RequestDetailPane({
     setPriorityError(null)
     setComment('')
     setCommentError(null)
+    setInternalComments([])
+    setInternalComment('')
+    setInternalCommentError(null)
     load().catch((err: Error) => setError(err.message))
     // Detail pages refresh on focus, not on a timer (CLAUDE.md Section 2).
     const onFocus = () => load().catch(() => {})
@@ -334,6 +360,22 @@ export default function RequestDetailPane({
       setCommentError(err instanceof Error ? err.message : t('detail_comment_fail'))
     } finally {
       setCommentBusy(false)
+    }
+  }
+
+  async function postInternalComment() {
+    const body = internalComment.trim()
+    if (!body) return
+    setInternalCommentBusy(true)
+    setInternalCommentError(null)
+    try {
+      await apiFetch(`/requests/${id}/comments/internal`, { method: 'POST', body: { body } })
+      setInternalComment('')
+      await loadInternal(id)
+    } catch (err) {
+      setInternalCommentError(err instanceof Error ? err.message : t('detail_internal_comment_fail'))
+    } finally {
+      setInternalCommentBusy(false)
     }
   }
 
@@ -681,6 +723,48 @@ export default function RequestDetailPane({
             disabled={commentBusy || !comment.trim()}
           >
             {commentBusy ? t('detail_posting') : t('detail_post_comment')}
+          </button>
+        </div>
+      </section>
+
+      <section className="detail-section" aria-labelledby={`ic-h-${detail.id}`}>
+        <h3 id={`ic-h-${detail.id}`}>{t('detail_internal_chat')}</h3>
+        <p className="detail-empty">{t('detail_internal_chat_hint')}</p>
+        {internalComments.length === 0 ? (
+          <p className="detail-empty">{t('detail_no_internal_comments')}</p>
+        ) : (
+          <ul className="comment-list">
+            {internalComments.map((c) => (
+              <li key={c.id}>
+                <p className="tl-line">
+                  <strong>{c.author.name}</strong>
+                  <span className="tl-meta">{formatDateTime(c.createdAt)}</span>
+                </p>
+                <p className="comment-body">{c.body}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="comment-form">
+          <textarea
+            aria-label={t('detail_write_internal_comment_aria')}
+            placeholder={t('detail_write_internal_comment_ph')}
+            value={internalComment}
+            onChange={(e) => setInternalComment(e.target.value)}
+            disabled={internalCommentBusy}
+          />
+          {internalCommentError && (
+            <p className="assign-error" role="alert">
+              {internalCommentError}
+            </p>
+          )}
+          <button
+            type="button"
+            className="req-retry"
+            onClick={postInternalComment}
+            disabled={internalCommentBusy || !internalComment.trim()}
+          >
+            {internalCommentBusy ? t('detail_posting') : t('detail_post_internal_comment')}
           </button>
         </div>
       </section>

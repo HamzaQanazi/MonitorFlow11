@@ -23,7 +23,7 @@ const oversightNav: { to: string; labelKey: string; end: boolean; need: string[]
   { to: '/reports', labelKey: 'nav_reports', end: false, need: ['view_all'], group: 'overview' },
   { to: '/employees', labelKey: 'nav_employees', end: false, need: ['manage_employees'], group: 'people' },
   { to: '/evaluations', labelKey: 'nav_evaluations', end: false, need: ['view_all'], group: 'people' },
-  { to: '/timeclock', labelKey: 'nav_timeclock', end: false, need: ['view_all'], feature: 'time_clock', group: 'operations' },
+  { to: '/timeclock', labelKey: 'nav_timeclock', end: false, need: ['view_all', 'view_live_location'], feature: 'time_clock', group: 'operations' },
   { to: '/schedule', labelKey: 'nav_schedule', end: false, need: ['view_all'], feature: 'schedule', group: 'operations' },
   { to: '/checklists', labelKey: 'nav_checklists', end: false, need: ['view_all'], feature: 'forms_checklists', group: 'operations' },
   { to: '/knowledge-base', labelKey: 'nav_knowledge_base', end: false, need: ['view_all', 'manage_knowledge_base'], feature: 'knowledge_base', group: 'communication' },

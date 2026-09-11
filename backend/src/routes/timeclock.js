@@ -38,7 +38,8 @@ async function loadShiftDetail(shiftId, db = pool) {
     db.query(
       `SELECT id, employee_id, clock_in_at, clock_out_at, source, status,
               approval_status, note, approved_by, approved_at, created_at, location_captured,
-              clock_in_lat, clock_in_lng, clock_out_lat, clock_out_lng
+              clock_in_lat, clock_in_lng, clock_out_lat, clock_out_lng,
+              live_lat, live_lng, live_location_at
        FROM time_shift WHERE id = $1`,
       [shiftId]
     ),
@@ -75,6 +76,11 @@ async function loadShiftDetail(shiftId, db = pool) {
     // best-effort and null when no fix was captured.
     clockInLocation: latLngOrNull(s.clock_in_lat, s.clock_in_lng),
     clockOutLocation: latLngOrNull(s.clock_out_lat, s.clock_out_lng),
+    // Own-shift visibility into the live ping (I10 re-scope): an employee can
+    // always see their own last-reported position, same transparency the
+    // clock-in/out coordinates already give them.
+    liveLocation: latLngOrNull(s.live_lat, s.live_lng),
+    liveLocationAt: s.live_location_at,
     breaks: breaksRes.rows.map((b) => ({ id: b.id, breakStartAt: b.break_start_at, breakEndAt: b.break_end_at })),
     entries: entriesRes.rows.map((e) => ({
       id: e.id,
@@ -166,11 +172,47 @@ router.post('/clock-out', requireRole('employee'), async (req, res, next) => {
       return res.status(409).json({ error: 'End your break before clocking out' });
     }
 
+    // Live location is cleared on clock-out — no last-known position lingers
+    // once the shift is over (I10 re-scope, 040_employee_live_location.sql).
     await pool.query(
-      `UPDATE time_shift SET clock_out_at = now(), status = 'completed', clock_out_lat = $2, clock_out_lng = $3 WHERE id = $1`,
+      `UPDATE time_shift
+       SET clock_out_at = now(), status = 'completed', clock_out_lat = $2, clock_out_lng = $3,
+           live_lat = NULL, live_lng = NULL, live_location_at = NULL
+       WHERE id = $1`,
       [shiftId, location ? location.lat : null, location ? location.lng : null]
     );
     res.json({ shift: serialize(await loadShiftDetail(shiftId)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /timeclock/live-location — { location: { lat, lng } }, mandatory,
+// same shape as clock-in's fix. Overwrites the active shift's live position
+// (I10 re-scope, 040_employee_live_location.sql): current point only, never
+// a history row. 409 with no active shift — this only exists while clocked
+// in, mirroring the breaks endpoints above.
+router.patch('/live-location', requireRole('employee'), async (req, res, next) => {
+  try {
+    const location = (req.body || {}).location;
+    const errors = validateClockInLocation(location);
+    if (errors) return res.status(422).json({ errors });
+
+    const active = await pool.query(
+      `SELECT id FROM time_shift WHERE employee_id = $1 AND status = 'active'`,
+      [req.user.id]
+    );
+    if (!active.rows.length) return res.status(409).json({ error: 'You are not clocked in' });
+
+    const { rows } = await pool.query(
+      `UPDATE time_shift SET live_lat = $2, live_lng = $3, live_location_at = now()
+       WHERE id = $1 RETURNING live_lat, live_lng, live_location_at`,
+      [active.rows[0].id, location.lat, location.lng]
+    );
+    res.json({
+      liveLocation: latLngOrNull(rows[0].live_lat, rows[0].live_lng),
+      liveLocationAt: rows[0].live_location_at,
+    });
   } catch (err) {
     next(err);
   }
@@ -384,6 +426,43 @@ router.get('/today', requireCapabilityOrAdmin('view_all'), async (req, res, next
         absences: employees.filter((e) => e.absent).length,
         currentlyWorking: employees.filter((e) => e.currentlyWorking).length,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// A ping older than 3x the mobile app's 5-minute interval reads as stale —
+// the marker still renders (better than silently vanishing), just flagged so
+// the web map doesn't imply a fresher position than it has.
+const LIVE_LOCATION_STALE_MS = 15 * 60 * 1000;
+
+// GET /timeclock/live-locations — every currently clocked-in employee in the
+// caller's scope with their live position, if any (I10 re-scope, §2/§13:
+// current position only, only while clocked in — see
+// 040_employee_live_location.sql). Gated by view_live_location, a narrower
+// grant than view_all (the rest of the manager surface below).
+router.get('/live-locations', requireCapabilityOrAdmin('view_live_location'), async (req, res, next) => {
+  try {
+    const ids = await ownerScopeIds(req.user);
+    const { rows } = await pool.query(
+      `SELECT u.id AS employee_id, u.name, s.clock_in_at, s.live_lat, s.live_lng, s.live_location_at
+       FROM time_shift s
+       JOIN users u ON u.id = s.employee_id
+       WHERE s.employee_id = ANY($1::int[]) AND s.status = 'active' AND u.is_active
+       ORDER BY u.name`,
+      [ids]
+    );
+    const now = Date.now();
+    res.json({
+      employees: rows.map((r) => ({
+        employeeId: r.employee_id,
+        name: r.name,
+        clockInAt: r.clock_in_at,
+        liveLocation: latLngOrNull(r.live_lat, r.live_lng),
+        liveLocationAt: r.live_location_at,
+        stale: !r.live_location_at || now - new Date(r.live_location_at).getTime() > LIVE_LOCATION_STALE_MS,
+      })),
     });
   } catch (err) {
     next(err);

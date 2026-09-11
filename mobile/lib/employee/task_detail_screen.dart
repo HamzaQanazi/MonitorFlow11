@@ -38,6 +38,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
   Object? _error;
   bool _acting = false;
 
+  // Internal chat: this request's current assignees + department oversight,
+  // never the requester (backend/src/routes/requests.js's
+  // loadInternalCommentableRequest). A separate thread from any
+  // customer-facing comments — this app never shows those to an employee.
+  List<_InternalComment>? _internalComments;
+  final _internalCommentController = TextEditingController();
+  bool _postingInternalComment = false;
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +56,7 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _internalCommentController.dispose();
     super.dispose();
   }
 
@@ -74,9 +83,54 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
         _error = null;
       });
       _loadRequestFields();
+      _loadInternalComments(detail.summary.requestId);
     } catch (e) {
       if (!mounted) return;
       if (!silent || _detail == null) setState(() => _error = e);
+    }
+  }
+
+  /// Best-effort, same shape as _loadRequestFields — a failure here (e.g. no
+  /// longer a current assignee) just leaves the section empty rather than
+  /// blocking the rest of Task Details.
+  Future<void> _loadInternalComments(int requestId) async {
+    final api = context.read<AuthState>().api;
+    try {
+      final json = await api.get('/requests/$requestId/comments/internal');
+      if (!mounted) return;
+      setState(() {
+        _internalComments = (json['comments'] as List<dynamic>)
+            .map((c) => _InternalComment.fromJson(c as Map<String, dynamic>))
+            .toList();
+      });
+    } on Exception {
+      if (!mounted) return;
+      setState(() => _internalComments = const []);
+    }
+  }
+
+  Future<void> _sendInternalComment() async {
+    final body = _internalCommentController.text.trim();
+    if (body.isEmpty || _detail == null) return;
+    final i18n = context.read<I18n>();
+    final requestId = _detail!.summary.requestId;
+    setState(() => _postingInternalComment = true);
+    final api = context.read<AuthState>().api;
+    try {
+      await api.post('/requests/$requestId/comments/internal', body: {'body': body});
+      if (!mounted) return;
+      _internalCommentController.clear();
+      await _loadInternalComments(requestId);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(i18n.apiError(e))));
+    } on NetworkException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(i18n.tr('net_retry'))),
+      );
+    } finally {
+      if (mounted) setState(() => _postingInternalComment = false);
     }
   }
 
@@ -344,6 +398,72 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
             ),
           ],
           const SizedBox(height: 24),
+          _SectionTitle(i18n.tr('td_internal_chat')),
+          const SizedBox(height: 4),
+          Text(
+            i18n.tr('td_internal_chat_hint'),
+            style: const TextStyle(color: MfColors.muted, fontSize: 12),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: MfColors.surface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_internalComments == null)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_internalComments!.isEmpty)
+                  Text(
+                    i18n.tr('td_no_internal_comments'),
+                    style: const TextStyle(color: MfColors.muted, fontSize: 13),
+                  )
+                else
+                  for (final c in _internalComments!) ...[
+                    Text(
+                      '${c.authorName} · ${DateFormat.MMMd().add_jm().format(c.createdAt.toLocal())}',
+                      style: const TextStyle(
+                        color: MfColors.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(c.body, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(height: 10),
+                  ],
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _internalCommentController,
+                        minLines: 1,
+                        maxLines: 4,
+                        enabled: !_postingInternalComment,
+                        decoration: InputDecoration(
+                          hintText: i18n.tr('td_write_internal_comment_ph'),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: _postingInternalComment ? null : _sendInternalComment,
+                      icon: const Icon(Icons.send),
+                      tooltip: i18n.tr('td_send'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
           _SectionTitle(i18n.tr('td_request_details')),
           const SizedBox(height: 10),
           FormResponseView(response: d.requestFormResponse, fields: _requestFields),
@@ -387,6 +507,27 @@ class _TaskDetailScreenState extends State<TaskDetailScreen>
       ),
     );
   }
+}
+
+class _InternalComment {
+  final int id;
+  final String body;
+  final DateTime createdAt;
+  final String authorName;
+
+  _InternalComment({
+    required this.id,
+    required this.body,
+    required this.createdAt,
+    required this.authorName,
+  });
+
+  factory _InternalComment.fromJson(Map<String, dynamic> json) => _InternalComment(
+        id: json['id'] as int,
+        body: json['body'] as String,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        authorName: (json['author'] as Map<String, dynamic>)['name'] as String,
+      );
 }
 
 class _SectionTitle extends StatelessWidget {

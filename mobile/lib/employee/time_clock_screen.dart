@@ -14,6 +14,7 @@ import '../i18n.dart';
 import '../models/time_shift.dart';
 import '../theme.dart';
 import '../widgets/states.dart';
+import 'live_location_service.dart';
 import 'manual_hours_screen.dart';
 
 class TimeClockScreen extends StatefulWidget {
@@ -41,11 +42,23 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
     try {
       final json = await api.get('/timeclock/shifts/active');
       if (!mounted) return;
+      final shift = _parseShift(json);
       setState(() {
-        _shift = _parseShift(json);
+        _shift = shift;
         _loaded = true;
         _error = null;
       });
+      // Resumes live pings after an app relaunch mid-shift (the service
+      // itself is a no-op if a stream is already running) — otherwise a
+      // killed/reopened app would silently stop reporting until clock-out.
+      if (shift != null && mounted) {
+        final i18n = context.read<I18n>();
+        LiveLocationService.instance.start(
+          api,
+          notificationTitle: i18n.tr('ll_notif_title'),
+          notificationText: i18n.tr('ll_notif_text'),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -109,6 +122,16 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
       await _act('/timeclock/clock-in', body: {
         'location': {'lat': pos.latitude, 'lng': pos.longitude},
       });
+      // _act only lands _shift as active on a genuine 201 — a failed
+      // clock-in (already-clocked-in 409, validation 422, …) leaves it null
+      // and must never start pinging.
+      if (mounted && _shift != null) {
+        LiveLocationService.instance.start(
+          context.read<AuthState>().api,
+          notificationTitle: i18n.tr('ll_notif_title'),
+          notificationText: i18n.tr('ll_notif_text'),
+        );
+      }
     } catch (_) {
       if (mounted) _showError(i18n.tr('tc_location_failed'));
     } finally {
@@ -140,6 +163,13 @@ class _TimeClockScreenState extends State<TimeClockScreen> {
     }
     if (!mounted) return;
     await _act('/timeclock/clock-out', body: location != null ? {'location': location} : null);
+    // Stop regardless of clock-out's own outcome shape — the server already
+    // clears the shift's live position on a successful clock-out (I10), and
+    // there is no active shift left to ping against either way once this
+    // screen no longer shows one.
+    if (_shift == null) {
+      await LiveLocationService.instance.stop();
+    }
   }
 
   void _showError(String message) {
