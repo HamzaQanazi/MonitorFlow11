@@ -208,10 +208,56 @@ surveillance tool. Do not add behavioural tracking, even if asked casually.
   employee with no signal or who denies permission still clocks out, the
   coordinate is just `null`. No manager-approval/exemption workflow exists
   for this — that idea was explicitly considered and deferred.
+- **Re-scoped 2026-09-11 (deliberate, user-directed — a real stream, not a
+  single point; explicitly confirmed as a both-students-agreed exception
+  before building, not a quiet extension of the two above):** a live map on
+  the web console shows every currently clocked-in employee's position,
+  updated on a 5-minute ping (`PATCH /timeclock/live-location`,
+  `time_shift.live_lat/live_lng/live_location_at` —
+  `040_employee_live_location.sql`). Scope agreed up front, all still true:
+  - **Only while clocked in.** No ping exists off-shift, ever — the mobile
+    app starts pinging on a successful clock-in and stops on clock-out; the
+    endpoint itself 409s with no active shift.
+  - **Current position only, still no history.** Each ping overwrites the
+    same three columns; there is no location-history table and nothing to
+    query "where was X at 2pm yesterday." Clock-out clears them back to
+    `NULL` — no last-known point survives the shift ending.
+  - **Still no geofencing/proximity check anywhere.** Nothing compares this
+    position to anything — not a service address, not a schedule, not each
+    other. It is purely a live "where is my crew right now" view, never an
+    automated judgment about whether someone is where they should be.
+  - Gated by a new, separate capability, **`view_live_location`**
+    (`lib/capabilities.js`) — deliberately not folded into `view_all`, so a
+    company can grant the live map more narrowly than general oversight
+    (same reasoning as `view_all_company` being its own grant, §5). Gate 2
+    is the existing `ownerScopeIds` (department scope, or company-wide with
+    `view_all_company`/admin) — same as `/timeclock/today`.
+  - Employee-side transparency, not a covert feature: the employee's own
+    `GET /timeclock/shifts/active` includes their own live position, and the
+    mobile ping requires Android's foreground-service notification
+    (`live_location_service.dart`) — tracking is never silent to the person
+    being tracked.
+  - Mobile background tracking is the deliberately harder path the user
+    picked over foreground-only: Android needs a second, explicit
+    "Always allow" location grant beyond the existing one-shot clock-in
+    permission, plus `ACCESS_BACKGROUND_LOCATION`/`FOREGROUND_SERVICE*`
+    manifest permissions. iOS isn't built yet (no `ios/` platform directory
+    in this repo) — adding it later needs the equivalent "Always" flow
+    (`NSLocationAlwaysAndWhenInUseUsageDescription`, `UIBackgroundModes:
+    location`) and, per Apple's Guideline 5.1.1, is a real App Store review
+    risk for an employee-tracking use case, not a formality.
+  - **Known limitation, not fixed this session:** if an account is
+    deactivated (401) while a shift is still open, the mobile foreground
+    notification and ping loop keep running locally until the app is
+    restarted — pings just fail closed (401, silently dropped), not a data
+    leak, but a stale-looking notification. `auth_state.dart` is shared by
+    both mobile apps (§11) and deliberately wasn't given an employee-only
+    import to close this; revisit only if it proves to be an actual
+    complaint, not preemptively.
 
 Any *other* future feature that wants to *compare* a coordinate (e.g. "was
-this shift on-site") is still a new decision, not a natural extension of
-either exception above — flag it the same way before building it.
+this shift on-site") is still a new decision, not a natural extension of any
+exception above — flag it the same way before building it.
 
 ---
 
@@ -315,9 +361,13 @@ resolved by the two gates (I3):
 
 - **Gate 1 — capability.** The fixed catalogue (`lib/capabilities.js`):
   `view_all · assign · set_priority · override · manage_employees · export ·
-  manage_events · manage_knowledge_base · view_all_company`. `manage_events`/
+  manage_events · manage_knowledge_base · view_all_company ·
+  view_live_location`. `manage_events`/
   `manage_knowledge_base` let a level author just one workforce feature
-  module (§11) without also holding `view_all`'s general oversight. A
+  module (§11) without also holding `view_all`'s general oversight.
+  `view_live_location` (added 2026-09-11, §2 I10) is the same shape — it
+  gates `GET /timeclock/live-locations` on its own, separate from `view_all`,
+  so the live map can be granted more narrowly than general oversight. A
   `employee_level` grants a subset via `level_capability`. An "oversight"
   employee is one whose level grants `view_all`. `view_all_company` (added
   2026-09-04, user-directed) is a different kind of grant — it widens Gate 2
@@ -507,7 +557,14 @@ Bilingual columns are JSONB `{en,ar}` with a DB `CHECK` on both keys (I5).
   when `location_captured` is true; clock-out's is best-effort and often
   null). Each pair is one point fixed at the moment the employee acts, never
   a stream, never a history table, never compared to anything — I10 stays
-  intact. At most one `active` shift per employee (DB-enforced unique
+  intact. **live_lat/live_lng, live_location_at** (nullable, added
+  `040_employee_live_location.sql`, §2 I10's third exception) — the one
+  column-set that IS a live stream, by design: overwritten on every
+  ~5-minute ping from a clocked-in employee (`PATCH
+  /timeclock/live-location`), and reset to `NULL` on clock-out. Still not a
+  history table (nothing else ever holds a second row for the same shift's
+  position) and still never compared to anything (no geofencing). At most
+  one `active` shift per employee (DB-enforced unique
   index, not app locking).
   **time_break** — shift_id (FK),
   break_start_at, break_end_at (nullable, at most one active per shift).
@@ -716,7 +773,9 @@ cancel, confirm/dispute resolution, attachments, map pin).
 Complete Task (dynamic completion form) · **Workforce feature modules** (shipped
 post-pivot, not yet gated by the company's onboarding feature selection — §15):
 Time Clock (clock in/out — clock-in requires a one-shot device location fix,
-§2 I10 exception, §6 — breaks, manual hours, in-shift notes/photos/tips) ·
+§2 I10 exception, §6 — breaks, manual hours, in-shift notes/photos/tips, and
+while clocked in, a ~5-minute background location ping for the web console's
+live map, §2 I10's third exception, `live_location_service.dart`) ·
 Schedule (my roster) · Checklists · Knowledge Base · Events (RSVP). Time Off is **not** a separate module — it's a normal
 service type through the dynamic form/workflow engine (I1), themed as its own
 screen over `/requests` + `/services`.
@@ -728,12 +787,15 @@ Overview (stats grouped **open vs closed**, per-service + per-priority totals,
 timeline, comments, assign/reassign, priority, status override, map view) ·
 Employees Management · Departments Management · Employee Levels · Reports + CSV
 export · Audit · **Workforce feature modules** (shipped post-pivot): Time Clock
-(shift/timesheet oversight + CSV export) · Schedule (shift templates + roster) ·
+(shift/timesheet oversight + CSV export, plus a Live Map tab — §2 I10's third
+exception, gated on its own `view_live_location` capability rather than
+`view_all`) · Schedule (shift templates + roster) ·
 Checklists (forms-and-checklists submission stats, aggregated from existing
 request/workflow data, not a new engine surface) · Knowledge Base ·
 Events. Each module route is capability-gated (§5) — `view_all` for
-the oversight views, plus `manage_events`/`manage_knowledge_base` for
-authoring that module without granting general oversight.
+the oversight views, plus `manage_events`/`manage_knowledge_base`/
+`view_live_location` for authoring or viewing just that one module without
+granting general oversight.
 
 **Shared component:** Notifications + Profile, reused by both mobile apps.
 
@@ -804,7 +866,9 @@ MIME validated by magic bytes, UUID name outside web root, served
 standalone Operations Monitor page ·
 WebSocket live refresh ·
 **live/continuous GPS tracking, location history,
-behavioural monitoring** (I10) · signature capture · draft saving · satisfaction
+behavioural monitoring** (I10 — now with one narrow, explicitly re-scoped
+exception, the Time Clock live map added 2026-09-11; see §2 I10) ·
+signature capture · draft saving · satisfaction
 ratings · multi-organization / true multi-tenancy (single-org per deployment;
 "many companies" = one deployment each) · payments · advanced BI · **named vendor
 integrations** (except the three explicitly re-scoped exceptions below) ·
@@ -1231,7 +1295,9 @@ picker** (v5) · **operational audit rows** (status/assign/priority write
 ranking** (§5) · **AI-suggested scheduling** (above) · **self-service
 password reset + credentials-by-email** (above) · **bulk employee import
 from CSV** (above). GPS tracking stays
-out (I10).
+out (I10) **except the one narrow, explicitly re-scoped live-location
+exception** (Time Clock's Live Map, above) — every other form of behavioural
+tracking is still refused by default.
 
 ---
 
@@ -1272,7 +1338,10 @@ in a row → that row only fails · import row count over the limit → 422 ·
 hire missing phone/birthdate/gender/workerType → 422 field-keyed, no
 password error · edit clearing a required field (e.g. `gender: null`) → 422 ·
 cross-department reach without `view_all_company` → 404, the same level
-holding it → 200.
+holding it → 200 · live-location ping with no active shift → 409, missing/
+out-of-range location → 422 · `view_live_location`-less caller → 403,
+cross-department caller → excluded from the list (not 404 — it's a list
+endpoint), clock-out clears the position entirely.
 
 ---
 

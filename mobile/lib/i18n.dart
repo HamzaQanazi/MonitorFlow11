@@ -298,6 +298,13 @@ const Map<String, Map<String, String>> _dict = {
   'td_send': {'en': 'Send', 'ar': 'إرسال'},
   'td_internal_comment_fail': {'en': 'Couldn’t send the message.', 'ar': 'تعذّر إرسال الرسالة.'},
 
+  // live location (I10 re-scope)
+  'll_notif_title': {'en': 'MonitorFlow', 'ar': 'MonitorFlow'},
+  'll_notif_text': {
+    'en': 'Sharing your location while you\'re clocked in',
+    'ar': 'مشاركة موقعك أثناء تسجيل حضورك',
+  },
+
   // complete task
   'ct_complete_pre': {'en': 'Complete', 'ar': 'إكمال'},
   'ct_complete_q': {'en': 'Complete this task?', 'ar': 'إكمال هذه المهمة؟'},

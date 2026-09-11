@@ -18,6 +18,7 @@ import '../widgets/states.dart';
 import 'checklists_screen.dart';
 import 'events_screen.dart';
 import 'knowledge_base_screen.dart';
+import 'live_location_service.dart';
 import 'schedule_screen.dart';
 import 'task_detail_screen.dart';
 import 'task_map_view.dart';
@@ -181,6 +182,12 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
               title: Text(i18n.tr('sign_out')),
               onTap: () {
                 Navigator.of(context).pop();
+                // Stop live pings before the token they'd be sent with goes
+                // away — otherwise the foreground notification (and the
+                // pings themselves, silently 401ing) would outlive the
+                // session, which is exactly the "never silent" transparency
+                // point live tracking is built on (I10).
+                LiveLocationService.instance.stop();
                 context.read<AuthState>().logout();
               },
             ),
