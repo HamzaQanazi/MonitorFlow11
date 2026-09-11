@@ -810,10 +810,10 @@ router.post('/:id/comments/internal', async (req, res, next) => {
          VALUES ($1, $2, $3, 'internal') RETURNING id, created_at`,
         [request.id, req.user.id, body.trim()]
       ));
-      const message = JSON.stringify({
+      const message = {
         en: `${req.user.name} posted in the internal chat for request #${request.id}.`,
         ar: `أضاف ${req.user.name} رسالة في المحادثة الداخلية للطلب رقم ${request.id}.`,
-      });
+      };
       const { rows: coworkerRows } = await client.query(
         'SELECT employee_id FROM task WHERE request_id = $1 AND employee_id != $2',
         [request.id, req.user.id]
@@ -823,11 +823,7 @@ router.post('/:id/comments/internal', async (req, res, next) => {
         recipientIds.add(request.department_head_id);
       }
       for (const recipientId of recipientIds) {
-        await client.query(
-          `INSERT INTO notification (user_id, request_id, type, message)
-           VALUES ($1, $2, 'comment', $3)`,
-          [recipientId, request.id, message]
-        );
+        await createNotification(client, recipientId, request.id, 'comment', message);
       }
       await client.query('COMMIT');
     } catch (err) {
