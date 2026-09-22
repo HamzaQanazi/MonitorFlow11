@@ -10,24 +10,19 @@
 // accident. Conversation history is round-tripped by the client on every
 // call, never stored server-side — no new table (ponytail: add server-side
 // history only if multi-device continuity is actually asked for).
-// Deliberately the full model, NOT flash-lite (unlike lib/translate.js's own
-// choice, which is a different, much simpler task — translating one short
-// label has nowhere near this many rules to juggle at once). Measured
-// directly: flash-lite's instruction-following broke down once the grounding
-// doc grew enough conditional rules (role vs capability vs feature-flag vs
-// the one admin-excluded screen) — it would fix whichever rule was tested
-// last and silently break another. The full model got the same test matrix
-// right consistently. The cost is real (~6-10s vs ~1.5s per reply, occasional
-// timeouts even at 25s) — accepted deliberately, user-directed 2026-09-22,
-// because a wrong permission answer is worse than a slow correct one here.
-const MODEL = process.env.CHATBOT_MODEL || 'gemini-3.5-flash';
-// Fallback when the full model's free-tier quota (observed: 20 req/min,
-// shared across every caller) is exhausted — a separate model has its own
-// quota bucket, so this recovers traffic the primary model alone can't
-// handle. Same model translate.js already uses successfully elsewhere in
-// this codebase. Accuracy is worse (see the full-model comment above) but
-// a slightly hedgier answer beats a hard failure.
-const FALLBACK_MODEL = process.env.CHATBOT_FALLBACK_MODEL || 'gemini-3.5-flash-lite';
+// flash-lite, same model lib/translate.js uses (proven reachable, and its
+// own separate free-tier quota bucket). Briefly tried the full flagship
+// model for better instruction-following on this prompt's many conditional
+// rules (role vs capability vs feature-flag vs the one admin-excluded
+// screen) — measured more consistently correct on that front, but its
+// free-tier quota (20 req/min, shared across every caller) made the
+// chatbot unusable under any real multi-person testing: constant 429s and
+// slow/timing-out replies (~6-10s, occasional 25s timeouts). Reverted
+// 2026-09-22, user-directed — a chatbot that reliably answers beats one
+// that's more careful but frequently down. The earlier accuracy fix that
+// matters most (moving the feature-flag check to a mandatory first line,
+// see APP_GUIDE below) stays in place either way.
+const MODEL = process.env.CHATBOT_MODEL || 'gemini-3.5-flash-lite';
 
 // A per-role/per-screen walkthrough, not just a feature list — specific
 // enough that the model can name the actual screen/button instead of
@@ -270,57 +265,50 @@ async function askChatbot(message, history, role, page, capabilities, features) 
     ? ` This company's enabled feature keys: ${features.length ? features.join(', ') : '(none)'}.`
     : " This company's enabled feature keys: not provided — follow the \"not provided\" fallback for module questions.";
 
-  const body = JSON.stringify({ system_instruction: { parts: [{ text: APP_GUIDE + roleNote }] }, contents });
-
-  let result = await callGemini(MODEL, apiKey, body);
-  if (result.status === 429) {
-    console.error(`chatbot: ${MODEL} quota exhausted, retrying with ${FALLBACK_MODEL}`);
-    result = await callGemini(FALLBACK_MODEL, apiKey, body);
-  }
-  if (!result.ok) {
-    const err = new Error(result.status === 429 ? 'Chatbot is busy, try again shortly' : 'Chatbot service error');
-    err.status = result.status === 429 ? 429 : 502;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
+  let upstream;
+  try {
+    upstream = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ system_instruction: { parts: [{ text: APP_GUIDE + roleNote }] }, contents }),
+      // 2026-09-22: this Gemini API version runs a mandatory internal
+      // "thinking" pass on gemini-3.5-flash-lite that didn't exist when
+      // lib/translate.js's own "under a second" comment was written —
+      // measured directly at ~27-30s per reply even for a one-word prompt,
+      // even with thinkingConfig.thinkingLevel set to its lowest value.
+      // Long, but this is a slow-not-broken model, not an outage — raising
+      // the timeout (was 15s) turns a false "could not reach the assistant"
+      // into a working, if slow, reply.
+      signal: AbortSignal.timeout(35000),
+    });
+  } catch (fetchErr) {
+    // Logging the real cause (timeout vs DNS vs connection refused) is the
+    // only way to actually diagnose "unreachable" instead of guessing.
+    console.error(`chatbot: fetch to Gemini failed: ${fetchErr.name}: ${fetchErr.message}`);
+    const err = new Error('Chatbot service is unreachable');
+    err.status = 502;
     throw err;
   }
-  const out = result.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!upstream.ok) {
+    // Log the real upstream status so a vendor-side rate limit (the free
+    // tier's per-minute cap) shows up in the server console instead of just
+    // "unreachable," and surface 429 as our own 429 so the client shows the
+    // honest "too many messages, wait a bit" instead of a vague error.
+    const body = await upstream.text().catch(() => '');
+    console.error(`chatbot: Gemini returned ${upstream.status}: ${body.slice(0, 300)}`);
+    const err = new Error(upstream.status === 429 ? 'Chatbot is busy, try again shortly' : 'Chatbot service error');
+    err.status = upstream.status === 429 ? 429 : 502;
+    throw err;
+  }
+  const data = await upstream.json();
+  const out = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!out || !out.trim()) {
     const err = new Error('Chatbot returned no result');
     err.status = 502;
     throw err;
   }
   return out.trim();
-}
-
-// Single request/response cycle against one Gemini model. Split out of
-// askChatbot so a 429 on the primary model can retry against the fallback
-// model without duplicating the fetch/error-shape logic.
-async function callGemini(model, apiKey, body) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  let upstream;
-  try {
-    upstream = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-      signal: AbortSignal.timeout(25000), // bumped for the full model's slower, more reliable responses
-    });
-  } catch (fetchErr) {
-    // Was silently swallowed before — same blind spot as the !upstream.ok branch
-    // below. Logging the real cause (timeout vs DNS vs connection refused) here
-    // is the only way to actually diagnose "unreachable" instead of guessing.
-    console.error(`chatbot: fetch to Gemini (${model}) failed: ${fetchErr.name}: ${fetchErr.message}`);
-    return { ok: false, status: 502 };
-  }
-  if (!upstream.ok) {
-    // Was silently collapsed into a generic 502 before — indistinguishable from a
-    // real outage. Log the real upstream status so a vendor-side rate limit (the
-    // free tier's real per-minute cap) shows up in the server console instead of
-    // just "unreachable."
-    const errBody = await upstream.text().catch(() => '');
-    console.error(`chatbot: Gemini (${model}) returned ${upstream.status}: ${errBody.slice(0, 300)}`);
-    return { ok: false, status: upstream.status };
-  }
-  return { ok: true, status: upstream.status, data: await upstream.json() };
 }
 
 module.exports = { askChatbot };
