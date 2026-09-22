@@ -797,7 +797,8 @@ the oversight views, plus `manage_events`/`manage_knowledge_base`/
 `view_live_location` for authoring or viewing just that one module without
 granting general oversight.
 
-**Shared component:** Notifications + Profile, reused by both mobile apps.
+**Shared component:** Notifications + Profile + the in-app help chatbot (§13,
+2026-09-22), reused by both mobile apps.
 
 **Branding has a build-time default and one runtime override, post-onboarding**
 (`web/src/brand.ts`, `web/.env.example`, `web/src/components/Wordmark.tsx`): the
@@ -1259,40 +1260,129 @@ time-to-completion, reopen rate, SLA adherence, and similar — never a
 behavioural/surveillance metric. I10 applies to every feature in this
 project equally; a new system doesn't get a pass on it.
 
-**Added 2026-09-07 (supervisor-mandated): CSP backtracking for scheduling.**
+**Shipped 2026-09-07 (supervisor-mandated): CSP backtracking for scheduling.**
 `POST /schedule/suggest`'s greedy fairness-ranking heuristic (§13's
-2026-08-21 AI-suggested-scheduling entry) is being replaced with a proper
-constraint-satisfaction backtracking solver over the same inputs (shift
-templates, chosen weekdays/date range, `weekly_rest_day` skips, no
-double-booking) and the same **preview-only** contract into
-`PUT /schedule/roster` — a human still applies the result, nothing here
-starts auto-writing the roster. Local computation over existing DB data
-either way, no vendor call, so this doesn't touch the named-vendor list.
+2026-08-21 AI-suggested-scheduling entry) was replaced with a proper
+constraint-satisfaction backtracking solver (`lib/scheduleSolver.js`) over
+the same inputs (shift templates, chosen weekdays/date range,
+`weekly_rest_day` skips, no double-booking) and the same **preview-only**
+contract into `PUT /schedule/roster` — a human still applies the result,
+nothing here starts auto-writing the roster. Depth-first search over
+(date, slot) variables; all-different per day plus a fairness floor (a
+day-off guarantee once ≥2 weekdays are offered) and ceiling
+(`weekCap`); candidate order is a heuristic (fewest shifts assigned so
+far, then lowest id — the old greedy's own tie-break, preserved so
+parity holds wherever the new constraints never bite). A strict pass
+runs first; a bounded step budget catches saturated/unsatisfiable weeks
+and falls back to a relaxed pass with the day-off guarantee off (proven
+to never dead-end). This is classical/symbolic AI (search over a
+constraint graph), not machine learning — no model, no training data,
+no vendor call, so it doesn't touch the named-vendor list. Local
+computation over existing DB data either way.
 
-**Flagged 2026-09-07, NOT approved — recorded, do not build:** the same
-supervisor meeting also asked for (a) a company-wide group chat and (b)
-periodic employee location tracking (5–15 min intervals), both owned by a
-different student (Abdallah), not in this file's current task order.
-Group chat is new, uncontroversial scope. **Periodic location tracking
-directly contradicts I10** (§2 — "no live GPS, location history... An
-ethical, GDPR, and product position", explicitly not a preference) and the
-project's own prior, deliberate call on this exact question: the Time Clock
-location feature (§2, §6) was scoped down on purpose to a single point
-captured at clock-in/out, with an explicit note that "no geofencing/
-proximity check anywhere" and that comparing a coordinate to anything is
-"still a new decision, not a natural extension" of that exception. A polling
-interval is exactly the live-tracking shape I10 was written to rule out.
-Per this file's own top-of-document rule ("flag the contradiction instead
-of silently resolving it either way"), this entry only records that the
-requirement was raised — it is **not** a re-scope. Reversing I10 for this
-needs the same kind of explicit, both-students-plus-supervisor decision
-`view_all_company` got above, made deliberately, not inherited by default
-because a meeting mentioned it.
+**Flagged 2026-09-07, NOT approved at the time — the same supervisor
+meeting also asked for (a) a company-wide group chat and (b) periodic
+employee location tracking (5–15 min intervals), both owned by a different
+student (Abdallah).**
+
+- **(b) is now built — see §2 I10's 2026-09-11 re-scope entry and
+  `view_live_location` (§5, §6, §11).** At the time this entry was
+  originally written, periodic location tracking directly contradicted I10
+  and the project's own prior, deliberate call scoping Time Clock's location
+  capture down to a single point with no geofencing/history. That contradiction
+  is what this entry existed to flag, per this file's own top-of-document
+  rule. It has since been resolved the way this entry said it would need to
+  be: an explicit, both-students-plus-supervisor decision (supervisor-
+  mandated, confirmed by both students before building — §2), not something
+  inherited by default because a meeting mentioned it. The shipped feature is
+  scoped tighter than the original 5–15 min polling ask — clocked-in-only,
+  no history table, no geofencing, employee-visible — see §2 for the full
+  scope agreement.
+- **(a), the company-wide group chat, is still not built.** Not to be
+  confused with the request-scoped **internal employee chat** shipped
+  2026-09-11 (§11-adjacent — assignees + a request's department oversight
+  employees only, per-request, not company-wide). That's a different,
+  narrower feature; the company-wide group chat from this meeting remains
+  unbuilt and outside this file's current task order.
+
+**Added 2026-09-22 (user-directed): in-app help/FAQ chatbot.** A stateless
+help assistant — "how do I clock in," "where's the Schedule page" — reusing
+the same Gemini proxy the bilingual auto-fill exception already established
+(`lib/chatbot.js`, `routes/chatbot.js`, `POST /chatbot/message`), not a 6th
+vendor since it's the same key/model tier, just a second prompt. Deliberately
+scoped narrow for v1: grounded on a **fixed, hand-written description of the
+app** (`APP_GUIDE` in `lib/chatbot.js`), not live data — it has no DB access
+and no per-user query path, so it can't violate I3's two gates or I10 even by
+a prompt-injection accident. Any authenticated account kind may call it
+(admin/employee/user, unlike `/translate` which excludes `user`) — it's
+help, not an authoring tool, so there's nothing to gate by capability.
+History is round-tripped by the client on every call and never stored
+server-side — no new table, no persistence, no multi-device continuity (add
+only if that's actually asked for). Rate-limited per caller (20 msgs / 5 min,
+same in-memory-map shape as `auth.js`'s login limiter) to bound Gemini
+quota/cost on an otherwise-ungated authenticated endpoint. Ships in all three
+clients: a floating widget in the web console shell (`ChatbotWidget.tsx`,
+every page, admin and employee both — mounted at the shell root rather than
+the topbar since, unlike the notification bell, admin gets it too), a drawer
+item in the Employee app, and an app-bar icon in the User app
+(`shared/chatbot_screen.dart`, the same cross-app shared-component pattern as
+Notifications/Profile, §11). **Explicitly out of scope for v1, and a real
+design decision if ever revisited, not a default extension of this entry:**
+answering questions about the caller's own live data ("what's my task
+status") — that would need the chat handler to go through the existing
+gated endpoints itself (never a raw DB/SQL handoff to the model), proven
+safe against prompt injection reaching another user's scope, before it
+ships.
+
+**Re-scoped 2026-09-22, same session (user-directed): a real, per-screen
+grounding doc, and role-aware answers.** The v1 `APP_GUIDE` was a thin
+feature-list paragraph; asking "shouldn't we train it so it's familiar with
+the system" surfaced the actual gap — not model training (fine-tuning needs
+a training pipeline and labeled data this project has neither of, and isn't
+how a FAQ bot is normally built), but the grounding prompt itself being too
+shallow to name real screens. `APP_GUIDE` is now a full per-app walkthrough
+— every screen name, nav location, and button in the User app, Employee app,
+and web console, written from the actual route/nav/screen names in the
+code, not from a summary. `askChatbot(message, history, role)` also now
+takes the caller's account kind and appends it to the system instruction, so
+the model only describes screens that account kind actually has — a field
+employee asking for help is never pointed at an admin-only console page.
+Still stateless, still no DB access, still just a longer string in the same
+prompt (RAG/chunked retrieval stays the documented upgrade path above, only
+if this doc gets unwieldy — it doesn't yet, ~30 screens total).
+
+**Further accuracy rounds, same day, found by user manual testing against the
+real console (per the "let me fact-check what you send Gemini" review this
+entry asked for above):** the coarse role bucket (user/employee/admin) wasn't
+enough — an "employee" ranges from a fresh hire to a manager holding most
+capabilities, and the bot defaulted to an overly-cautious "you can't" for a
+manager who actually held `manage_employees`. Fixed by passing the caller's
+own **capabilities** and the company's own **companyFeatures** — both already
+loaded client-side for nav visibility (`AuthContext.tsx`/`DashboardShell.tsx`
+web, `AppUser.companyFeatures` mobile), so this is the caller's own
+already-known authorization data, not a new DB query or another user's data;
+`askChatbot()` grew `page` (the screen open when chat started, for
+contextual "how does this work" answers), `capabilities`, and `features`
+params on that same reasoning. Every WEB CONSOLE screen in `APP_GUIDE` is now
+tagged with its real required capability (pulled from `main.tsx`'s actual
+route guards, not a guess), and every optional-module mention is tagged with
+its real feature key. Also fixed: the bot was collapsing "on-topic but this
+account can't do it" (e.g. a `user` asking how to set up the company) into
+the same refusal as "genuinely unrelated to MonitorFlow" — split into two
+explicit cases so the former gets an honest, specific answer instead of a
+dead-end refusal. **A genuine model-reliability gap, not a prompt bug:** the
+feature-flag check (module on vs off) was followed correctly only 1 of 3
+tries on `gemini-3.5-flash-lite` until the instruction was moved to a
+mandatory first line at the very top of the prompt — a "lite" model doesn't
+reliably honor a negative constraint buried in a long system prompt; expect
+this class of flakiness on other instructions too, and check by repeating a
+request 3-5 times, not once, before trusting a fix "works."
 
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
 `audit_event`) · **bilingual auto-fill** (Gemini, above) · **AI auto-assign
-ranking** (§5) · **AI-suggested scheduling** (above) · **self-service
+ranking** (§5) · **AI-suggested scheduling** (above, now CSP backtracking) ·
+**the in-app help chatbot** (above) · **self-service
 password reset + credentials-by-email** (above) · **bulk employee import
 from CSV** (above). GPS tracking stays
 out (I10) **except the one narrow, explicitly re-scoped live-location

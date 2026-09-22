@@ -10,6 +10,7 @@ import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../i18n.dart';
 import '../models/request.dart';
+import '../shared/chatbot_screen.dart';
 import '../shared/notifications_screen.dart';
 import '../shared/profile_screen.dart';
 import '../theme.dart';
@@ -95,6 +96,19 @@ class _UserHomeScreenState extends State<UserHomeScreen> {
                     ),
                   ),
                 ),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chat_bubble_outline),
+            tooltip: i18n.tr('chatbot_title'),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const ChatbotScreen(currentScreen: 'Home', suggestionKeys: [
+                  'chatbot_suggest_submit_request',
+                  'chatbot_suggest_request_status',
+                  'chatbot_suggest_what',
+                ]),
               ),
             ),
           ),

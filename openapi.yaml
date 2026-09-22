@@ -93,6 +93,7 @@ tags:
   - name: knowledge-base  # company article list (communication feature group) — read company-wide, write needs view_all/admin
   - name: events          # company calendar + self-service RSVP (communication feature group)
   - name: translate       # bilingual auto-fill assist (Gemini proxy) — CLAUDE.md §13, 2026-08-21 exception
+  - name: chatbot         # in-app help/FAQ assistant (Gemini proxy) — CLAUDE.md §13 exception
   - name: dashboard       # oversight overview: stats + 30-day chart (view_all/admin)
   - name: audit           # audit_event read surface for the Audit Log page (admin-only)
 
@@ -1907,6 +1908,58 @@ paths:
         '422': { $ref: '#/components/responses/Validation' }
         '502': { description: The translation vendor errored or timed out }
         '503': { description: Translation is not configured on this deployment }
+
+  /chatbot/message:
+    post:
+      tags: [chatbot]
+      summary: >-
+        In-app help/FAQ assistant. Answers "how do I..." questions from a fixed
+        app-description grounding, not live data — any authenticated account kind
+        (admin/employee/user). Stateless: the client round-trips conversation
+        history on every call, nothing is stored server-side. Rate-limited per
+        caller (20 messages / 5 min) to bound Gemini quota/cost.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, maxLength: 1000 }
+                history:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: object
+                    required: [role, text]
+                    properties:
+                      role: { type: string, enum: [user, assistant] }
+                      text: { type: string, maxLength: 1000 }
+                page: { type: string, maxLength: 60, description: Screen name the caller had open when starting the chat, for contextual answers. }
+                capabilities:
+                  type: array
+                  maxItems: 20
+                  items: { type: string }
+                  description: The caller's own Gate-1 capability list (as already returned on /auth/me), so an employee gets an accurate yes/no instead of an overly-cautious default.
+                features:
+                  type: array
+                  maxItems: 20
+                  items: { type: string }
+                  description: The company's enabled optional-module feature keys (companyFeatures on /auth/me), so module questions get an accurate on/off instead of a generic "ask your administrator" hedge.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reply: { type: string }
+        '422': { $ref: '#/components/responses/Validation' }
+        '429': { description: Per-caller message rate limit exceeded }
+        '502': { description: The chatbot vendor errored or timed out }
+        '503': { description: Chatbot is not configured on this deployment }
 
   /timeclock/shifts/active:
     get:

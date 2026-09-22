@@ -10,6 +10,7 @@ import '../api/api_client.dart';
 import '../auth/auth_state.dart';
 import '../i18n.dart';
 import '../models/task.dart';
+import '../shared/chatbot_screen.dart';
 import '../shared/notifications_screen.dart';
 import '../shared/profile_screen.dart';
 import '../theme.dart';
@@ -175,6 +176,12 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
               item(Icons.event_outlined, i18n.tr('ev_title'),
                   const EventsScreen()),
             const Divider(),
+            item(Icons.chat_bubble_outline, i18n.tr('chatbot_title'),
+                const ChatbotScreen(currentScreen: 'Home', suggestionKeys: [
+                  'chatbot_suggest_clock_in',
+                  'chatbot_suggest_schedule',
+                  'chatbot_suggest_complete_task',
+                ])),
             item(Icons.person_outline, i18n.tr('profile'),
                 const ProfileScreen()),
             ListTile(

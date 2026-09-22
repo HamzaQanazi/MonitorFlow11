@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useI18n } from '../i18n'
 import NotificationBell from '../components/NotificationBell'
+import ChatbotWidget from '../components/ChatbotWidget'
 import { NavIcon } from '../components/NavIcons'
 import { Wordmark } from '../components/Wordmark'
 import './DashboardShell.css'
@@ -140,6 +141,7 @@ export default function DashboardShell() {
         )}
         <Outlet />
       </main>
+      <ChatbotWidget />
     </div>
   )
 }

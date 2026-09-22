@@ -1,0 +1,221 @@
+/* Floating help assistant — a fixed-position launcher, independent of the
+   shell layout (unlike the bell, which sits inline in the topbar), since it
+   needs to be reachable from every console page, admin included (the bell
+   itself is hidden for admin — DashboardShell.tsx — but the assistant is
+   useful to every account kind, so it's mounted at the shell root instead). */
+.chatbot {
+  position: fixed;
+  inset-block-end: 20px;
+  inset-inline-end: 20px;
+  z-index: var(--z-dropdown);
+}
+
+.chatbot-fab {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 999px;
+  background: var(--amber-600);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 8px 20px -4px rgb(0 0 0 / 0.28);
+  transition: transform var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.chatbot-fab:hover {
+  background: var(--amber-700);
+}
+
+.chatbot-fab:active {
+  transform: scale(0.92);
+}
+
+.chatbot-fab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.chatbot-panel {
+  position: absolute;
+  inset-block-end: calc(100% + 10px);
+  inset-inline-end: 0;
+  width: min(340px, calc(100vw - 32px));
+  height: min(440px, calc(100vh - 120px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 12px 28px -6px rgb(0 0 0 / 0.16);
+  transform-origin: bottom;
+  animation: chatbot-panel-in var(--dur-fast) var(--ease-out);
+}
+
+@keyframes chatbot-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chatbot-panel {
+    animation: none;
+  }
+}
+
+.chatbot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chatbot-head h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.chatbot-icon-btn {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.chatbot-icon-btn:hover {
+  color: var(--ink);
+}
+
+.chatbot-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chatbot-empty {
+  padding: 22px 8px 4px;
+  color: var(--muted);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+.chatbot-empty p {
+  margin: 0 0 14px;
+}
+
+.chatbot-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chatbot-suggestions button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+
+.chatbot-suggestions button:hover {
+  background: var(--surface);
+  border-color: var(--amber-600);
+}
+
+.chatbot-msg {
+  max-width: 85%;
+  padding: 8px 11px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chatbot-msg-user {
+  align-self: flex-end;
+  background: var(--amber-600);
+  color: #fff;
+}
+
+.chatbot-msg-assistant {
+  align-self: flex-start;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.chatbot-typing {
+  color: var(--muted);
+}
+
+.chatbot-error {
+  margin: 0;
+  padding: 6px 14px;
+  color: var(--error);
+  font-size: 12.5px;
+}
+
+.chatbot-input {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.chatbot-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.chatbot-input input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.chatbot-input button {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0 14px;
+  background: var(--amber-600);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chatbot-input button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chatbot-input button:not(:disabled):hover {
+  background: var(--amber-700);
+}
