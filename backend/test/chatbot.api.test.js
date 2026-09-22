@@ -1,7 +1,8 @@
 // POST /chatbot/message — in-app help/FAQ assistant (CLAUDE.md §13, chatbot
-// exception). Same GEMINI_API_KEY-branching pattern as translate.api.test.js:
-// the round-trip assertion only runs when a real key is present in the
-// environment running the suite, so the suite stays green on a fresh clone.
+// exception, switched from Gemini to Groq 2026-09-22). Same
+// GROQ_API_KEY-branching pattern as translate.api.test.js: the round-trip
+// assertion only runs when a real key is present in the environment running
+// the suite, so the suite stays green on a fresh clone.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, stopServer, api, loginAll } = require('../testlib/harness');
@@ -57,7 +58,7 @@ test('a valid request from an authenticated employee', async () => {
     token: tokens.root,
     body: { message: 'How do I submit a request?' },
   });
-  if (!process.env.GEMINI_API_KEY) {
+  if (!process.env.GROQ_API_KEY) {
     assert.equal(res.status, 503, JSON.stringify(res.body));
     return;
   }

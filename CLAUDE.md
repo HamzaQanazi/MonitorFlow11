@@ -1246,11 +1246,52 @@ notification even while backgrounded/closed, not just the existing 30-second
 in-app poll (§3, §11). Requirement recorded here; **not implemented yet, and
 not to be built as a quiet default** — it needs a push vendor (FCM is the
 practical default for one Flutter codebase covering Android/iOS), which is a
-**4th named-vendor exception** alongside Nominatim/Gemini/SMTP (§9/§13),
-each of which got its own explicit two-student conversation before landing.
-Same bar applies here: agree the vendor and the delivery-token/registration
+**named-vendor exception** alongside Nominatim/Groq/SMTP (§9/§13), each of
+which got its own explicit two-student conversation before landing. Same
+bar applies here: agree the vendor and the delivery-token/registration
 design (device token storage, a new `device_token` table or column,
-platform-specific credentials) before writing code, not after.
+platform-specific credentials) before writing code, not after. *(This entry
+still says "not implemented yet" as of the last time it was edited —
+`.env.example`/`.env` now carry `FIREBASE_SERVICE_ACCOUNT_PATH` and a
+`lib/push.js` exists, which this section doesn't account for. Flagged, not
+fixed here — out of scope for the Gemini→Groq switch below; whoever touches
+push next should reconcile this paragraph with what's actually shipped.)*
+
+**Switched 2026-09-22, user-directed: `translate.js` and `chatbot.js` moved
+from Gemini to Groq — the "Nominatim/Gemini/SMTP" phrasing elsewhere in this
+file is stale, it's Nominatim/Groq/SMTP now.** Root cause, confirmed live
+against both APIs: Gemini's models (flagship and flash-lite alike) all ran
+a mandatory internal "thinking" pass regardless of task size — 20-35s per
+reply even for a two-word translation, no request parameter fully disabled
+it (`thinkingBudget: 0` rejected outright; `thinkingLevel: 'LOW'`, the
+lowest accepted setting, only cut it by about a third). Tried three
+different Gemini models as alternatives (`gemini-3.1-flash-lite`,
+`gemini-flash-latest`, plus the already-slow `flash-lite`) and hit a `503
+high demand` on two of them live — a broad, current condition on Google's
+side, not something fixable by model choice within Gemini. Same vendor-
+exception shape as before (CLAUDE.md §9's Nominatim reasoning): the vendor
+key (`GROQ_API_KEY`) never reaches the client, callers get back only the
+generated text. Groq runs open-weight models on inference hardware built
+for low latency with no reasoning step by default — measured **~250ms-1.6s
+end to end** for both `translate.js` (`openai/gpt-oss-20b`) and
+`chatbot.js` (`openai/gpt-oss-120b`, the larger model — needed for this
+prompt's many conditional rules, same reasoning CLAUDE.md already documented
+for why a smaller model struggled with them). OpenAI-compatible chat-
+completions API, not Gemini's `generateContent` shape — both files' request/
+response handling rewritten accordingly, not just a URL/model swap. Timeouts
+scaled back down from the Gemini-era 8s/20-35s values now that real latency
+is sub-second: `translate.js` kept its original 8s ceiling (plenty of
+margin), `chatbot.js` kept 20s as a safety ceiling for a genuine outage,
+neither is load-bearing at normal latency anymore. `GEMINI_API_KEY` is gone
+from `.env`/`.env.example`, replaced by `GROQ_API_KEY`
+(https://console.groq.com/keys, free tier, no card). Groq's model catalogue
+churns (`gemini-2.5-flash-lite`-style deprecation risk applies here too) —
+both `MODEL` constants are env-overridable
+(`GROQ_MODEL`/`CHATBOT_MODEL`) and check
+https://console.groq.com/docs/models if either 404s later. Verified live
+both ways, and via `test/chatbot.unit.test.js` (mocked fetch, updated for
+the OpenAI-shaped response) and the existing `test/*.api.test.js` GROQ_API_KEY-
+branching round-trip tests (renamed from GEMINI_API_KEY).
 
 **Added 2026-09-07 (supervisor-mandated): full employee evaluation system.**
 New requirement, not yet designed — scope, metrics, and schema are still to
@@ -1412,7 +1453,7 @@ raise the ceiling.
 
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
-`audit_event`) · **bilingual auto-fill** (Gemini, above) · **AI auto-assign
+`audit_event`) · **bilingual auto-fill** (Groq, formerly Gemini, above) · **AI auto-assign
 ranking** (§5) · **AI-suggested scheduling** (above, now CSP backtracking) ·
 **the in-app help chatbot** (above) · **self-service
 password reset + credentials-by-email** (above) · **bulk employee import

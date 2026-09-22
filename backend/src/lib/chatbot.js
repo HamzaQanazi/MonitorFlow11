@@ -1,8 +1,8 @@
-// Server-side proxy to the Gemini API for the in-app help/FAQ assistant
-// (CLAUDE.md §13 — chatbot help assistant, the same Gemini exception as
-// bilingual auto-fill, lib/translate.js). Same shape: GEMINI_API_KEY never
-// reaches the client, the caller gets back only the reply text, never the
-// raw upstream response.
+// Server-side proxy to the Groq API for the in-app help/FAQ assistant
+// (CLAUDE.md §13 — chatbot help assistant, same vendor-exception shape as
+// bilingual auto-fill, lib/translate.js). GROQ_API_KEY never reaches the
+// client, the caller gets back only the reply text, never the raw upstream
+// response. OpenAI-compatible chat completions API.
 //
 // Scope is deliberately narrow (v1): a stateless FAQ bot grounded on a fixed
 // description of what the app can do (APP_GUIDE below) — no DB access, no
@@ -10,19 +10,21 @@
 // accident. Conversation history is round-tripped by the client on every
 // call, never stored server-side — no new table (ponytail: add server-side
 // history only if multi-device continuity is actually asked for).
-// flash-lite, same model lib/translate.js uses (proven reachable, and its
-// own separate free-tier quota bucket). Briefly tried the full flagship
-// model for better instruction-following on this prompt's many conditional
-// rules (role vs capability vs feature-flag vs the one admin-excluded
-// screen) — measured more consistently correct on that front, but its
-// free-tier quota (20 req/min, shared across every caller) made the
-// chatbot unusable under any real multi-person testing: constant 429s and
-// slow/timing-out replies (~6-10s, occasional 25s timeouts). Reverted
-// 2026-09-22, user-directed — a chatbot that reliably answers beats one
-// that's more careful but frequently down. The earlier accuracy fix that
-// matters most (moving the feature-flag check to a mandatory first line,
-// see APP_GUIDE below) stays in place either way.
-const MODEL = process.env.CHATBOT_MODEL || 'gemini-3.5-flash-lite';
+//
+// Switched from Gemini to Groq 2026-09-22, user-directed: Gemini's models
+// (both the flagship and flash-lite) run a mandatory internal "thinking"
+// pass regardless of task size — 20-30s+ per reply even for trivial
+// prompts, see git history on this file and lib/translate.js. Groq runs
+// open-weight models on inference hardware built for low latency with no
+// reasoning step by default. openai/gpt-oss-120b, not the smaller -20b
+// lib/translate.js uses — this prompt has many conditional rules (role vs
+// capability vs feature-flag vs the one admin-excluded screen) that
+// CLAUDE.md already documented smaller/lighter models struggling with; the
+// larger model is still well under a second on Groq's hardware (measured
+// ~240ms on a short test prompt). Override via env if a future model rename
+// requires it (Groq's catalogue churns — check
+// https://console.groq.com/docs/models if this 404s).
+const MODEL = process.env.CHATBOT_MODEL || 'openai/gpt-oss-120b';
 
 // A per-role/per-screen walkthrough, not just a feature list — specific
 // enough that the model can name the actual screen/button instead of
@@ -238,20 +240,12 @@ const MAX_HISTORY = 20;
 // (`companyFeatures` on /auth/me, same source as capabilities above) — same
 // reasoning, same trust level, same zero-DB-access shape.
 async function askChatbot(message, history, role, page, capabilities, features) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     const err = new Error('Chatbot is not configured');
     err.status = 503;
     throw err;
   }
-
-  const contents = [
-    ...(history || []).slice(-MAX_HISTORY).map((h) => ({
-      role: h.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: h.text }],
-    })),
-    { role: 'user', parts: [{ text: message }] },
-  ];
 
   let roleNote = `\n\nThe person asking is signed in as: ${role}. Only describe screens that account kind has, per the sections above.`;
   if (page) roleNote += ` They currently have the "${page}" screen open — prefer answers relevant to that screen when the question is ambiguous (e.g. "how does this work").`;
@@ -265,49 +259,43 @@ async function askChatbot(message, history, role, page, capabilities, features) 
     ? ` This company's enabled feature keys: ${features.length ? features.join(', ') : '(none)'}.`
     : " This company's enabled feature keys: not provided — follow the \"not provided\" fallback for module questions.";
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
+  // OpenAI-compatible message roles — 'assistant', not Gemini's 'model', so
+  // our own history shape (role: 'user' | 'assistant') needs no remapping.
+  const messages = [
+    { role: 'system', content: APP_GUIDE + roleNote },
+    ...(history || []).slice(-MAX_HISTORY).map((h) => ({ role: h.role, content: h.text })),
+    { role: 'user', content: message },
+  ];
+
   let upstream;
   try {
-    upstream = await fetch(url, {
+    upstream = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: APP_GUIDE + roleNote }] },
-        contents,
-        // See lib/translate.js's MODEL comment — this Gemini API version
-        // runs a mandatory internal "thinking" pass regardless of task
-        // size; 'LOW' is the lowest setting it accepts (thinkingBudget: 0
-        // is rejected, 400) and cuts latency by roughly a third (measured
-        // ~32s default -> ~21s). Still not fast, hence the 35s timeout.
-        generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
-      }),
-      // Was 15s — far short of this model's real ~20-30s latency even with
-      // thinking set to its lowest level. Long, but this is a slow-not-
-      // broken model, not an outage — the longer timeout turns a false
-      // "could not reach the assistant" into a working, if slow, reply.
-      signal: AbortSignal.timeout(35000),
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: MODEL, messages, temperature: 0.2 }),
+      signal: AbortSignal.timeout(20000),
     });
   } catch (fetchErr) {
     // Logging the real cause (timeout vs DNS vs connection refused) is the
     // only way to actually diagnose "unreachable" instead of guessing.
-    console.error(`chatbot: fetch to Gemini failed: ${fetchErr.name}: ${fetchErr.message}`);
+    console.error(`chatbot: fetch to Groq failed: ${fetchErr.name}: ${fetchErr.message}`);
     const err = new Error('Chatbot service is unreachable');
     err.status = 502;
     throw err;
   }
   if (!upstream.ok) {
-    // Log the real upstream status so a vendor-side rate limit (the free
-    // tier's per-minute cap) shows up in the server console instead of just
-    // "unreachable," and surface 429 as our own 429 so the client shows the
-    // honest "too many messages, wait a bit" instead of a vague error.
+    // Log the real upstream status so a vendor-side rate limit shows up in
+    // the server console instead of just "unreachable," and surface 429 as
+    // our own 429 so the client shows the honest "too many messages, wait a
+    // bit" instead of a vague error.
     const body = await upstream.text().catch(() => '');
-    console.error(`chatbot: Gemini returned ${upstream.status}: ${body.slice(0, 300)}`);
+    console.error(`chatbot: Groq returned ${upstream.status}: ${body.slice(0, 300)}`);
     const err = new Error(upstream.status === 429 ? 'Chatbot is busy, try again shortly' : 'Chatbot service error');
     err.status = upstream.status === 429 ? 429 : 502;
     throw err;
   }
   const data = await upstream.json();
-  const out = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const out = data?.choices?.[0]?.message?.content;
   if (!out || !out.trim()) {
     const err = new Error('Chatbot returned no result');
     err.status = 502;

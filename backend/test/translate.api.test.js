@@ -1,10 +1,11 @@
 // POST /translate — bilingual auto-fill assist (CLAUDE.md §13, 2026-08-21
-// exception). Auth/role/validation are covered unconditionally. The last
-// test branches on whether GEMINI_API_KEY is set in the environment running
-// the suite: unset (a fresh clone, CI, the other student's machine without a
-// key yet) asserts the 503-not-a-crash path; set (this machine) asserts a
-// real round trip actually returns a translation — so the suite stays green
-// either way without hard-depending on a committed secret.
+// exception, switched from Gemini to Groq 2026-09-22). Auth/role/validation
+// are covered unconditionally. The last test branches on whether
+// GROQ_API_KEY is set in the environment running the suite: unset (a fresh
+// clone, CI, the other student's machine without a key yet) asserts the
+// 503-not-a-crash path; set (this machine) asserts a real round trip
+// actually returns a translation — so the suite stays green either way
+// without hard-depending on a committed secret.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { setup, stopServer, api, loginAll } = require('../testlib/harness');
@@ -46,7 +47,7 @@ test('a valid request from an admin/employee', async () => {
     token: tokens.root,
     body: { text: 'Hello', target: 'ar' },
   });
-  if (!process.env.GEMINI_API_KEY) {
+  if (!process.env.GROQ_API_KEY) {
     // No key in this environment — must fail clean (503), not crash.
     assert.equal(res.status, 503, JSON.stringify(res.body));
     return;
