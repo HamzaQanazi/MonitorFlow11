@@ -64,8 +64,8 @@ class ApiClient {
   Future<Map<String, dynamic>> get(String path, {Map<String, String>? query}) =>
       _send('GET', path, query: query);
 
-  Future<Map<String, dynamic>> post(String path, {Object? body}) =>
-      _send('POST', path, body: body);
+  Future<Map<String, dynamic>> post(String path, {Object? body, Duration? timeout}) =>
+      _send('POST', path, body: body, timeout: timeout);
 
   Future<Map<String, dynamic>> patch(String path, {Object? body}) =>
       _send('PATCH', path, body: body);
@@ -133,6 +133,7 @@ class ApiClient {
     String path, {
     Map<String, String>? query,
     Object? body,
+    Duration? timeout,
   }) async {
     var uri = Uri.parse('$baseUrl$path');
     if (query != null && query.isNotEmpty) {
@@ -150,7 +151,7 @@ class ApiClient {
     http.Response response;
     try {
       response = await http.Response.fromStream(
-        await _http.send(request).timeout(const Duration(seconds: 15)),
+        await _http.send(request).timeout(timeout ?? const Duration(seconds: 15)),
       );
     } on TimeoutException {
       throw NetworkException('The server took too long to respond');

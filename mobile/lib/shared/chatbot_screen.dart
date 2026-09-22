@@ -71,12 +71,19 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           .reversed
           .map((m) => {'role': m.role, 'text': m.text})
           .toList();
-      final json = await api.post('/chatbot/message', body: {
-        'message': text,
-        'history': history,
-        if (widget.currentScreen != null) 'page': widget.currentScreen,
-        'features': auth.user?.companyFeatures ?? const [],
-      });
+      final json = await api.post(
+        '/chatbot/message',
+        body: {
+          'message': text,
+          'history': history,
+          if (widget.currentScreen != null) 'page': widget.currentScreen,
+          'features': auth.user?.companyFeatures ?? const [],
+        },
+        // Default 15s is too short for this call: the model's own reply can
+        // take 20-30s (lib/chatbot.js's 35s server-side timeout), unlike
+        // every other endpoint this client talks to.
+        timeout: const Duration(seconds: 40),
+      );
       setState(() => _messages.add(_ChatMessage('assistant', json['reply'] as String)));
     } on ApiException catch (e) {
       setState(() => _error = e.status == 429 ? i18n.tr('chatbot_rate_limited') : i18n.tr('chatbot_error'));
