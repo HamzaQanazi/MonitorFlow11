@@ -271,15 +271,20 @@ async function askChatbot(message, history, role, page, capabilities, features) 
     upstream = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ system_instruction: { parts: [{ text: APP_GUIDE + roleNote }] }, contents }),
-      // 2026-09-22: this Gemini API version runs a mandatory internal
-      // "thinking" pass on gemini-3.5-flash-lite that didn't exist when
-      // lib/translate.js's own "under a second" comment was written —
-      // measured directly at ~27-30s per reply even for a one-word prompt,
-      // even with thinkingConfig.thinkingLevel set to its lowest value.
-      // Long, but this is a slow-not-broken model, not an outage — raising
-      // the timeout (was 15s) turns a false "could not reach the assistant"
-      // into a working, if slow, reply.
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: APP_GUIDE + roleNote }] },
+        contents,
+        // See lib/translate.js's MODEL comment — this Gemini API version
+        // runs a mandatory internal "thinking" pass regardless of task
+        // size; 'LOW' is the lowest setting it accepts (thinkingBudget: 0
+        // is rejected, 400) and cuts latency by roughly a third (measured
+        // ~32s default -> ~21s). Still not fast, hence the 35s timeout.
+        generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
+      }),
+      // Was 15s — far short of this model's real ~20-30s latency even with
+      // thinking set to its lowest level. Long, but this is a slow-not-
+      // broken model, not an outage — the longer timeout turns a false
+      // "could not reach the assistant" into a working, if slow, reply.
       signal: AbortSignal.timeout(35000),
     });
   } catch (fetchErr) {
