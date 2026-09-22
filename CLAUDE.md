@@ -1378,6 +1378,29 @@ reliably honor a negative constraint buried in a long system prompt; expect
 this class of flakiness on other instructions too, and check by repeating a
 request 3-5 times, not once, before trusting a fix "works."
 
+**Fixed 2026-09-22, same day (real production issue, not a prompt issue):
+the full model's free-tier quota is 20 req/min, shared across every caller**
+— confirmed directly against the live API (a plain `generateContent` call
+returned `429 RESOURCE_EXHAUSTED, limit: 20, model: gemini-3.5-flash`).
+Ordinary multi-person testing exhausted it constantly, surfacing to users as
+either the rate-limited message or a generic "could not reach the assistant"
+(the 502 catch-all — Gemini also gets slower/less reliable near its own
+limit, on top of the full model's already-higher latency, §above).
+`lib/chatbot.js`'s `askChatbot` now retries once against `gemini-3.5-flash-
+lite` (`FALLBACK_MODEL`, override via `CHATBOT_FALLBACK_MODEL` — same model
+`lib/translate.js` already runs successfully, so proven reachable, and a
+separate quota bucket from the flagship model) whenever the primary model
+itself returns 429; only a 429 from *both* models still surfaces as the
+client's rate-limited message. `callGemini(model, apiKey, body)` split out of
+`askChatbot` so the retry doesn't duplicate the fetch/error-shape logic.
+Verified against the live key both ways: a solo 429 recovers silently via the
+fallback, and sustained exhaustion of both models still fails cleanly.
+Unit-tested with a mocked `fetch` (`test/chatbot.unit.test.js`, no network/DB)
+covering fallback-succeeds, both-models-429, and non-429-no-fallback. Real
+fix for sustained high volume is still raising the quota (billing on the
+Google AI Studio project) — this retry smooths out normal bursts, it doesn't
+raise the ceiling.
+
 **IN:** the **first-login onboarding wizard** (v7, §9) · the interactive **map pin
 picker** (v5) · **operational audit rows** (status/assign/priority write
 `audit_event`) · **bilingual auto-fill** (Gemini, above) · **AI auto-assign
